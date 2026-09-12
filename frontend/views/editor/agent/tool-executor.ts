@@ -14,12 +14,14 @@ import {
 } from '../editor-selectors'
 import type { AgentGenerationJobs } from './agent-generate-runtime'
 import { AgentToolExecutor, type AgentToolExecutorHost } from './agent-edit-runtime'
+import type { AgentImportJobs } from './agent-import-runtime'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice'
 import { asNumber, asString, listGenerationModels, toolErrorResult, validateUnknownKeys } from './agent-tool-utils'
-import { ASSEMBLY_TOOL_ALLOWED_KEYS, EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
+import { ASSEMBLY_TOOL_ALLOWED_KEYS, EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, IMPORT_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
 
 export { AgentToolExecutor, DELETE_MANY_THRESHOLD } from './agent-edit-runtime'
 export type { AgentEditorActions, AgentToolExecutorHost } from './agent-edit-runtime'
+export type { AgentImportJobs } from './agent-import-runtime'
 export { listGenerationModels, validateUnknownKeys } from './agent-tool-utils'
 
 export interface ExecuteReadToolInput {
@@ -35,6 +37,7 @@ export interface CreateAgentToolExecutorInput {
   applyWithoutHistory: (fn: (state: EditorState) => EditorState) => void
   fetchImpl?: typeof backendFetch
   generation?: AgentGenerationJobs
+  importMedia?: AgentImportJobs
   getSelectedGap?: () => TimelineGapSelection | null
   projectId?: string
   getAbortSignal?: () => AbortSignal | null
@@ -68,6 +71,7 @@ export function createAgentToolExecutor(input: CreateAgentToolExecutorInput): Ag
     applyWithoutHistory: input.applyWithoutHistory,
     actions: editorActions,
     generation: input.generation,
+    importMedia: input.importMedia,
     getSelectedGap: input.getSelectedGap,
     projectId: input.projectId,
     getAbortSignal: input.getAbortSignal,
@@ -94,6 +98,7 @@ export async function executeAgentTool(
     Object.prototype.hasOwnProperty.call(EDIT_TOOL_ALLOWED_KEYS, name)
     || Object.prototype.hasOwnProperty.call(GENERATE_TOOL_ALLOWED_KEYS, name)
     || Object.prototype.hasOwnProperty.call(ASSEMBLY_TOOL_ALLOWED_KEYS, name)
+    || Object.prototype.hasOwnProperty.call(IMPORT_TOOL_ALLOWED_KEYS, name)
   ) {
     return executor.execute(name, args)
   }

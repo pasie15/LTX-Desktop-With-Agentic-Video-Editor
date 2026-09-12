@@ -57,6 +57,10 @@ describe('assembly job cap', () => {
       { id: 'b', prompt: 'two', duration: 4, imageAssetId: 'asset-1' },
     ], false), 3)
     assert.equal(countAssemblyGenerateJobs([
+      { id: 'a', prompt: 'theme', duration: 12, assetId: 'aud-1' },
+      { id: 'b', prompt: 'two', duration: 4, imageAssetId: 'asset-1' },
+    ], false), 1)
+    assert.equal(countAssemblyGenerateJobs([
       { id: 'a', prompt: 'one', duration: 4 },
       { id: 'b', prompt: 'two', duration: 4 },
     ], true), 2)

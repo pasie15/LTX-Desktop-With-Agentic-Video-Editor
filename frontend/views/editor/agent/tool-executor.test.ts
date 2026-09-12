@@ -4,6 +4,7 @@ import { createDefaultTimeline, DEFAULT_COLOR_CORRECTION, DEFAULT_TRACKS, type A
 import { DEFAULT_LAYOUT } from '../editor-layout.ts'
 import type { EditorState, EditorUndoSnapshot } from '../editor-state.ts'
 import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
+import type { AgentImportJobs } from './agent-import-runtime.ts'
 import { AgentToolExecutor, type AgentEditorActions, type AgentToolExecutorHost } from './agent-edit-runtime.ts'
 import { listGenerationModels, validateUnknownKeys } from './agent-tool-utils.ts'
 
@@ -14,6 +15,18 @@ function videoAsset(id: string, duration = 4): Asset {
     path: `/tmp/${id}.mp4`,
     prompt: id,
     resolution: '1080p',
+    duration,
+    createdAt: 1,
+  }
+}
+
+function audioAsset(id: string, duration = 12): Asset {
+  return {
+    id,
+    type: 'audio',
+    path: `/tmp/${id}.mp3`,
+    prompt: id,
+    resolution: 'imported',
     duration,
     createdAt: 1,
   }
@@ -436,9 +449,28 @@ function fakeJobs(overrides?: Partial<AgentGenerationJobs>): AgentGenerationJobs
   }
 }
 
+function fakeImport(overrides?: Partial<AgentImportJobs>): AgentImportJobs {
+  return {
+    importPath: async ({ srcPath, type, displayName }) => ({
+      id: `imported-${srcPath.split(/[\\/]/).pop()}`,
+      type: type ?? 'video',
+      path: `/project/${srcPath.split(/[\\/]/).pop()}`,
+      prompt: `Imported: ${displayName ?? srcPath}`,
+      resolution: 'imported',
+      duration: type === 'image' ? 5 : 8,
+      createdAt: 1,
+    }),
+    ...overrides,
+  }
+}
+
 function createHost(
   initial: EditorState,
-  extras?: { generation?: AgentGenerationJobs; selectedGap?: { trackIndex: number; startTime: number; endTime: number } | null },
+  extras?: {
+    generation?: AgentGenerationJobs
+    importMedia?: AgentImportJobs
+    selectedGap?: { trackIndex: number; startTime: number; endTime: number } | null
+  },
 ): AgentToolExecutorHost & { box: { state: EditorState } } {
   const box = { state: initial }
   return {
@@ -452,6 +484,7 @@ function createHost(
     },
     actions: fakeActions(),
     generation: extras?.generation,
+    importMedia: extras?.importMedia,
     getSelectedGap: extras?.selectedGap !== undefined ? () => extras.selectedGap ?? null : undefined,
   }
 }
@@ -523,6 +556,19 @@ describe('edit tool executor', () => {
     assert.equal(result.ok, true)
     assert.ok(Array.isArray(result.insertedClipIds) && (result.insertedClipIds as string[]).length >= 1)
     assert.ok(activeClips(host.getState()).length >= 1)
+  })
+
+  it('places audio on the first unlocked audio track when trackIndex is omitted', async () => {
+    const host = createHost(makeState({
+      clips: [],
+      assets: [audioAsset('theme')],
+    }))
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('insert_assets', { assetIds: ['theme'], startTime: 0 })
+    assert.equal(result.ok, true)
+    const placed = activeClips(host.getState())[0]
+    assert.equal(placed?.trackIndex, 3)
+    assert.equal(placed?.assetId, 'theme')
   })
 
   it('refuses insert onto a locked track', async () => {
@@ -829,6 +875,36 @@ describe('assembly tool executor', () => {
     assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
   })
 
+  it('places existing user assets from a shot list without generating', async () => {
+    let videoCalls = 0
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [videoAsset('hero', 6), audioAsset('theme', 12)],
+    }), {
+      generation: fakeJobs({
+        runVideo: async () => {
+          videoCalls += 1
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'hero clip', duration: 6, assetId: 'hero' },
+        { id: 's2', prompt: 'theme music', duration: 12, assetId: 'theme', title: 'SCORE' },
+      ],
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.jobCount, 0)
+    assert.equal(videoCalls, 0)
+    const clips = activeClips(host.getState())
+    assert.equal(clips.filter(item => item.assetId === 'hero' || item.assetId === 'theme').length, 2)
+    assert.equal(clips.filter(item => item.type === 'text').length, 1)
+  })
+
   it('reuses the last proposed shot list after accept', async () => {
     const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs() })
     const executor = new AgentToolExecutor(host)
@@ -842,3 +918,37 @@ describe('assembly tool executor', () => {
     assert.equal((result.placed as unknown[]).length, 2)
   })
 })
+
+describe('import tool executor', () => {
+  it('imports audio into the project and can place it', async () => {
+    const host = createHost(makeState({ clips: [] }), { importMedia: fakeImport() })
+    const executor = new AgentToolExecutor(host)
+    const added = await executor.execute('import_media', { path: '/tmp/theme.mp3', type: 'audio' })
+    assert.equal(added.ok, true)
+    assert.equal(added.placed, false)
+    assert.deepEqual(added.assetIds, ['imported-theme.mp3'])
+    assert.ok(host.getState().editorModel.assets.some(asset => asset.id === 'imported-theme.mp3'))
+    assert.equal(activeClips(host.getState()).length, 0)
+
+    const placed = await executor.execute('import_media', {
+      path: '/tmp/cut.mp4',
+      type: 'video',
+      destination: 'playhead',
+      startTime: 2,
+    })
+    assert.equal(placed.ok, true)
+    assert.equal(placed.placed, true)
+    assert.ok(Array.isArray(placed.insertedClipIds) && (placed.insertedClipIds as string[]).length >= 1)
+    assert.equal(activeClips(host.getState())[0]?.startTime, 2)
+  })
+
+  it('rejects unsupported files without mutating', async () => {
+    const host = createHost(makeState({ clips: [] }), { importMedia: fakeImport() })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('import_media', { path: '/tmp/notes.txt' })
+    assert.equal(result.ok, false)
+    assert.match(String(result.error), /Unsupported/)
+    assert.equal(host.getState().editorModel.assets.length, 2)
+  })
+})
+

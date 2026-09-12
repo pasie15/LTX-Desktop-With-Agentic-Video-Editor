@@ -16,6 +16,7 @@ export interface AgentAssemblyShot {
   duration: number
   title?: string
   imageAssetId?: string
+  assetId?: string
   skipStill?: boolean
 }
 
@@ -43,6 +44,7 @@ export function countAssemblyGenerateJobs(
   skipStills: boolean,
 ): number {
   return shots.reduce((total, shot) => {
+    if (shot.assetId) return total
     const still = !skipStills && !shot.skipStill && !shot.imageAssetId
     return total + (still ? 2 : 1)
   }, 0)
@@ -84,7 +86,10 @@ export function normalizeAssemblyShots(raw: unknown): AgentAssemblyShot[] | null
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null
     const record = item as Record<string, unknown>
     const prompt = typeof record.prompt === 'string' ? record.prompt.trim() : ''
-    if (!prompt) return null
+    const assetId = typeof record.assetId === 'string' && record.assetId.trim()
+      ? record.assetId.trim()
+      : undefined
+    if (!prompt && !assetId) return null
     const duration = typeof record.duration === 'number' && Number.isFinite(record.duration) && record.duration > 0
       ? record.duration
       : AGENT_DEFAULT_PREVIEW_DURATION_S
@@ -97,10 +102,11 @@ export function normalizeAssemblyShots(raw: unknown): AgentAssemblyShot[] | null
       : undefined
     shots.push({
       id,
-      prompt,
+      prompt: prompt || `Place ${assetId}`,
       duration,
       ...(title ? { title } : {}),
       ...(imageAssetId ? { imageAssetId } : {}),
+      ...(assetId ? { assetId } : {}),
       ...(record.skipStill === true ? { skipStill: true } : {}),
     })
   }
@@ -162,6 +168,7 @@ export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): Agent
       prompt: shot.prompt,
       duration: shot.duration,
       ...(shot.title ? { title: shot.title } : {}),
+      ...(shot.assetId ? { assetId: shot.assetId } : {}),
     })),
   }]
 }

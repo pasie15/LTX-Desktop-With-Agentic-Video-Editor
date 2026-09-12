@@ -28,6 +28,8 @@ import {
   replaceMentionQuery,
 } from './agent-mentions'
 import { useAgentChat } from './use-agent-chat'
+import { defaultImportLocalMediaCopyFns } from '../import-local-media-defaults'
+import { importLocalMediaFile } from '../import-local-media'
 import type { AgentMention } from './agent-types'
 
 export interface AgentChatPanelProps {
@@ -158,42 +160,17 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
 
   const importDroppedFiles = useCallback(async (files: File[]) => {
     for (const file of files) {
-      if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) {
-        continue
-      }
-      const filePath = window.electronAPI?.getPathForFile(file)
-      if (!filePath) continue
-      const isVideo = file.type.startsWith('video/')
-      const isImage = file.type.startsWith('image/')
-      if (isVideo || isImage) {
-        const copied = await window.electronAPI.addVisualAssetToProject({
-          srcPath: filePath,
-          projectId: props.projectId,
-          type: isVideo ? 'video' : 'image',
-        })
-        if (!copied.success) continue
-        const assetId = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-        actions.addAssetToEditor({
-          id: assetId,
-          type: isVideo ? 'video' : 'image',
-          path: copied.path,
-          bigThumbnailPath: copied.bigThumbnailPath,
-          smallThumbnailPath: copied.smallThumbnailPath,
-          width: copied.width,
-          height: copied.height,
-          prompt: `Imported: ${file.name}`,
-          resolution: 'imported',
-          duration: isVideo ? 5 : undefined,
-          createdAt: Date.now(),
-        })
-        attachMention({
-          kind: 'asset',
-          id: `asset:${assetId}`,
-          label: file.name,
-          assetId,
-          assetType: isVideo ? 'video' : 'image',
-        })
-      }
+      const srcPath = window.electronAPI?.getPathForFile(file) ?? null
+      if (!srcPath) continue
+      const asset = await importLocalMediaFile({
+        file,
+        projectId: props.projectId,
+        srcPath,
+        copy: defaultImportLocalMediaCopyFns,
+      })
+      if (!asset) continue
+      actions.addAssetToEditor(asset)
+      attachMention({ ...mentionFromAsset(asset), label: file.name })
     }
   }, [actions, attachMention, props.projectId])
 
