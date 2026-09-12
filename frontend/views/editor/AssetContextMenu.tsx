@@ -1,8 +1,10 @@
 import React, { type RefObject } from 'react'
 import {
   Plus, X, RefreshCw, ChevronLeft, ChevronRight, Layers, GitMerge,
-  FolderPlus, Folder, Trash2, FolderOpen,
+  FolderPlus, Folder, Trash2, FolderOpen, MessageSquare,
 } from 'lucide-react'
+import { dispatchAgentMention } from './agent/agent-types'
+import { mentionFromAsset } from './agent/agent-mentions'
 import type { Asset } from '../../types/project-model'
 import { COLOR_LABELS } from './video-editor-utils'
 import { equalAssetBins, selectAssetBins, selectAssets, selectRegenerationState } from './editor-selectors'
@@ -98,6 +100,24 @@ export function AssetContextMenu({
           <span>Add to Timeline</span>
         </button>
       )}
+
+      <button
+        onClick={() => {
+          if (isMulti) {
+            for (const id of targetIds) {
+              const target = assets.find(item => item.id === id)
+              if (target) dispatchAgentMention(mentionFromAsset(target))
+            }
+          } else {
+            dispatchAgentMention(mentionFromAsset(asset))
+          }
+          closeMenu()
+        }}
+        className="w-full text-left px-3 py-1.5 text-zinc-300 hover:bg-zinc-700 flex items-center gap-3"
+      >
+        <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
+        <span>{isMulti ? 'Add to Agent' : 'Add to Agent'}</span>
+      </button>
 
       {!isMulti && asset.path && (
         <button

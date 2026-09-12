@@ -1004,7 +1004,11 @@ function VideoEditorWithStore({
                 }}
                 className="min-w-0"
               >
-                <AgentChatPanel getSelectedGap={() => selectedGapRef.current} />
+                <AgentChatPanel
+                  projectId={currentProjectId}
+                  projectName={currentProject?.name || 'Untitled'}
+                  getSelectedGap={() => selectedGapRef.current}
+                />
               </Panel>
             </>
           )}

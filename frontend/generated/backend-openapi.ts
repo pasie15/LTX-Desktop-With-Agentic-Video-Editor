@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/agent/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Turn */
+        post: operations["route_agent_turn_api_agent_turn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/huggingface/callback": {
         parameters: {
             query?: never;
@@ -734,6 +751,122 @@ export interface components {
             cp_ids: ("ltx-2.3-22b-distilled" | "ltx-2.3-22b-distilled-1.1" | "ltx-2.3-spatial-upscaler-x2-1.0" | "ltx-2.3-spatial-upscaler-x2-1.1" | "ltx-2.3-22b-ic-lora-union-control-ref0.5" | "ltx-2.5-22b-distilled" | "ltx-2.5-spatial-upscaler-x2-1.0" | "ltx-2.5-video-vae" | "ltx-2.5-video-vae-conv" | "ltx-2.5-audio-vae" | "ltx-2.5-duration-head" | "dpt-hybrid-midas" | "yolox-l-torchscript" | "dw-ll-ucoco-384-bs5" | "gemma-3-12b-it-qat-q4_0-unquantized" | "gemma4-12b-with-proj-ltx-2.5" | "gemma-4-e2b-it" | "z-image-turbo")[];
             /** Session Id */
             session_id: string | null;
+        };
+        /** AgentAskUserQuestionPayload */
+        AgentAskUserQuestionPayload: {
+            /**
+             * Allowmultiple
+             * @default false
+             */
+            allowMultiple: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "choice" | "text";
+            /** Options */
+            options?: string[] | null;
+            /** Prompt */
+            prompt: string;
+        };
+        /** AgentMessagePartPayload */
+        AgentMessagePartPayload: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Data */
+            data?: string | null;
+            /** Mimetype */
+            mimeType?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Text */
+            text?: string | null;
+            /** Toolcallid */
+            toolCallId?: string | null;
+            /** Toolname */
+            toolName?: string | null;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "text" | "inline_image" | "tool_call" | "tool_result";
+        };
+        /** AgentMessagePayload */
+        AgentMessagePayload: {
+            /** Parts */
+            parts: components["schemas"]["AgentMessagePartPayload"][];
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "tool";
+        };
+        /** AgentToolCallPayload */
+        AgentToolCallPayload: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** AgentToolDeclarationPayload */
+        AgentToolDeclarationPayload: {
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** AgentTurnRequest */
+        AgentTurnRequest: {
+            /** Availabletools */
+            availableTools?: components["schemas"]["AgentToolDeclarationPayload"][];
+            /** Messages */
+            messages: components["schemas"]["AgentMessagePayload"][];
+            /** Model */
+            model?: string | null;
+            /** Projectcontext */
+            projectContext?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Skills */
+            skills?: string | null;
+        };
+        /** AgentTurnResponse */
+        AgentTurnResponse: {
+            /** Askuser */
+            askUser?: components["schemas"]["AgentAskUserQuestionPayload"][] | null;
+            /**
+             * Finishreason
+             * @default stop
+             * @enum {string}
+             */
+            finishReason: "stop" | "tool_calls" | "ask_user";
+            /**
+             * Status
+             * @default success
+             * @constant
+             */
+            status: "success";
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Toolcalls */
+            toolCalls?: components["schemas"]["AgentToolCallPayload"][];
         };
         /** AppSettingsPatch */
         AppSettingsPatch: {
@@ -2242,6 +2375,48 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    route_agent_turn_api_agent_turn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTurnResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
     route_hf_callback_api_auth_huggingface_callback_get: {
         parameters: {
             query?: {

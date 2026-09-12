@@ -1200,3 +1200,69 @@ class GeminiModelsResponsePayload(BaseModel):
     model_config = ConfigDict(strict=True)
     models: list[GeminiModelOptionPayload]
     resolvedModel: str
+
+
+class AgentToolCallPayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    id: str
+    name: str
+    arguments: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class AgentAskUserQuestionPayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    id: str
+    prompt: str
+    kind: Literal["choice", "text"]
+    options: list[str] | None = None
+    allowMultiple: bool = False
+
+
+class AgentMessagePartPayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    type: Literal["text", "inline_image", "tool_call", "tool_result"]
+    text: str | None = None
+    mimeType: str | None = None
+    data: str | None = None
+    toolCallId: str | None = None
+    toolName: str | None = None
+    arguments: dict[str, JsonValue] | None = None
+    result: dict[str, JsonValue] | None = None
+
+
+class AgentMessagePayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    role: Literal["user", "assistant", "tool"]
+    parts: list[AgentMessagePartPayload]
+
+
+class AgentToolDeclarationPayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    name: str
+    description: str
+    parameters: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class AgentTurnRequest(BaseModel):
+    model_config = ConfigDict(strict=True)
+    messages: list[AgentMessagePayload]
+    projectContext: dict[str, JsonValue] = Field(default_factory=dict)
+    availableTools: list[AgentToolDeclarationPayload] = Field(default_factory=list[AgentToolDeclarationPayload])
+    skills: str | None = None
+    model: str | None = None
+
+    @field_validator("messages")
+    @classmethod
+    def _require_messages(cls, value: list[AgentMessagePayload]) -> list[AgentMessagePayload]:
+        if not value:
+            raise ValueError("messages must not be empty")
+        return value
+
+
+class AgentTurnResponse(BaseModel):
+    model_config = ConfigDict(strict=True)
+    status: Literal["success"] = "success"
+    text: str = ""
+    toolCalls: list[AgentToolCallPayload] = Field(default_factory=list[AgentToolCallPayload])
+    askUser: list[AgentAskUserQuestionPayload] | None = None
+    finishReason: Literal["stop", "tool_calls", "ask_user"] = "stop"

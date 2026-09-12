@@ -409,7 +409,73 @@ def _is_invalid_api_key_error(response: HttpResponseLike) -> bool:
     return False
 
 
-def call_gemini_generate_content(
+@dataclass(frozen=True, slots=True)
+class GeminiFunctionCall:
+    name: str
+    args: dict[str, JSONValue]
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiTurnResult:
+    text: str
+    function_calls: tuple[GeminiFunctionCall, ...]
+
+
+def _as_json_object(value: object) -> dict[str, JSONValue]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, JSONValue] = {}
+    for key, item in cast(dict[object, object], value).items():
+        if isinstance(key, str):
+            result[key] = cast(JSONValue, item)
+    return result
+
+
+def parse_gemini_turn_payload(payload: object) -> GeminiTurnResult:
+    """Parse text and functionCall parts from a generateContent payload.
+
+    Empty text is allowed when the model only issued tool calls. Thought parts are skipped.
+    """
+    _raise_if_blocked(payload)
+    if not isinstance(payload, dict):
+        raise HTTPError(500, "GEMINI_PARSE_ERROR")
+    payload_dict = cast(dict[str, object], payload)
+    candidates = payload_dict.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise HTTPError(500, "GEMINI_PARSE_ERROR")
+    first = cast(list[object], candidates)[0]
+    if not isinstance(first, dict):
+        raise HTTPError(500, "GEMINI_PARSE_ERROR")
+    content = cast(dict[str, object], first).get("content")
+    if not isinstance(content, dict):
+        return GeminiTurnResult(text="", function_calls=())
+    parts = cast(dict[str, object], content).get("parts")
+    if not isinstance(parts, list):
+        return GeminiTurnResult(text="", function_calls=())
+
+    text_chunks: list[str] = []
+    calls: list[GeminiFunctionCall] = []
+    for part in cast(list[object], parts):
+        if not isinstance(part, dict):
+            continue
+        part_dict = cast(dict[str, object], part)
+        if part_dict.get("thought"):
+            continue
+        text = part_dict.get("text")
+        if isinstance(text, str) and text:
+            text_chunks.append(text)
+        function_call = part_dict.get("functionCall")
+        if not isinstance(function_call, dict):
+            continue
+        function_fields = cast(dict[str, object], function_call)
+        name = function_fields.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        calls.append(GeminiFunctionCall(name=name.strip(), args=_as_json_object(function_fields.get("args"))))
+    return GeminiTurnResult(text="".join(text_chunks).strip(), function_calls=tuple(calls))
+
+
+def _post_gemini_generate_content(
     http: HTTPClient,
     *,
     api_key: str,
@@ -417,14 +483,16 @@ def call_gemini_generate_content(
     contents: list[JSONValue],
     system_instruction: str | None = None,
     generation_config: dict[str, JSONValue] | None = None,
+    tools: list[JSONValue] | None = None,
     timeout: int = 30,
-) -> str:
-    """POST to Gemini's generateContent and return the first candidate's text, stripped."""
+) -> object:
     payload: dict[str, JSONValue] = {"contents": contents}
     if system_instruction is not None:
         payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
     if generation_config is not None:
         payload["generationConfig"] = generation_config
+    if tools is not None:
+        payload["tools"] = tools
 
     try:
         response = http.post(
@@ -444,11 +512,58 @@ def call_gemini_generate_content(
                 code="GEMINI_INVALID_API_KEY",
             )
         raise HTTPError(response.status_code, f"Gemini API error: {response.text}")
+    return response.json()
 
-    text = extract_gemini_text(response.json()).strip()
+
+def call_gemini_generate_content(
+    http: HTTPClient,
+    *,
+    api_key: str,
+    model: str,
+    contents: list[JSONValue],
+    system_instruction: str | None = None,
+    generation_config: dict[str, JSONValue] | None = None,
+    timeout: int = 30,
+) -> str:
+    """POST to Gemini's generateContent and return the first candidate's text, stripped."""
+    payload = _post_gemini_generate_content(
+        http,
+        api_key=api_key,
+        model=model,
+        contents=contents,
+        system_instruction=system_instruction,
+        generation_config=generation_config,
+        timeout=timeout,
+    )
+    text = extract_gemini_text(payload).strip()
     if not text:
         # Whitespace-only/empty text is a valid, non-blocked candidate as far as the schema is
         # concerned — but handing it back as `enhancedPrompt` would silently wipe the user's
         # prompt on what looks like a "success" response.
         raise HTTPError(500, "Gemini returned an empty response", code="GEMINI_EMPTY_RESPONSE")
     return text
+
+
+def call_gemini_generate_content_turn(
+    http: HTTPClient,
+    *,
+    api_key: str,
+    model: str,
+    contents: list[JSONValue],
+    system_instruction: str | None = None,
+    generation_config: dict[str, JSONValue] | None = None,
+    tools: list[JSONValue] | None = None,
+    timeout: int = 60,
+) -> GeminiTurnResult:
+    """POST to Gemini generateContent and return text plus any function calls."""
+    payload = _post_gemini_generate_content(
+        http,
+        api_key=api_key,
+        model=model,
+        contents=contents,
+        system_instruction=system_instruction,
+        generation_config=generation_config,
+        tools=tools,
+        timeout=timeout,
+    )
+    return parse_gemini_turn_payload(payload)

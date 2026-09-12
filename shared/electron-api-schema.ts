@@ -369,6 +369,29 @@ export const electronAPISchemas = {
     input: z.object({ enabled: z.boolean() }),
     output: emptyResult,
   },
+
+  listProjectChatSessions: {
+    input: z.object({ projectId: z.string() }),
+    output: ipcResult({
+      sessions: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        updatedAt: z.number(),
+      })),
+    }),
+  },
+  readProjectChatSession: {
+    input: z.object({ projectId: z.string(), sessionId: z.string() }),
+    output: ipcResult({ data: z.string() }),
+  },
+  writeProjectChatSession: {
+    input: z.object({ projectId: z.string(), sessionId: z.string(), data: z.string() }),
+    output: ipcResult({ path: z.string() }),
+  },
+  deleteProjectChatSession: {
+    input: z.object({ projectId: z.string(), sessionId: z.string() }),
+    output: emptyResult,
+  },
 } as const
 
 type Schemas = typeof electronAPISchemas

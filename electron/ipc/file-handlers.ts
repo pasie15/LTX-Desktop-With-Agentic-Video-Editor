@@ -407,4 +407,85 @@ export function registerFileHandlers(): void {
     return result.filePaths
   })
 
+  const CHAT_SESSION_ID = /^[A-Za-z0-9_-]+$/
+
+  function chatDirForProject(projectId: string): string {
+    if (!projectId.trim() || projectId.includes('..') || /[\\/]/.test(projectId)) {
+      throw new Error('Invalid project id')
+    }
+    return path.join(getProjectAssetsPath(), projectId, 'chat')
+  }
+
+  function chatFilePath(projectId: string, sessionId: string): string {
+    if (!CHAT_SESSION_ID.test(sessionId)) {
+      throw new Error('Invalid chat session id')
+    }
+    const filePath = path.join(chatDirForProject(projectId), `${sessionId}.json`)
+    return validatePath(filePath, getAllowedRoots())
+  }
+
+  handle('listProjectChatSessions', ({ projectId }) => {
+    try {
+      const dir = chatDirForProject(projectId)
+      if (!fs.existsSync(dir)) return { success: true as const, sessions: [] }
+      const sessions = fs.readdirSync(dir)
+        .filter(name => name.endsWith('.json'))
+        .map(name => {
+          try {
+            const raw = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf-8')) as {
+              id?: string
+              title?: string
+              updatedAt?: number
+            }
+            const id = typeof raw.id === 'string' ? raw.id : path.basename(name, '.json')
+            return {
+              id,
+              title: typeof raw.title === 'string' ? raw.title : 'New chat',
+              updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : 0,
+            }
+          } catch {
+            return null
+          }
+        })
+        .filter((item): item is { id: string; title: string; updatedAt: number } => item != null)
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+      return { success: true as const, sessions }
+    } catch (error) {
+      return { success: false as const, error: String(error) }
+    }
+  })
+
+  handle('readProjectChatSession', ({ projectId, sessionId }) => {
+    try {
+      const filePath = chatFilePath(projectId, sessionId)
+      if (!fs.existsSync(filePath)) {
+        return { success: false as const, error: 'Chat session not found' }
+      }
+      return { success: true as const, data: fs.readFileSync(filePath, 'utf-8') }
+    } catch (error) {
+      return { success: false as const, error: String(error) }
+    }
+  })
+
+  handle('writeProjectChatSession', ({ projectId, sessionId, data }) => {
+    try {
+      const filePath = chatFilePath(projectId, sessionId)
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, data, 'utf-8')
+      return { success: true as const, path: filePath }
+    } catch (error) {
+      return { success: false as const, error: String(error) }
+    }
+  })
+
+  handle('deleteProjectChatSession', ({ projectId, sessionId }) => {
+    try {
+      const filePath = chatFilePath(projectId, sessionId)
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+      return { success: true as const }
+    } catch (error) {
+      return { success: false as const, error: String(error) }
+    }
+  })
+
 }

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from state.app_settings import AppSettings
 from handlers import (
+    AgentHandler,
     DownloadHandler,
     GenerationHandler,
     HealthHandler,
@@ -217,6 +218,13 @@ class AppHandler:
         self.runtime_policy = RuntimePolicyHandler(config=config)
 
         self.suggest_gap_prompt = SuggestGapPromptHandler(
+            state=self.state,
+            lock=self._lock,
+            config=config,
+            http=http,
+        )
+
+        self.agent = AgentHandler(
             state=self.state,
             lock=self._lock,
             config=config,

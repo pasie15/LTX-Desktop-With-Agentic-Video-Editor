@@ -23,6 +23,7 @@ from _routes.lora_catalog import router as lora_catalog_router
 from _routes.image_gen import router as image_gen_router
 from _routes.prompt_enhancement import router as prompt_enhancement_router
 from _routes.models import router as models_router
+from _routes.agent import router as agent_router
 from _routes.suggest_gap_prompt import router as suggest_gap_prompt_router
 from _routes.retake import router as retake_router
 from _routes.extend import router as extend_router
@@ -160,6 +161,7 @@ def create_app(
     app.include_router(settings_router)
     app.include_router(image_gen_router)
     app.include_router(suggest_gap_prompt_router)
+    app.include_router(agent_router)
     app.include_router(retake_router)
     app.include_router(extend_router)
     app.include_router(ic_lora_router)
