@@ -9,6 +9,23 @@ from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator
 
 from api_types import LTXLocalModelId
 
+AgentLlmProviderKind = Literal[
+    "gemini",
+    "openai",
+    "anthropic",
+    "openrouter",
+    "zai",
+    "minimax",
+    "moonshot",
+    "groq",
+    "deepseek",
+    "custom_openai",
+    "custom_anthropic",
+]
+
+BUILTIN_GEMINI_PROVIDER_ID = "gemini"
+CUSTOM_AGENT_LLM_KINDS = ("custom_openai", "custom_anthropic")
+
 
 def _to_camel_case(field_name: str) -> str:
     special_aliases = {
@@ -48,6 +65,31 @@ class SettingsPatchModel(SettingsBaseModel):
     )
 
 
+class AgentLlmProviderSettings(SettingsBaseModel):
+    id: str
+    kind: AgentLlmProviderKind
+    label: str = ""
+    api_key: str = ""
+    model: str = ""
+    base_url: str = ""
+
+    @field_validator("id", "label", "api_key", "model", "base_url", mode="before")
+    @classmethod
+    def _strip_strings(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class AgentLlmProviderPublic(SettingsBaseModel):
+    id: str
+    kind: AgentLlmProviderKind
+    label: str = ""
+    has_api_key: bool = False
+    model: str = ""
+    base_url: str = ""
+
+
 class AppSettings(SettingsBaseModel):
     use_torch_compile: bool = False
     diffusion_stage_cache_enabled: bool = False
@@ -68,6 +110,10 @@ class AppSettings(SettingsBaseModel):
     # Empty string means "use DEFAULT_GEMINI_MODEL at generate time" — unlike API keys, an
     # empty patch is persisted so the user can reset to the default without a tombstone value.
     gemini_model: str = ""
+    # Selected Agent chat provider. Empty or "gemini" uses the built-in Gemini key/model
+    # already stored above. Other ids must match an entry in agent_llm_providers.
+    agent_llm_provider_id: str = ""
+    agent_llm_providers: list[AgentLlmProviderSettings] = Field(default_factory=list)
     seed_locked: bool = False
     locked_seed: int = 42
     models_dir: str = ""
@@ -144,6 +190,9 @@ class SettingsResponse(SettingsBaseModel):
     prompt_enhancer_provider_preference: Literal["local", "api"] | None = None
     has_gemini_api_key: bool = False
     gemini_model: str = ""
+    has_agent_llm_key: bool = False
+    agent_llm_provider_id: str = ""
+    agent_llm_providers: list[AgentLlmProviderPublic] = Field(default_factory=list)
     seed_locked: bool = False
     locked_seed: int = 42
     models_dir: str = ""
@@ -158,15 +207,55 @@ def resolved_use_conv_vae(settings: AppSettings) -> bool:
     return sys.platform == "darwin"
 
 
+def selected_agent_llm_provider(settings: AppSettings) -> AgentLlmProviderSettings | None:
+    selected = settings.agent_llm_provider_id.strip()
+    if not selected:
+        return None
+    for provider in settings.agent_llm_providers:
+        if provider.id == selected:
+            return provider
+    return None
+
+
+def has_usable_agent_llm_key(settings: AppSettings) -> bool:
+    provider = selected_agent_llm_provider(settings)
+    if provider is None:
+        return bool(settings.gemini_api_key.strip())
+    if provider.kind == "gemini":
+        return bool(provider.api_key.strip() or settings.gemini_api_key.strip())
+    if provider.kind in CUSTOM_AGENT_LLM_KINDS:
+        return bool(provider.api_key.strip() and provider.base_url.strip() and provider.model.strip())
+    return bool(provider.api_key.strip())
+
+
 def to_settings_response(settings: AppSettings) -> SettingsResponse:
     data = settings.model_dump(by_alias=False)
     ltx_key = data.pop("ltx_api_key", "")
     fal_key = data.pop("fal_api_key", "")
     gemini_key = data.pop("gemini_api_key", "")
+    providers = data.pop("agent_llm_providers", [])
     data["has_ltx_api_key"] = bool(ltx_key)
     data["has_fal_api_key"] = bool(fal_key)
     data["has_gemini_api_key"] = bool(gemini_key)
+    data["has_agent_llm_key"] = has_usable_agent_llm_key(settings)
     data["use_conv_vae"] = resolved_use_conv_vae(settings)
+    public_providers: list[dict[str, object]] = []
+    if isinstance(providers, list):
+        for item in cast(list[object], providers):
+            if not isinstance(item, dict):
+                continue
+            fields = cast(dict[str, object], item)
+            public_providers.append(
+                {
+                    "id": fields.get("id", ""),
+                    "kind": fields.get("kind", "openai"),
+                    "label": fields.get("label", ""),
+                    "has_api_key": bool(fields.get("api_key")),
+                    "model": fields.get("model", ""),
+                    "base_url": fields.get("base_url", ""),
+                }
+            )
+    data["agent_llm_providers"] = public_providers
     return SettingsResponse.model_validate(data)
 
 

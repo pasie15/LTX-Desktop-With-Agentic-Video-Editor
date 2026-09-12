@@ -215,3 +215,140 @@ def test_invalid_api_key(client, test_state):
     response = client.post("/api/agent/turn", json=_turn_body())
     assert response.status_code == 400
     assert response.json()["code"] == "GEMINI_INVALID_API_KEY"
+
+
+def test_openai_provider_turn(client, test_state):
+    from state.app_settings import AgentLlmProviderSettings
+
+    test_state.state.app_settings.gemini_api_key = "unused-gemini"
+    test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(id="prov_oai", kind="openai", api_key="sk-test", model="gpt-4o"),
+    ]
+    test_state.http.queue(
+        "post",
+        FakeResponse(
+            status_code=200,
+            json_payload={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Two clips on V1.",
+                        }
+                    }
+                ]
+            },
+        ),
+    )
+
+    response = client.post("/api/agent/turn", json=_turn_body())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["text"] == "Two clips on V1."
+    assert payload["finishReason"] == "stop"
+
+    call = test_state.http.calls[-1]
+    assert call.url == "https://api.openai.com/v1/chat/completions"
+    assert call.headers is not None
+    assert call.headers["Authorization"] == "Bearer sk-test"
+    sent = call.json_payload
+    assert sent is not None
+    assert sent["model"] == "gpt-4o"
+    assert sent["messages"][0]["role"] == "system"
+    assert "Answer from the snapshot" in sent["messages"][0]["content"]
+    assert sent["tools"][0]["function"]["name"] in {"get_timeline", "ask_user"}
+
+
+def test_anthropic_provider_tool_turn(client, test_state):
+    from state.app_settings import AgentLlmProviderSettings
+
+    test_state.state.app_settings.agent_llm_provider_id = "prov_ant"
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(
+            id="prov_ant",
+            kind="anthropic",
+            api_key="ant-key",
+            model="claude-sonnet-4-5",
+        ),
+    ]
+    test_state.http.queue(
+        "post",
+        FakeResponse(
+            status_code=200,
+            json_payload={
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_abc",
+                        "name": "get_timeline",
+                        "input": {"start": 0, "end": 8},
+                    }
+                ]
+            },
+        ),
+    )
+
+    response = client.post("/api/agent/turn", json=_turn_body())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["finishReason"] == "tool_calls"
+    assert payload["toolCalls"][0]["id"] == "toolu_abc"
+    assert payload["toolCalls"][0]["name"] == "get_timeline"
+    assert payload["toolCalls"][0]["arguments"] == {"start": 0, "end": 8}
+
+    call = test_state.http.calls[-1]
+    assert call.url == "https://api.anthropic.com/v1/messages"
+    assert call.headers is not None
+    assert call.headers["x-api-key"] == "ant-key"
+    sent = call.json_payload
+    assert sent is not None
+    assert sent["model"] == "claude-sonnet-4-5"
+    assert sent["tools"][0]["name"] in {"get_timeline", "ask_user"}
+
+
+def test_selected_provider_missing_key_returns_400(client, test_state):
+    from state.app_settings import AgentLlmProviderSettings
+
+    test_state.state.app_settings.gemini_api_key = "g-key"
+    test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(id="prov_oai", kind="openai", api_key="", model="gpt-4o"),
+    ]
+    response = client.post("/api/agent/turn", json=_turn_body())
+    assert response.status_code == 400
+    assert response.json()["code"] == "AGENT_LLM_KEY_MISSING"
+
+
+def test_openai_invalid_api_key(client, test_state):
+    from state.app_settings import AgentLlmProviderSettings
+
+    test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(id="prov_oai", kind="openai", api_key="bad", model="gpt-4o"),
+    ]
+    test_state.http.queue(
+        "post",
+        FakeResponse(
+            status_code=401,
+            json_payload={"error": {"message": "Incorrect API key", "type": "invalid_request_error"}},
+        ),
+    )
+    response = client.post("/api/agent/turn", json=_turn_body())
+    assert response.status_code == 401
+    assert response.json()["code"] == "AGENT_LLM_INVALID_API_KEY"
+
+
+def test_openrouter_uses_catalog_base_url(client, test_state):
+    from state.app_settings import AgentLlmProviderSettings
+
+    test_state.state.app_settings.agent_llm_provider_id = "prov_or"
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(id="prov_or", kind="openrouter", api_key="or-key", model="openai/gpt-4o"),
+    ]
+    test_state.http.queue("post", FakeResponse(status_code=200, json_payload={"choices": [{"message": {"content": "ok"}}]}))
+    response = client.post("/api/agent/turn", json=_turn_body())
+    assert response.status_code == 200
+    call = test_state.http.calls[-1]
+    assert call.url == "https://openrouter.ai/api/v1/chat/completions"
+    assert call.headers is not None
+    assert call.headers["X-Title"] == "LTX Desktop"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from threading import RLock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from api_types import GeminiModelsResponsePayload, LTXLocalModelId
 from _routes._errors import HTTPError
@@ -18,6 +18,7 @@ from handlers._settings_utils import (
     strip_none_values,
 )
 from handlers.base import StateHandlerBase, with_state_lock
+from services.agent_llm import merge_agent_llm_providers
 from services.gemini_text_client import (
     is_text_to_text_gemini_model,
     list_gemini_generate_content_models,
@@ -84,6 +85,13 @@ class SettingsHandler(StateHandlerBase):
         for key_field in ("ltx_api_key", "gemini_api_key", "fal_api_key"):
             if key_field in patch_payload and patch_payload[key_field] == "":
                 del patch_payload[key_field]
+        if "agent_llm_providers" in patch_payload:
+            incoming = patch_payload.get("agent_llm_providers")
+            if isinstance(incoming, list):
+                patch_payload["agent_llm_providers"] = merge_agent_llm_providers(
+                    self.state.app_settings.agent_llm_providers,
+                    cast(list[object], incoming),
+                )
         # Empty gemini_model is kept: it means "use DEFAULT_GEMINI_MODEL", not "leave unchanged".
         # Image/audio/video generators cannot enhance a prompt — persist them as "use default"
         # so a leftover Nano Banana setting cannot round-trip back into the picker.

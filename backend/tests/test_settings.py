@@ -39,6 +39,9 @@ class TestGetSettings:
         assert data["promptEnhancerEnabledI2V"] is False
         assert data["hasGeminiApiKey"] is False
         assert data["geminiModel"] == ""
+        assert data["hasAgentLlmKey"] is False
+        assert data["agentLlmProviderId"] == ""
+        assert data["agentLlmProviders"] == []
         assert data["seedLocked"] is False
         assert data["lockedSeed"] == 42
         assert data["useConvVae"] is resolved_use_conv_vae(AppSettings())
@@ -50,6 +53,7 @@ class TestGetSettings:
         assert "ltxApiKey" not in data
         assert "falApiKey" not in data
         assert "geminiApiKey" not in data
+        assert "apiKey" not in str(data.get("agentLlmProviders"))
 
     def test_reflects_changed_settings(self, client, test_state):
         test_state.state.app_settings.use_torch_compile = True
@@ -341,6 +345,76 @@ class TestSettingsPersistence:
 
         loaded = self._new_state(test_state, default_app_settings)
         assert loaded.state.app_settings.gemini_model == "gemini-2.0-flash"
+
+    def test_agent_llm_providers_persist_and_redact_keys(self, client, test_state, default_app_settings):
+        r = client.post(
+            "/api/settings",
+            json={
+                "agentLlmProviderId": "prov_oai",
+                "agentLlmProviders": [
+                    {
+                        "id": "prov_oai",
+                        "kind": "openai",
+                        "label": "Work",
+                        "apiKey": "sk-secret",
+                        "model": "gpt-4o",
+                        "baseUrl": "",
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 200
+        stored = test_state.state.app_settings.agent_llm_providers
+        assert len(stored) == 1
+        assert stored[0].api_key == "sk-secret"
+        assert test_state.state.app_settings.agent_llm_provider_id == "prov_oai"
+
+        public = client.get("/api/settings").json()
+        assert public["hasAgentLlmKey"] is True
+        assert public["agentLlmProviderId"] == "prov_oai"
+        assert public["agentLlmProviders"][0]["hasApiKey"] is True
+        assert public["agentLlmProviders"][0]["model"] == "gpt-4o"
+        assert "apiKey" not in public["agentLlmProviders"][0]
+        assert "sk-secret" not in str(public)
+
+        loaded = self._new_state(test_state, default_app_settings)
+        assert loaded.state.app_settings.agent_llm_providers[0].api_key == "sk-secret"
+
+    def test_empty_agent_llm_provider_key_does_not_erase(self, client, test_state):
+        r = client.post(
+            "/api/settings",
+            json={
+                "agentLlmProviderId": "prov_oai",
+                "agentLlmProviders": [
+                    {
+                        "id": "prov_oai",
+                        "kind": "openai",
+                        "label": "Work",
+                        "apiKey": "sk-keep",
+                        "model": "gpt-4o",
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 200
+        r = client.post(
+            "/api/settings",
+            json={
+                "agentLlmProviders": [
+                    {
+                        "id": "prov_oai",
+                        "kind": "openai",
+                        "label": "Work",
+                        "apiKey": "",
+                        "model": "gpt-4.1",
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 200
+        stored = test_state.state.app_settings.agent_llm_providers[0]
+        assert stored.api_key == "sk-keep"
+        assert stored.model == "gpt-4.1"
 
 
 class TestSettingsSchemaDrift:

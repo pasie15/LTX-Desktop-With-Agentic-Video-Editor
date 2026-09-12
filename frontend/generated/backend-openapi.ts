@@ -771,6 +771,66 @@ export interface components {
             /** Prompt */
             prompt: string;
         };
+        /** AgentLlmProviderPublic */
+        AgentLlmProviderPublic: {
+            /**
+             * Baseurl
+             * @default
+             */
+            baseUrl: string;
+            /**
+             * Hasapikey
+             * @default false
+             */
+            hasApiKey: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "gemini" | "openai" | "anthropic" | "openrouter" | "zai" | "minimax" | "moonshot" | "groq" | "deepseek" | "custom_openai" | "custom_anthropic";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+        };
+        /** AgentLlmProviderSettings */
+        AgentLlmProviderSettings: {
+            /**
+             * Apikey
+             * @default
+             */
+            apiKey: string;
+            /**
+             * Baseurl
+             * @default
+             */
+            baseUrl: string;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "gemini" | "openai" | "anthropic" | "openrouter" | "zai" | "minimax" | "moonshot" | "groq" | "deepseek" | "custom_openai" | "custom_anthropic";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+        };
         /** AgentMessagePartPayload */
         AgentMessagePartPayload: {
             /** Arguments */
@@ -872,6 +932,10 @@ export interface components {
         AppSettingsPatch: {
             /** Activeltxmodelid */
             activeLtxModelId?: ("ltx-2.5-22b-distilled" | "ltx-2.3-22b-distilled-1.1" | "ltx-2.3-22b-distilled") | null;
+            /** Agentllmproviderid */
+            agentLlmProviderId?: string | null;
+            /** Agentllmproviders */
+            agentLlmProviders?: components["schemas"]["AgentLlmProviderSettings"][] | null;
             /** Diffusionstagecacheenabled */
             diffusionStageCacheEnabled?: boolean | null;
             /** Falapikey */
@@ -2206,6 +2270,13 @@ export interface components {
             /** Activeltxmodelid */
             activeLtxModelId?: ("ltx-2.5-22b-distilled" | "ltx-2.3-22b-distilled-1.1" | "ltx-2.3-22b-distilled") | null;
             /**
+             * Agentllmproviderid
+             * @default
+             */
+            agentLlmProviderId: string;
+            /** Agentllmproviders */
+            agentLlmProviders?: components["schemas"]["AgentLlmProviderPublic"][];
+            /**
              * Diffusionstagecacheenabled
              * @default false
              */
@@ -2215,6 +2286,11 @@ export interface components {
              * @default
              */
             geminiModel: string;
+            /**
+             * Hasagentllmkey
+             * @default false
+             */
+            hasAgentLlmKey: boolean;
             /**
              * Hasfalapikey
              * @default false

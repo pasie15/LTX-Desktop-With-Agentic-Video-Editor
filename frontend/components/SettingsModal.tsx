@@ -2,6 +2,7 @@ import { AlertCircle, Check, Download, Film, Folder, HardDrive, Info, KeyRound, 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from './ui/button'
 import { BaseModelSection } from './settings/BaseModelSection'
+import { AgentLlmSettingsSection } from './settings/AgentLlmSettingsSection'
 import { useAppSettings, type AppSettings, DEFAULT_GEMINI_MODEL } from '../contexts/AppSettingsContext'
 import { ApiClient, type ApiSuccessOf } from '../lib/api-client'
 import { logger } from '../lib/logger'
@@ -12,7 +13,7 @@ import { useHfModelAccess } from '../hooks/use-hf-model-access'
 import type { AppUpdate } from '../hooks/use-app-update'
 import type { UpdateStatePayload } from '../../shared/electron-api-schema'
 
-export type SettingsInitialReason = 'geminiKeyRequired'
+export type SettingsInitialReason = 'geminiKeyRequired' | 'agentLlmKeyRequired'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -218,13 +219,16 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
   const [activeTab, setActiveTab] = useState<TabId>('general')
   const tabBodyRef = useRef<HTMLDivElement>(null)
   const geminiSectionRef = useRef<HTMLDivElement>(null)
+  const agentLlmSectionRef = useRef<HTMLDivElement>(null)
   const ltxApiKey = useApiKeyFocus(isOpen, activeTab, setActiveTab)
   const falApiKey = useApiKeyFocus(isOpen, activeTab, setActiveTab)
   const geminiApiKey = useApiKeyFocus(isOpen, activeTab, setActiveTab, geminiSectionRef, tabBodyRef)
+  const agentLlmKey = useApiKeyFocus(isOpen, activeTab, setActiveTab, agentLlmSectionRef, tabBodyRef)
   const [ltxApiKeyInput, setLtxApiKeyInput] = useState('')
   const [falApiKeyInput, setFalApiKeyInput] = useState('')
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('')
   const showGeminiKeyBanner = initialReason === 'geminiKeyRequired'
+  const showAgentLlmKeyBanner = initialReason === 'agentLlmKeyRequired'
   const [geminiModelOptions, setGeminiModelOptions] = useState<GeminiModelOption[]>([])
   const [resolvedGeminiModel, setResolvedGeminiModel] = useState(DEFAULT_GEMINI_MODEL)
   const geminiModelSaveSeq = useRef(0)
@@ -281,6 +285,9 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
   useEffect(() => {
     if (isOpen && initialReason === 'geminiKeyRequired') {
       geminiApiKey.openAndFocus()
+    }
+    if (isOpen && initialReason === 'agentLlmKeyRequired') {
+      agentLlmKey.openAndFocus()
     }
   }, [isOpen, initialReason])
 
@@ -1253,7 +1260,7 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                 )}
 
                 <p className="text-xs text-zinc-500 leading-relaxed">
-                  Your Gemini API key is used for AI-powered prompt suggestions when filling timeline gaps, and for the Enhance (API) prompt enhancer.
+                  Your Gemini API key is used for AI-powered prompt suggestions when filling timeline gaps, and for the Enhance (API) prompt enhancer. Agent can also use it when Gemini is the selected Agent provider.
                 </p>
 
                 <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
@@ -1331,6 +1338,13 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                   </div>
                 </div>
               </div>
+
+              <AgentLlmSettingsSection
+                settings={settings}
+                sectionRef={agentLlmSectionRef}
+                showBanner={showAgentLlmKeyBanner}
+                onSaved={refreshSettings}
+              />
 
               {/* HuggingFace Account */}
               <div className="space-y-4">

@@ -72,7 +72,11 @@ function AppContent() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (detail?.tab) setSettingsInitialTab(detail.tab)
-      setSettingsInitialReason(detail?.reason === 'geminiKeyRequired' ? 'geminiKeyRequired' : undefined)
+      setSettingsInitialReason(
+        detail?.reason === 'geminiKeyRequired' || detail?.reason === 'agentLlmKeyRequired'
+          ? detail.reason
+          : undefined,
+      )
       setIsSettingsOpen(true)
     }
     window.addEventListener('open-settings', handler)

@@ -36,7 +36,7 @@ export interface UseAgentChatParams {
   generationBusy: boolean
   generationCanCancel: boolean
   currentModelLabel: string
-  hasGeminiApiKey: boolean
+  hasAgentLlmKey: boolean
   shouldVideoGenerateWithLtxApi: boolean
   shouldImageGenerateWithFalApi: boolean
 }
@@ -51,7 +51,7 @@ export function useAgentChat(params: UseAgentChatParams) {
     generationBusy,
     generationCanCancel,
     currentModelLabel,
-    hasGeminiApiKey,
+    hasAgentLlmKey,
     shouldVideoGenerateWithLtxApi,
     shouldImageGenerateWithFalApi,
   } = params
@@ -294,7 +294,7 @@ export function useAgentChat(params: UseAgentChatParams) {
     const content = text.trim()
     const attached = [...mentions, ...extraMentions]
     if (!content && attached.length === 0) return
-    if (!hasGeminiApiKey || !activeSession) return
+    if (!hasAgentLlmKey || !activeSession) return
 
     const mentionParts = await mentionPartsForMessage(
       attached,
@@ -321,7 +321,7 @@ export function useAgentChat(params: UseAgentChatParams) {
     setDraft('')
     setMentions([])
     await runLoop(seed)
-  }, [activeSession, assets, hasGeminiApiKey, mentions, replaceSession, runLoop])
+  }, [activeSession, assets, hasAgentLlmKey, mentions, replaceSession, runLoop])
 
   const answerAskUser = useCallback((answers: Record<string, string | string[]>) => {
     if (!activeSession) return

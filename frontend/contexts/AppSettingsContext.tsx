@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { resetBackendCredentials } from '../lib/backend'
 import { ApiClient, type ApiSuccessOf } from '../lib/api-client'
+import type { AgentLlmProviderPublic } from '../lib/agent-llm'
 
 export interface AppSettings {
   useTorchCompile: boolean
@@ -11,6 +12,9 @@ export interface AppSettings {
   userPrefersFalApiImageGenerations: boolean
   hasGeminiApiKey: boolean
   geminiModel: string
+  hasAgentLlmKey: boolean
+  agentLlmProviderId: string
+  agentLlmProviders: AgentLlmProviderPublic[]
   useLocalTextEncoder: boolean
   promptCacheSize: number
   promptEnhancerEnabledT2V: boolean
@@ -37,6 +41,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   userPrefersFalApiImageGenerations: false,
   hasGeminiApiKey: false,
   geminiModel: '',
+  hasAgentLlmKey: false,
+  agentLlmProviderId: '',
+  agentLlmProviders: [],
   useLocalTextEncoder: false,
   promptCacheSize: 1,
   promptEnhancerEnabledT2V: false,
@@ -94,6 +101,9 @@ function normalizeAppSettings(data: Partial<AppSettings>): AppSettings {
     userPrefersFalApiImageGenerations: data.userPrefersFalApiImageGenerations ?? DEFAULT_APP_SETTINGS.userPrefersFalApiImageGenerations,
     hasGeminiApiKey: data.hasGeminiApiKey ?? DEFAULT_APP_SETTINGS.hasGeminiApiKey,
     geminiModel: data.geminiModel ?? DEFAULT_APP_SETTINGS.geminiModel,
+    hasAgentLlmKey: data.hasAgentLlmKey ?? DEFAULT_APP_SETTINGS.hasAgentLlmKey,
+    agentLlmProviderId: data.agentLlmProviderId ?? DEFAULT_APP_SETTINGS.agentLlmProviderId,
+    agentLlmProviders: data.agentLlmProviders ?? DEFAULT_APP_SETTINGS.agentLlmProviders,
     useLocalTextEncoder: data.useLocalTextEncoder ?? DEFAULT_APP_SETTINGS.useLocalTextEncoder,
     promptCacheSize: data.promptCacheSize ?? DEFAULT_APP_SETTINGS.promptCacheSize,
     promptEnhancerEnabledT2V: data.promptEnhancerEnabledT2V ?? DEFAULT_APP_SETTINGS.promptEnhancerEnabledT2V,
@@ -249,7 +259,15 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isLoaded || backendProcessStatus !== 'alive') return
     const syncTimer = setTimeout(async () => {
-      const { hasLtxApiKey: _a, hasFalApiKey: _b, hasGeminiApiKey: _c, modelsDir: _d, ...syncPayload } = settings
+      const {
+        hasLtxApiKey: _a,
+        hasFalApiKey: _b,
+        hasGeminiApiKey: _c,
+        hasAgentLlmKey: _e,
+        modelsDir: _d,
+        agentLlmProviders: _f,
+        ...syncPayload
+      } = settings
       const result = await ApiClient.updateSettings(syncPayload)
       if (!result.ok) {
         // Best-effort settings sync.
