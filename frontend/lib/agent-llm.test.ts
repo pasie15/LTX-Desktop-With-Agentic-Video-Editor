@@ -11,9 +11,18 @@ import {
 describe('agent LLM catalog', () => {
   it('includes the requested Agent providers', () => {
     const kinds = AGENT_LLM_CATALOG.map(entry => entry.kind)
-    for (const kind of ['gemini', 'openai', 'anthropic', 'openrouter', 'zai', 'minimax', 'moonshot', 'custom_openai', 'custom_anthropic']) {
+    for (const kind of ['gemini', 'openai', 'anthropic', 'openrouter', 'zai', 'minimax', 'moonshot', 'xai', 'custom_openai', 'custom_anthropic']) {
       assert.ok(kinds.includes(kind as typeof kinds[number]), kind)
     }
+  })
+
+  it('marks Connect-capable providers', () => {
+    assert.equal(catalogEntry('openai').supportsConnect, true)
+    assert.equal(catalogEntry('anthropic').supportsConnect, true)
+    assert.equal(catalogEntry('minimax').supportsConnect, true)
+    assert.equal(catalogEntry('xai').supportsConnect, true)
+    assert.equal(catalogEntry('moonshot').supportsConnect, true)
+    assert.equal(catalogEntry('groq').supportsConnect, false)
   })
 
   it('marks custom endpoints as requiring a base URL', () => {

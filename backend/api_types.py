@@ -1266,3 +1266,45 @@ class AgentTurnResponse(BaseModel):
     toolCalls: list[AgentToolCallPayload] = Field(default_factory=list[AgentToolCallPayload])
     askUser: list[AgentAskUserQuestionPayload] | None = None
     finishReason: Literal["stop", "tool_calls", "ask_user"] = "stop"
+
+
+class AgentLlmOAuthStartRequest(BaseModel):
+    kind: str
+    providerId: str = ""
+
+
+class AgentLlmOAuthStartResponse(BaseModel):
+    sessionId: str
+    kind: str
+    flow: Literal["device", "code"]
+    authorizeUrl: str
+    userCode: str = ""
+    expiresIn: int
+    message: str = ""
+
+
+class AgentLlmOAuthPollRequest(BaseModel):
+    sessionId: str
+
+
+class AgentLlmOAuthPollResponse(BaseModel):
+    status: Literal["pending", "authenticated", "error", "expired"]
+    providerId: str = ""
+    error: str = ""
+
+
+class AgentLlmOAuthCompleteRequest(BaseModel):
+    sessionId: str
+    code: str
+
+
+class AgentLlmOAuthCancelRequest(BaseModel):
+    sessionId: str = ""
+
+
+class AgentLlmOAuthDisconnectRequest(BaseModel):
+    providerId: str
+
+
+class AgentLlmOAuthOkResponse(BaseModel):
+    status: Literal["ok"] = "ok"

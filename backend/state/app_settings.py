@@ -17,20 +17,25 @@ AgentLlmProviderKind = Literal[
     "zai",
     "minimax",
     "moonshot",
+    "xai",
     "groq",
     "deepseek",
     "custom_openai",
     "custom_anthropic",
 ]
 
+AgentLlmAuthMode = Literal["api_key", "oauth"]
+
 BUILTIN_GEMINI_PROVIDER_ID = "gemini"
 CUSTOM_AGENT_LLM_KINDS = ("custom_openai", "custom_anthropic")
+OAUTH_AGENT_LLM_KINDS = ("openai", "anthropic", "minimax", "xai", "moonshot")
 
 
 def _to_camel_case(field_name: str) -> str:
     special_aliases = {
         "prompt_enhancer_enabled_t2v": "promptEnhancerEnabledT2V",
         "prompt_enhancer_enabled_i2v": "promptEnhancerEnabledI2V",
+        "has_oauth": "hasOAuth",
     }
     if field_name in special_aliases:
         return special_aliases[field_name]
@@ -72,8 +77,25 @@ class AgentLlmProviderSettings(SettingsBaseModel):
     api_key: str = ""
     model: str = ""
     base_url: str = ""
+    auth_mode: AgentLlmAuthMode = "api_key"
+    oauth_access_token: str = ""
+    oauth_refresh_token: str = ""
+    oauth_expires_at: float = 0
+    oauth_account_id: str = ""
+    oauth_account_label: str = ""
 
-    @field_validator("id", "label", "api_key", "model", "base_url", mode="before")
+    @field_validator(
+        "id",
+        "label",
+        "api_key",
+        "model",
+        "base_url",
+        "oauth_access_token",
+        "oauth_refresh_token",
+        "oauth_account_id",
+        "oauth_account_label",
+        mode="before",
+    )
     @classmethod
     def _strip_strings(cls, value: Any) -> Any:
         if isinstance(value, str):
@@ -86,6 +108,8 @@ class AgentLlmProviderPublic(SettingsBaseModel):
     kind: AgentLlmProviderKind
     label: str = ""
     has_api_key: bool = False
+    has_oauth: bool = False
+    auth_mode: AgentLlmAuthMode = "api_key"
     model: str = ""
     base_url: str = ""
 
@@ -221,6 +245,14 @@ def selected_agent_llm_provider(settings: AppSettings) -> AgentLlmProviderSettin
     return None
 
 
+def provider_has_oauth(provider: AgentLlmProviderSettings) -> bool:
+    return bool(provider.oauth_access_token.strip())
+
+
+def provider_has_credential(provider: AgentLlmProviderSettings) -> bool:
+    return provider_has_oauth(provider) or bool(provider.api_key.strip())
+
+
 def has_usable_agent_llm_key(settings: AppSettings) -> bool:
     provider = selected_agent_llm_provider(settings)
     if provider is None:
@@ -229,7 +261,7 @@ def has_usable_agent_llm_key(settings: AppSettings) -> bool:
         return bool(provider.api_key.strip() or settings.gemini_api_key.strip())
     if provider.kind in CUSTOM_AGENT_LLM_KINDS:
         return bool(provider.api_key.strip() and provider.base_url.strip() and provider.model.strip())
-    return bool(provider.api_key.strip())
+    return provider_has_credential(provider)
 
 
 def to_settings_response(settings: AppSettings) -> SettingsResponse:
@@ -255,6 +287,8 @@ def to_settings_response(settings: AppSettings) -> SettingsResponse:
                     "kind": fields.get("kind", "openai"),
                     "label": fields.get("label", ""),
                     "has_api_key": bool(fields.get("api_key")),
+                    "has_oauth": bool(fields.get("oauth_access_token")),
+                    "auth_mode": fields.get("auth_mode") or "api_key",
                     "model": fields.get("model", ""),
                     "base_url": fields.get("base_url", ""),
                 }

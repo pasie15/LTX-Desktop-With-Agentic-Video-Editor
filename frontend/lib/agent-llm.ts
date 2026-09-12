@@ -8,16 +8,21 @@ export type AgentLlmProviderKind =
   | 'zai'
   | 'minimax'
   | 'moonshot'
+  | 'xai'
   | 'groq'
   | 'deepseek'
   | 'custom_openai'
   | 'custom_anthropic'
+
+export type AgentLlmAuthMode = 'api_key' | 'oauth'
 
 export interface AgentLlmProviderPublic {
   id: string
   kind: AgentLlmProviderKind
   label: string
   hasApiKey: boolean
+  hasOAuth: boolean
+  authMode: AgentLlmAuthMode
   model: string
   baseUrl: string
 }
@@ -29,6 +34,7 @@ export interface AgentLlmCatalogEntry {
   defaultBaseUrl: string
   keyUrl: string
   requiresBaseUrl: boolean
+  supportsConnect: boolean
 }
 
 export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
@@ -39,6 +45,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: '',
     keyUrl: 'https://aistudio.google.com/app/apikey',
     requiresBaseUrl: false,
+    supportsConnect: false,
   },
   {
     kind: 'openai',
@@ -47,6 +54,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.openai.com/v1',
     keyUrl: 'https://platform.openai.com/api-keys',
     requiresBaseUrl: false,
+    supportsConnect: true,
   },
   {
     kind: 'anthropic',
@@ -55,6 +63,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.anthropic.com',
     keyUrl: 'https://console.anthropic.com/settings/keys',
     requiresBaseUrl: false,
+    supportsConnect: true,
   },
   {
     kind: 'openrouter',
@@ -63,6 +72,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
     keyUrl: 'https://openrouter.ai/keys',
     requiresBaseUrl: false,
+    supportsConnect: false,
   },
   {
     kind: 'zai',
@@ -71,6 +81,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
     keyUrl: 'https://z.ai/manage-apikey/apikeys',
     requiresBaseUrl: false,
+    supportsConnect: false,
   },
   {
     kind: 'minimax',
@@ -79,6 +90,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.minimax.io/v1',
     keyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
     requiresBaseUrl: false,
+    supportsConnect: true,
   },
   {
     kind: 'moonshot',
@@ -87,6 +99,16 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.moonshot.ai/v1',
     keyUrl: 'https://platform.moonshot.ai/console/api-keys',
     requiresBaseUrl: false,
+    supportsConnect: true,
+  },
+  {
+    kind: 'xai',
+    label: 'xAI (Grok)',
+    defaultModel: 'grok-4',
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    keyUrl: 'https://console.x.ai/team/default/api-keys',
+    requiresBaseUrl: false,
+    supportsConnect: true,
   },
   {
     kind: 'groq',
@@ -95,6 +117,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.groq.com/openai/v1',
     keyUrl: 'https://console.groq.com/keys',
     requiresBaseUrl: false,
+    supportsConnect: false,
   },
   {
     kind: 'deepseek',
@@ -103,6 +126,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: 'https://api.deepseek.com',
     keyUrl: 'https://platform.deepseek.com/api_keys',
     requiresBaseUrl: false,
+    supportsConnect: false,
   },
   {
     kind: 'custom_openai',
@@ -111,6 +135,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: '',
     keyUrl: '',
     requiresBaseUrl: true,
+    supportsConnect: false,
   },
   {
     kind: 'custom_anthropic',
@@ -119,6 +144,7 @@ export const AGENT_LLM_CATALOG: readonly AgentLlmCatalogEntry[] = [
     defaultBaseUrl: '',
     keyUrl: '',
     requiresBaseUrl: true,
+    supportsConnect: false,
   },
 ]
 
@@ -141,6 +167,10 @@ export function catalogEntry(kind: AgentLlmProviderKind): AgentLlmCatalogEntry {
 
 export function providerDisplayLabel(provider: Pick<AgentLlmProviderPublic, 'kind' | 'label'>): string {
   return provider.label.trim() || catalogEntry(provider.kind).label
+}
+
+export function providerHasCredential(provider: AgentLlmProviderPublic): boolean {
+  return provider.hasOAuth || provider.hasApiKey || provider.kind === 'gemini'
 }
 
 export function isAgentLlmKeyError(code?: string): boolean {

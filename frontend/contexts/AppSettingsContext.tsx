@@ -103,7 +103,11 @@ function normalizeAppSettings(data: Partial<AppSettings>): AppSettings {
     geminiModel: data.geminiModel ?? DEFAULT_APP_SETTINGS.geminiModel,
     hasAgentLlmKey: data.hasAgentLlmKey ?? DEFAULT_APP_SETTINGS.hasAgentLlmKey,
     agentLlmProviderId: data.agentLlmProviderId ?? DEFAULT_APP_SETTINGS.agentLlmProviderId,
-    agentLlmProviders: data.agentLlmProviders ?? DEFAULT_APP_SETTINGS.agentLlmProviders,
+    agentLlmProviders: (data.agentLlmProviders ?? DEFAULT_APP_SETTINGS.agentLlmProviders).map(provider => ({
+      ...provider,
+      hasOAuth: provider.hasOAuth ?? false,
+      authMode: provider.authMode ?? 'api_key',
+    })),
     useLocalTextEncoder: data.useLocalTextEncoder ?? DEFAULT_APP_SETTINGS.useLocalTextEncoder,
     promptCacheSize: data.promptCacheSize ?? DEFAULT_APP_SETTINGS.promptCacheSize,
     promptEnhancerEnabledT2V: data.promptEnhancerEnabledT2V ?? DEFAULT_APP_SETTINGS.promptEnhancerEnabledT2V,

@@ -1,4 +1,4 @@
-import { AlertCircle, Check, MessageSquare, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, Check, Link2, MessageSquare, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState, type RefObject } from 'react'
 import { ApiClient } from '../../lib/api-client'
 import {
@@ -7,9 +7,11 @@ import {
   catalogEntry,
   createAgentLlmProviderId,
   providerDisplayLabel,
+  providerHasCredential,
   type AgentLlmProviderKind,
   type AgentLlmProviderPublic,
 } from '../../lib/agent-llm'
+import { useAgentLlmOAuth } from '../../hooks/use-agent-llm-oauth'
 import type { AppSettings } from '../../contexts/AppSettingsContext'
 
 interface AgentLlmSettingsSectionProps {
@@ -43,6 +45,12 @@ function toPublicPatch(providers: AgentLlmProviderPublic[]) {
     apiKey: '',
     model: provider.model,
     baseUrl: provider.baseUrl,
+    authMode: provider.authMode,
+    oauthAccessToken: '',
+    oauthRefreshToken: '',
+    oauthExpiresAt: 0,
+    oauthAccountId: '',
+    oauthAccountLabel: '',
   }))
 }
 
@@ -55,8 +63,15 @@ export function AgentLlmSettingsSection({
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState<DraftProvider>(emptyDraft)
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
+  const [pasteCode, setPasteCode] = useState('')
   const [busy, setBusy] = useState(false)
   const catalog = useMemo(() => catalogEntry(draft.kind), [draft.kind])
+  const oauth = useAgentLlmOAuth(async () => {
+    await onSaved()
+    setAdding(false)
+    setDraft(emptyDraft())
+    setPasteCode('')
+  })
 
   const selectedId = settings.agentLlmProviderId.trim() || BUILTIN_GEMINI_PROVIDER_ID
   const selectedProvider = settings.agentLlmProviders.find(provider => provider.id === selectedId)
@@ -93,6 +108,12 @@ export function AgentLlmSettingsSection({
       apiKey: draft.apiKey.trim(),
       model: draft.model.trim(),
       baseUrl: draft.baseUrl.trim(),
+      authMode: 'api_key' as const,
+      oauthAccessToken: '',
+      oauthRefreshToken: '',
+      oauthExpiresAt: 0,
+      oauthAccountId: '',
+      oauthAccountLabel: '',
     }
     await persist({
       agentLlmProviderId: next.id,
@@ -134,6 +155,8 @@ export function AgentLlmSettingsSection({
     })
   }
 
+  const connectTargetId = oauth.session?.providerId ?? ''
+
   return (
     <div ref={sectionRef} className="space-y-4 pt-4 border-t border-zinc-800 scroll-mt-2">
       <div className="flex items-center gap-2">
@@ -144,13 +167,15 @@ export function AgentLlmSettingsSection({
       {showBanner && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-          <span>Add an API key for the selected Agent provider to use chat.</span>
+          <span>Connect or add an API key for the selected Agent provider to use chat.</span>
         </div>
       )}
 
       <p className="text-xs text-zinc-500 leading-relaxed">
         The Video Editor Agent uses this provider for chat and tool calls. Gemini for Enhance and
-        gap suggestions stays above. Keys stay in Settings — they are never written into a project.
+        gap suggestions stays above. OpenAI, Anthropic, MiniMax, xAI, and Moonshot/Kimi can
+        Connect via the provider&apos;s real login. API keys and custom endpoints remain a fallback.
+        Credentials stay in Settings — they are never written into a project.
       </p>
 
       <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
@@ -169,7 +194,7 @@ export function AgentLlmSettingsSection({
             {settings.agentLlmProviders.map(provider => (
               <option key={provider.id} value={provider.id}>
                 {providerDisplayLabel(provider)}
-                {provider.hasApiKey || provider.kind === 'gemini' ? '' : ' — key required'}
+                {providerHasCredential(provider) ? (provider.hasOAuth ? ' — connected' : '') : ' — key or Connect required'}
               </option>
             ))}
           </select>
@@ -188,15 +213,20 @@ export function AgentLlmSettingsSection({
           ) : (
             <>
               <AlertCircle className="h-3 w-3" />
-              API key required for Agent
+              Connect or API key required for Agent
             </>
           )}
         </div>
+
+        {oauth.error ? (
+          <p className="text-xs text-amber-400">{oauth.error}</p>
+        ) : null}
 
         {settings.agentLlmProviders.length > 0 && (
           <ul className="space-y-3">
             {settings.agentLlmProviders.map(provider => {
               const entry = catalogEntry(provider.kind)
+              const waiting = oauth.connecting && connectTargetId === provider.id
               return (
                 <li key={provider.id} className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-3 space-y-2">
                   <div className="flex items-start justify-between gap-2">
@@ -225,12 +255,72 @@ export function AgentLlmSettingsSection({
                   {provider.baseUrl ? (
                     <p className="text-[11px] text-zinc-500 break-all">{provider.baseUrl}</p>
                   ) : null}
+                  {entry.supportsConnect ? (
+                    <div className="flex flex-wrap gap-2">
+                      {provider.hasOAuth ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-green-400">
+                          <Link2 className="h-3 w-3" />
+                          Connected
+                        </span>
+                      ) : null}
+                      {provider.hasOAuth ? (
+                        <button
+                          type="button"
+                          onClick={() => void oauth.disconnect(provider.id)}
+                          disabled={busy || oauth.connecting}
+                          className="px-3 py-1.5 bg-zinc-700 text-white text-xs rounded-lg hover:bg-zinc-600 disabled:opacity-50"
+                        >
+                          Disconnect
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void oauth.startConnect(provider.kind, provider.id)}
+                          disabled={busy || oauth.connecting}
+                          className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-500 disabled:opacity-50"
+                        >
+                          {waiting ? 'Waiting for sign in…' : 'Connect'}
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
+                  {waiting && oauth.session?.flow === 'code' ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={pasteCode}
+                        onChange={event => setPasteCode(event.target.value)}
+                        placeholder="Paste the code from the browser"
+                        onKeyDown={event => event.stopPropagation()}
+                        className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void oauth.completeCode(pasteCode)}
+                        disabled={!pasteCode.trim()}
+                        className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500"
+                      >
+                        Finish
+                      </button>
+                    </div>
+                  ) : null}
+                  {waiting && oauth.session?.userCode ? (
+                    <p className="text-[11px] text-zinc-400">
+                      Confirm this code in the browser: <span className="text-white">{oauth.session.userCode}</span>
+                    </p>
+                  ) : null}
                   <div className="flex gap-2">
                     <input
                       type="password"
                       value={keyInputs[provider.id] ?? ''}
                       onChange={event => setKeyInputs(current => ({ ...current, [provider.id]: event.target.value }))}
-                      placeholder={provider.hasApiKey ? 'Enter new key to replace...' : 'Enter API key...'}
+                      placeholder={
+                        provider.hasApiKey
+                          ? 'Enter new key to replace...'
+                          : entry.supportsConnect
+                            ? 'API key fallback (optional)'
+                            : 'Enter API key...'
+                      }
                       onKeyDown={event => event.stopPropagation()}
                       className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
                     />
@@ -279,6 +369,51 @@ export function AgentLlmSettingsSection({
               onKeyDown={event => event.stopPropagation()}
               className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
             />
+            {catalog.supportsConnect ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => void oauth.startConnect(draft.kind)}
+                  disabled={busy || oauth.connecting}
+                  className="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500"
+                >
+                  {oauth.connecting && !connectTargetId ? 'Waiting for sign in…' : `Connect ${catalog.label}`}
+                </button>
+                {oauth.connecting && !connectTargetId && oauth.session?.flow === 'code' ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={pasteCode}
+                      onChange={event => setPasteCode(event.target.value)}
+                      placeholder="Paste the code from the browser"
+                      onKeyDown={event => event.stopPropagation()}
+                      className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await oauth.completeCode(pasteCode)
+                        if (ok) {
+                          setAdding(false)
+                          setDraft(emptyDraft())
+                          setPasteCode('')
+                        }
+                      }}
+                      disabled={!pasteCode.trim()}
+                      className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500"
+                    >
+                      Finish
+                    </button>
+                  </div>
+                ) : null}
+                {oauth.connecting && !connectTargetId && oauth.session?.userCode ? (
+                  <p className="text-[11px] text-zinc-400">
+                    Confirm this code in the browser: <span className="text-white">{oauth.session.userCode}</span>
+                  </p>
+                ) : null}
+                <p className="text-[11px] text-zinc-500">Or paste an API key as a fallback.</p>
+              </div>
+            ) : null}
             <input
               type="password"
               value={draft.apiKey}
@@ -330,6 +465,7 @@ export function AgentLlmSettingsSection({
                 onClick={() => {
                   setAdding(false)
                   setDraft(emptyDraft())
+                  void oauth.cancel()
                 }}
                 className="px-3 py-2 bg-zinc-700 text-white text-sm rounded-lg hover:bg-zinc-600"
               >
