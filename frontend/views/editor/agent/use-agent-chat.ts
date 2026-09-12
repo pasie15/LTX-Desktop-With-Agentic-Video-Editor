@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Asset } from '../../../types/project-model'
 import type { EditorState, TimelineGapSelection } from '../editor-state'
 import { useEditorApply } from '../editor-store'
+import { addVisualAssetToProject } from '../../../lib/asset-copy'
 import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
+import { createAgentGenerationJobs } from './agent-generation-jobs'
 import { answersToUserMessage, runAgentLoop } from './agent-loop'
 import { mentionPartsForMessage } from './agent-mentions'
 import { getAgentChatStorage, loadAgentSessions } from './agent-persistence'
 import { buildAgentSnapshot } from './agent-snapshot'
-import { AGENT_TOOL_DEFINITIONS } from './tool-definitions'
+import { AGENT_TOOL_DEFINITIONS, isGenerateToolName } from './tool-definitions'
 import { createAgentToolExecutor, executeAgentTool } from './tool-executor'
 import {
   AGENT_ADD_MENTION_EVENT,
@@ -19,6 +21,7 @@ import {
   type AgentAskUserQuestion,
   type AgentChatMessage,
   type AgentChatSession,
+  type AgentGenerationProgress,
   type AgentMention,
 } from './agent-types'
 
@@ -34,6 +37,8 @@ export interface UseAgentChatParams {
   generationCanCancel: boolean
   currentModelLabel: string
   hasGeminiApiKey: boolean
+  shouldVideoGenerateWithLtxApi: boolean
+  shouldImageGenerateWithFalApi: boolean
 }
 
 export function useAgentChat(params: UseAgentChatParams) {
@@ -47,6 +52,8 @@ export function useAgentChat(params: UseAgentChatParams) {
     generationCanCancel,
     currentModelLabel,
     hasGeminiApiKey,
+    shouldVideoGenerateWithLtxApi,
+    shouldImageGenerateWithFalApi,
   } = params
 
   const [sessions, setSessions] = useState<AgentChatSession[]>([])
@@ -56,27 +63,58 @@ export function useAgentChat(params: UseAgentChatParams) {
   const [mentions, setMentions] = useState<AgentMention[]>([])
   const [running, setRunning] = useState(false)
   const [askUser, setAskUser] = useState<AgentAskUserQuestion[] | null>(null)
+  const [generationProgress, setGenerationProgress] = useState<AgentGenerationProgress | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const persistTimerRef = useRef<number | null>(null)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const { applyWithHistory, applyWithoutHistory } = useEditorApply()
+  const generationBusyRef = useRef(generationBusy)
+  generationBusyRef.current = generationBusy
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
+  const apiFlagsRef = useRef({ shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi })
+  apiFlagsRef.current = { shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi }
   const executorHostRef = useRef({
     getState: getEditorState,
     applyWithHistory,
     applyWithoutHistory,
+    getSelectedGap,
+    getAbortSignal: () => abortRef.current?.signal ?? null,
+    onProgress: (progress: AgentGenerationProgress) => setGenerationProgress(progress),
   })
   executorHostRef.current.getState = getEditorState
   executorHostRef.current.applyWithHistory = applyWithHistory
   executorHostRef.current.applyWithoutHistory = applyWithoutHistory
+  executorHostRef.current.getSelectedGap = getSelectedGap
+  const generationJobsRef = useRef<ReturnType<typeof createAgentGenerationJobs> | null>(null)
+  if (!generationJobsRef.current) {
+    generationJobsRef.current = createAgentGenerationJobs({
+      projectId,
+      isBusy: () => generationBusyRef.current,
+      persistVisualAsset: (srcPath, type) => addVisualAssetToProject(srcPath, projectIdRef.current, type),
+      shouldVideoGenerateWithLtxApi: apiFlagsRef.current.shouldVideoGenerateWithLtxApi,
+      shouldImageGenerateWithFalApi: apiFlagsRef.current.shouldImageGenerateWithFalApi,
+    })
+  }
   const executorRef = useRef<ReturnType<typeof createAgentToolExecutor> | null>(null)
   if (!executorRef.current) {
     executorRef.current = createAgentToolExecutor({
       getState: () => executorHostRef.current.getState(),
       applyWithHistory: fn => executorHostRef.current.applyWithHistory(fn),
       applyWithoutHistory: fn => executorHostRef.current.applyWithoutHistory(fn),
+      generation: generationJobsRef.current,
+      getSelectedGap: () => executorHostRef.current.getSelectedGap?.() ?? null,
+      projectId,
+      getAbortSignal: () => executorHostRef.current.getAbortSignal(),
+      onProgress: progress => executorHostRef.current.onProgress(progress),
     })
   }
+  executorRef.current.host.generation = generationJobsRef.current
+  executorRef.current.host.getSelectedGap = () => executorHostRef.current.getSelectedGap?.() ?? null
+  executorRef.current.host.projectId = projectId
+  executorRef.current.host.getAbortSignal = () => executorHostRef.current.getAbortSignal()
+  executorRef.current.host.onProgress = progress => executorHostRef.current.onProgress(progress)
 
   const activeSession = sessions.find(session => session.id === activeSessionId) ?? null
 
@@ -102,6 +140,14 @@ export function useAgentChat(params: UseAgentChatParams) {
 
   useEffect(() => {
     executorRef.current?.resetAssistantUndo()
+    generationJobsRef.current = createAgentGenerationJobs({
+      projectId,
+      isBusy: () => generationBusyRef.current,
+      persistVisualAsset: (srcPath, type) => addVisualAssetToProject(srcPath, projectIdRef.current, type),
+      shouldVideoGenerateWithLtxApi: apiFlagsRef.current.shouldVideoGenerateWithLtxApi,
+      shouldImageGenerateWithFalApi: apiFlagsRef.current.shouldImageGenerateWithFalApi,
+    })
+    if (executorRef.current) executorRef.current.host.generation = generationJobsRef.current
   }, [projectId])
 
   useEffect(() => {
@@ -193,6 +239,7 @@ export function useAgentChat(params: UseAgentChatParams) {
 
   const stop = useCallback(() => {
     abortRef.current?.abort()
+    generationJobsRef.current?.cancel()
   }, [])
 
   const runLoop = useCallback(async (seed: AgentChatSession) => {
@@ -213,7 +260,9 @@ export function useAgentChat(params: UseAgentChatParams) {
           currentModelLabel,
           selectedGapOverride: getSelectedGap?.() ?? null,
         }) as unknown as Record<string, unknown>,
-        availableTools: AGENT_TOOL_DEFINITIONS,
+        availableTools: generationBusy
+          ? AGENT_TOOL_DEFINITIONS.filter(tool => !isGenerateToolName(tool.name))
+          : AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,
         requestTurn: requestAgentTurn,
         executeTool: (name, args) => executeAgentTool(executorRef.current!, name, args),
@@ -227,6 +276,7 @@ export function useAgentChat(params: UseAgentChatParams) {
       replaceSession({ ...seed, messages: result.messages })
     } finally {
       setRunning(false)
+      setGenerationProgress(null)
       if (abortRef.current === controller) abortRef.current = null
     }
   }, [
@@ -295,6 +345,7 @@ export function useAgentChat(params: UseAgentChatParams) {
     setMentions,
     running,
     askUser,
+    generationProgress,
     createSession,
     openSession,
     closeTab,

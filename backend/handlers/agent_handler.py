@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 _INSTRUCTIONS_PATH = Path(__file__).with_name("agent_instructions.md")
 _FALLBACK_INSTRUCTIONS = (
     "You are the LTX Desktop video editor agent. Answer from the project snapshot. "
-    "Edit the timeline with the provided tools. Time is seconds. Generate is not enabled yet."
+    "Edit the timeline and generate with the provided tools. Time is seconds. Confirm before generate."
 )
 _ASK_USER_TOOL = "ask_user"
 

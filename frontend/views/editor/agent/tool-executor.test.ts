@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import { createDefaultTimeline, DEFAULT_COLOR_CORRECTION, DEFAULT_TRACKS, type Asset, type Timeline, type TimelineClip } from '../../../types/project-model.ts'
 import { DEFAULT_LAYOUT } from '../editor-layout.ts'
 import type { EditorState, EditorUndoSnapshot } from '../editor-state.ts'
+import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
 import { AgentToolExecutor, type AgentEditorActions, type AgentToolExecutorHost } from './agent-edit-runtime.ts'
 import { listGenerationModels, validateUnknownKeys } from './agent-tool-utils.ts'
 
@@ -352,6 +353,51 @@ function fakeActions(): AgentEditorActions {
         bins: { ...state.editorModel.bins, [binId]: newName },
       },
     }),
+    addAssetToEditor: (state, asset) => ({
+      ...state,
+      editorModel: {
+        ...state.editorModel,
+        assets: [asset, ...state.editorModel.assets],
+      },
+    }),
+    insertGeneratedGapAsset: (state, params) => {
+      const withAsset = {
+        ...state,
+        editorModel: {
+          ...state.editorModel,
+          assets: [params.asset, ...state.editorModel.assets],
+        },
+      }
+      return replaceActiveTimeline(withAsset, timeline => ({
+        ...timeline,
+        clips: [
+          ...timeline.clips,
+          clip({
+            id: `gap-${params.asset.id}`,
+            assetId: params.asset.id,
+            startTime: params.gap.startTime,
+            duration: params.gap.endTime - params.gap.startTime,
+            trackIndex: params.gap.trackIndex,
+          }),
+        ],
+      }))
+    },
+    applyGeneratedTake: (state, assetId, take) => ({
+      ...state,
+      editorModel: {
+        ...state.editorModel,
+        assets: state.editorModel.assets.map(asset => (
+          asset.id === assetId
+            ? {
+                ...asset,
+                path: take.path,
+                takes: [...(asset.takes ?? []), take],
+                activeTakeIndex: (asset.takes ?? []).length,
+              }
+            : asset
+        )),
+      },
+    }),
     undo: (state) => {
       const previous = state.history.undoStack[state.history.undoStack.length - 1]
       if (!previous) return state
@@ -372,7 +418,28 @@ function fakeActions(): AgentEditorActions {
   }
 }
 
-function createHost(initial: EditorState): AgentToolExecutorHost & { box: { state: EditorState } } {
+function fakeJobs(overrides?: Partial<AgentGenerationJobs>): AgentGenerationJobs {
+  return {
+    isBusy: () => false,
+    runImage: async () => ({ status: 'complete', path: '/tmp/still.png' }),
+    runVideo: async () => ({ status: 'complete', path: '/tmp/cut.mp4' }),
+    enhancePrompt: async prompt => ({ ok: true, prompt: `enhanced: ${prompt}` }),
+    cancel: () => {},
+    persistVisualAsset: async (srcPath, type) => ({
+      path: `/project/${type}-${srcPath.split('/').pop()}`,
+      bigThumbnailPath: '/project/big.jpg',
+      smallThumbnailPath: '/project/small.jpg',
+      width: 1280,
+      height: 720,
+    }),
+    ...overrides,
+  }
+}
+
+function createHost(
+  initial: EditorState,
+  extras?: { generation?: AgentGenerationJobs; selectedGap?: { trackIndex: number; startTime: number; endTime: number } | null },
+): AgentToolExecutorHost & { box: { state: EditorState } } {
   const box = { state: initial }
   return {
     box,
@@ -384,6 +451,8 @@ function createHost(initial: EditorState): AgentToolExecutorHost & { box: { stat
       box.state = fn(box.state)
     },
     actions: fakeActions(),
+    generation: extras?.generation,
+    getSelectedGap: extras?.selectedGap !== undefined ? () => extras.selectedGap ?? null : undefined,
   }
 }
 
@@ -559,5 +628,104 @@ describe('edit tool executor', () => {
     assert.equal(created.ok, true)
     assert.equal(host.getState().editorModel.activeTimelineId, (created.timeline as { id: string }).id)
     assert.equal(host.getState().editorModel.timelines.length, 2)
+  })
+})
+
+describe('generate tool executor', () => {
+  it('refuses generate without confirm and does not start a job', async () => {
+    const jobs = fakeJobs({
+      runVideo: async () => {
+        throw new Error('should not run')
+      },
+    })
+    const host = createHost(makeState({ clips: [] }), { generation: jobs })
+    const executor = new AgentToolExecutor(host)
+    const blocked = await executor.execute('generate_video', {
+      prompt: 'a 4s cutaway of rain on a window',
+      duration: 4,
+    })
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.needsConfirm, true)
+    assert.equal(host.getState().editorModel.assets.length, 2)
+  })
+
+  it('generates a video and places it in the selected gap after confirm', async () => {
+    const host = createHost(makeState({ clips: [] }), {
+      generation: fakeJobs(),
+      selectedGap: { trackIndex: 0, startTime: 1, endTime: 5 },
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('fill_gap', {
+      prompt: 'rain on a window, slow push in',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.destination, 'gap')
+    assert.ok(typeof result.assetId === 'string')
+    assert.ok(Array.isArray(result.insertedClipIds) && result.insertedClipIds.length === 1)
+    const placed = activeClips(host.getState())[0]
+    assert.equal(placed?.startTime, 1)
+    assert.equal(placed?.duration, 4)
+    assert.ok(host.getState().editorModel.assets.some(asset => asset.id === result.assetId))
+  })
+
+  it('refuses generate while the slot is busy', async () => {
+    const host = createHost(makeState({ clips: [] }), {
+      generation: fakeJobs({ isBusy: () => true }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'a red apple on a table',
+      confirmed: true,
+    })
+    assert.equal(result.ok, false)
+    assert.match(String(result.error), /busy/)
+  })
+
+  it('adds a confirmed still to assets only', async () => {
+    const host = createHost(makeState({ clips: [] }), { generation: fakeJobs() })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'a red apple on a table, soft window light',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.destination, 'assets')
+    assert.equal(result.placed, false)
+    assert.equal(activeClips(host.getState()).length, 0)
+    assert.ok(host.getState().editorModel.assets.some(asset => asset.id === result.assetId))
+  })
+
+  it('enhances a prompt without mutating the timeline', async () => {
+    const host = createHost(makeState(), { generation: fakeJobs() })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('enhance_prompt', { prompt: 'rain', mediaType: 'video' })
+    assert.equal(result.ok, true)
+    assert.equal(result.prompt, 'enhanced: rain')
+    assert.equal(activeClips(host.getState()).length, 1)
+  })
+
+  it('regenerates a clip take from generationParams', async () => {
+    const asset = videoAsset('asset-1')
+    asset.generationParams = {
+      mode: 'text-to-video',
+      prompt: 'rain on a window',
+      model: 'fast',
+      duration: 4,
+      resolution: '540p',
+      fps: 24,
+      audio: false,
+      cameraMotion: 'none',
+    }
+    const host = createHost(makeState({
+      assets: [asset],
+      selectedClipIds: ['c1'],
+    }), { generation: fakeJobs() })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('regenerate_clip', { confirmed: true })
+    assert.equal(result.ok, true)
+    const updated = host.getState().editorModel.assets.find(item => item.id === 'asset-1')
+    assert.ok(updated?.takes && updated.takes.length >= 1)
+    assert.match(updated.path, /cut\.mp4/)
   })
 })

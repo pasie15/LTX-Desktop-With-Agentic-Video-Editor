@@ -95,4 +95,35 @@ describe('agent loop', () => {
       assert.equal(last.parts[0].result.error, 'cancelled')
     }
   })
+
+  it('pauses the loop when a generate tool needs confirmation', async () => {
+    let messages = [userText('Generate a 4s cutaway')]
+    let asked: string[] = []
+    const result = await runAgentLoop({
+      getMessages: () => messages,
+      getProjectContext: () => ({}),
+      availableTools: READ_TOOL_DEFINITIONS,
+      skills: '',
+      requestTurn: async () => ({
+        status: 'success',
+        text: '',
+        toolCalls: [{ id: 'call_g', name: 'generate_video', arguments: { prompt: 'rain', duration: 4 } }],
+        askUser: null,
+        finishReason: 'tool_calls',
+      }),
+      executeTool: async () => ({
+        ok: false,
+        needsConfirm: true,
+        proposal: { tool: 'generate_video', prompt: 'rain', duration: 4, model: 'fast', resolution: '540p' },
+        error: 'Generation needs confirmation.',
+      }),
+      onMessages: next => { messages = next },
+      onAskUser: questions => {
+        asked = questions.map(question => question.id)
+      },
+      signal: new AbortController().signal,
+    })
+    assert.equal(result.stopReason, 'ask_user')
+    assert.deepEqual(asked, ['confirm'])
+  })
 })

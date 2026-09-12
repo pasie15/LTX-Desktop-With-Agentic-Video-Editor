@@ -1,6 +1,7 @@
-import type { Asset, Timeline, TimelineClip } from '../../../types/project-model.ts'
+import type { Asset, AssetTake, Timeline, TimelineClip } from '../../../types/project-model.ts'
 import { createAssetBinId } from '../../../types/project-model.ts'
-import type { EditorState, EditorUndoSnapshot } from '../editor-state.ts'
+import type { EditorState, EditorUndoSnapshot, TimelineGapSelection } from '../editor-state.ts'
+import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice.ts'
 import {
   asBoolean,
@@ -10,7 +11,8 @@ import {
   toolErrorResult,
   validateUnknownKeys,
 } from './agent-tool-utils.ts'
-import { EDIT_TOOL_ALLOWED_KEYS, type AgentEditToolName } from './tool-definitions.ts'
+import { executeGenerateTool } from './agent-generate-runtime.ts'
+import { EDIT_TOOL_ALLOWED_KEYS, isGenerateToolName, type AgentEditToolName } from './tool-definitions.ts'
 
 export const DELETE_MANY_THRESHOLD = 2
 
@@ -30,6 +32,13 @@ export interface AgentEditorActions {
   createBin: (state: EditorState, binId: string, name: string) => EditorState
   assignAssetsToBin: (state: EditorState, assetIds: string[], binId?: string) => EditorState
   renameBin: (state: EditorState, binId: string, newName: string) => EditorState
+  addAssetToEditor: (state: EditorState, asset: Asset) => EditorState
+  insertGeneratedGapAsset: (state: EditorState, params: {
+    gap: TimelineGapSelection
+    asset: Asset
+    createAudio: boolean
+  }) => EditorState
+  applyGeneratedTake: (state: EditorState, assetId: string, take: AssetTake, clipId?: string) => EditorState
   undo: (state: EditorState) => EditorState
 }
 
@@ -38,6 +47,11 @@ export interface AgentToolExecutorHost {
   applyWithHistory: (fn: (state: EditorState) => EditorState) => void
   applyWithoutHistory: (fn: (state: EditorState) => EditorState) => void
   actions: AgentEditorActions
+  generation?: AgentGenerationJobs
+  getSelectedGap?: () => TimelineGapSelection | null
+  projectId?: string
+  getAbortSignal?: () => AbortSignal | null
+  onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
 }
 
 interface AssistantUndoEntry {
@@ -172,6 +186,17 @@ export class AgentToolExecutor {
   }
 
   async execute(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (isGenerateToolName(name)) {
+      const before = undoSnapshot(this.host.getState())
+      const result = await executeGenerateTool(this.host, name, args)
+      if (result.ok !== false) {
+        const after = undoSnapshot(this.host.getState())
+        if (!sameUndoSnapshot(before, after)) {
+          this.assistantUndo.push({ name, after })
+        }
+      }
+      return result
+    }
     if (!isEditTool(name)) return errorResult(`Unknown tool: ${name}`)
     const unknown = validateUnknownKeys(args, EDIT_TOOL_ALLOWED_KEYS[name])
     if (unknown) return errorResult(unknown)

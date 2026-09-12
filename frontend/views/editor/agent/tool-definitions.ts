@@ -33,7 +33,21 @@ export const EDIT_TOOL_NAMES = [
 
 export type AgentEditToolName = (typeof EDIT_TOOL_NAMES)[number]
 
-export type AgentToolName = AgentReadToolName | AgentEditToolName
+export const GENERATE_TOOL_NAMES = [
+  'generate_image',
+  'generate_video',
+  'fill_gap',
+  'regenerate_clip',
+  'enhance_prompt',
+] as const
+
+export type AgentGenerateToolName = (typeof GENERATE_TOOL_NAMES)[number]
+
+export type AgentToolName = AgentReadToolName | AgentEditToolName | AgentGenerateToolName
+
+export function isGenerateToolName(name: string): name is AgentGenerateToolName {
+  return (GENERATE_TOOL_NAMES as readonly string[]).includes(name)
+}
 
 export const READ_TOOL_ALLOWED_KEYS: Record<AgentReadToolName, readonly string[]> = {
   get_project_overview: [],
@@ -64,9 +78,18 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
   undo: [],
 }
 
+export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
+  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed'],
+  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
+  fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
+  regenerate_clip: ['clipId', 'assetId', 'confirmed'],
+  enhance_prompt: ['prompt', 'mediaType'],
+}
+
 export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> = {
   ...READ_TOOL_ALLOWED_KEYS,
   ...EDIT_TOOL_ALLOWED_KEYS,
+  ...GENERATE_TOOL_ALLOWED_KEYS,
 }
 
 export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -330,9 +353,94 @@ export const EDIT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
 ]
 
+export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'generate_image',
+    description: 'Generate a still with Z-Image and add it to the project. Requires confirmed=true after the user accepts the proposal.',
+    parameters: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        resolution: { type: 'string', enum: ['1080p', '1440p', '2048p'] },
+        aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] },
+        destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
+        trackIndex: { type: 'number' },
+        startTime: { type: 'number' },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'generate_video',
+    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a start still via imageAssetId (image-to-video).',
+    parameters: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        model: { type: 'string', description: 'LTX pipeline id from list_generation_models, default fast' },
+        duration: { type: 'number', description: 'Seconds. Default selected gap or 4.' },
+        resolution: { type: 'string', description: 'Video resolution, default 540p preview' },
+        audio: { type: 'boolean' },
+        imageAssetId: { type: 'string', description: 'Exact still asset id for image-to-video' },
+        destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
+        trackIndex: { type: 'number' },
+        startTime: { type: 'number' },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'fill_gap',
+    description: 'Generate for the selected timeline gap and place the result there. Confirm first.',
+    parameters: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        model: { type: 'string' },
+        duration: { type: 'number' },
+        resolution: { type: 'string' },
+        audio: { type: 'boolean' },
+        imageAssetId: { type: 'string' },
+        trackIndex: { type: 'number' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'regenerate_clip',
+    description: 'Regenerate an existing clip from its stored generationParams. Confirm first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipId: { type: 'string' },
+        assetId: { type: 'string' },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'enhance_prompt',
+    description: 'Rewrite a generate prompt. Does not start a generate.',
+    parameters: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        mediaType: { type: 'string', enum: ['image', 'video'] },
+      },
+    },
+  },
+]
+
 export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   ...READ_TOOL_DEFINITIONS,
   ...EDIT_TOOL_DEFINITIONS,
+  ...GENERATE_TOOL_DEFINITIONS,
 ]
 
 function countLabel(count: number, singular: string, plural: string): string {
@@ -395,6 +503,18 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
       return 'Rename bin'
     case 'undo':
       return 'Undo assistant edit'
+    case 'generate_image':
+      return 'Generate image'
+    case 'generate_video': {
+      const duration = typeof args?.duration === 'number' ? args.duration : null
+      return duration != null ? `Generate ${duration}s preview` : 'Generate video'
+    }
+    case 'fill_gap':
+      return 'Fill gap'
+    case 'regenerate_clip':
+      return 'Regenerate clip'
+    case 'enhance_prompt':
+      return 'Enhance prompt'
     default:
       return name
   }

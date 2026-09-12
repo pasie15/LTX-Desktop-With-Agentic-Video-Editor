@@ -139,6 +139,12 @@ export interface AgentProjectSnapshot {
   }
 }
 
+export interface AgentGenerationProgress {
+  toolName: string
+  percent: number
+  status: string
+}
+
 export interface AgentAddMentionDetail {
   mention: AgentMention
 }
