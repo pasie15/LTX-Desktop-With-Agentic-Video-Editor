@@ -20,12 +20,12 @@ export const AGENT_STARTER_PROMPTS: readonly AgentStarterPrompt[] = [
   {
     id: 'b-roll',
     label: 'Generate B-roll for this timeline',
-    composerText: 'Generate B-roll for this timeline',
+    composerText: 'Generate B-roll for this timeline. Propose a shot list, then generate and place the shots in order.',
   },
   {
     id: 'assemble-script',
     label: 'Assemble this script on the timeline',
-    composerText: 'Assemble this script on the timeline',
+    composerText: 'Assemble this script on the timeline:\n\n',
   },
   {
     id: 'titles',

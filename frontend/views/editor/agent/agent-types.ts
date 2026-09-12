@@ -18,12 +18,20 @@ export interface AgentChatMessage {
   errorCode?: string
 }
 
+export interface AgentAskUserShot {
+  id: string
+  prompt: string
+  duration: number
+  title?: string
+}
+
 export interface AgentAskUserQuestion {
   id: string
   prompt: string
-  kind: 'choice' | 'text'
+  kind: 'choice' | 'text' | 'shot_list'
   options?: string[]
   allowMultiple?: boolean
+  shots?: AgentAskUserShot[]
 }
 
 export interface AgentToolCall {

@@ -126,4 +126,45 @@ describe('agent loop', () => {
     assert.equal(result.stopReason, 'ask_user')
     assert.deepEqual(asked, ['confirm'])
   })
+
+  it('pauses the loop with a shot-list card when assembly needs confirmation', async () => {
+    let messages = [userText('Assemble this script')]
+    let asked: string[] = []
+    let kind = ''
+    const result = await runAgentLoop({
+      getMessages: () => messages,
+      getProjectContext: () => ({}),
+      availableTools: READ_TOOL_DEFINITIONS,
+      skills: '',
+      requestTurn: async () => ({
+        status: 'success',
+        text: '',
+        toolCalls: [{ id: 'call_a', name: 'assemble_shots', arguments: { script: 'INT. KITCHEN\nCoffee.' } }],
+        askUser: null,
+        finishReason: 'tool_calls',
+      }),
+      executeTool: async () => ({
+        ok: false,
+        needsConfirm: true,
+        proposal: {
+          tool: 'assemble_shots',
+          kind: 'script',
+          destination: 'playhead',
+          shots: [{ id: 'shot-1', prompt: 'Coffee.', duration: 4, title: 'KITCHEN' }],
+          jobCount: 2,
+          exceedsJobCap: false,
+        },
+        error: 'Assembly needs confirmation.',
+      }),
+      onMessages: next => { messages = next },
+      onAskUser: questions => {
+        asked = questions.map(question => question.id)
+        kind = questions[0]?.kind ?? ''
+      },
+      signal: new AbortController().signal,
+    })
+    assert.equal(result.stopReason, 'ask_user')
+    assert.deepEqual(asked, ['shot_list'])
+    assert.equal(kind, 'shot_list')
+  })
 })

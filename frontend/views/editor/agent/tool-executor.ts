@@ -16,7 +16,7 @@ import type { AgentGenerationJobs } from './agent-generate-runtime'
 import { AgentToolExecutor, type AgentToolExecutorHost } from './agent-edit-runtime'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice'
 import { asNumber, asString, listGenerationModels, toolErrorResult, validateUnknownKeys } from './agent-tool-utils'
-import { EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
+import { ASSEMBLY_TOOL_ALLOWED_KEYS, EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
 
 export { AgentToolExecutor, DELETE_MANY_THRESHOLD } from './agent-edit-runtime'
 export type { AgentEditorActions, AgentToolExecutorHost } from './agent-edit-runtime'
@@ -93,6 +93,7 @@ export async function executeAgentTool(
   if (
     Object.prototype.hasOwnProperty.call(EDIT_TOOL_ALLOWED_KEYS, name)
     || Object.prototype.hasOwnProperty.call(GENERATE_TOOL_ALLOWED_KEYS, name)
+    || Object.prototype.hasOwnProperty.call(ASSEMBLY_TOOL_ALLOWED_KEYS, name)
   ) {
     return executor.execute(name, args)
   }

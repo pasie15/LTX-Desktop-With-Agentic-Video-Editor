@@ -43,10 +43,24 @@ export const GENERATE_TOOL_NAMES = [
 
 export type AgentGenerateToolName = (typeof GENERATE_TOOL_NAMES)[number]
 
-export type AgentToolName = AgentReadToolName | AgentEditToolName | AgentGenerateToolName
+export const ASSEMBLY_TOOL_NAMES = [
+  'assemble_shots',
+] as const
+
+export type AgentAssemblyToolName = (typeof ASSEMBLY_TOOL_NAMES)[number]
+
+export type AgentToolName = AgentReadToolName | AgentEditToolName | AgentGenerateToolName | AgentAssemblyToolName
 
 export function isGenerateToolName(name: string): name is AgentGenerateToolName {
   return (GENERATE_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isAssemblyToolName(name: string): name is AgentAssemblyToolName {
+  return (ASSEMBLY_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isSlotHoldingToolName(name: string): boolean {
+  return isGenerateToolName(name) || isAssemblyToolName(name)
 }
 
 export const READ_TOOL_ALLOWED_KEYS: Record<AgentReadToolName, readonly string[]> = {
@@ -86,10 +100,28 @@ export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly 
   enhance_prompt: ['prompt', 'mediaType'],
 }
 
+export const ASSEMBLY_TOOL_ALLOWED_KEYS: Record<AgentAssemblyToolName, readonly string[]> = {
+  assemble_shots: [
+    'script',
+    'shots',
+    'kind',
+    'destination',
+    'trackIndex',
+    'startTime',
+    'model',
+    'resolution',
+    'audio',
+    'skipStills',
+    'confirmed',
+    'confirmedMore',
+  ],
+}
+
 export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> = {
   ...READ_TOOL_ALLOWED_KEYS,
   ...EDIT_TOOL_ALLOWED_KEYS,
   ...GENERATE_TOOL_ALLOWED_KEYS,
+  ...ASSEMBLY_TOOL_ALLOWED_KEYS,
 }
 
 export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -437,10 +469,49 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
 ]
 
+export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'assemble_shots',
+    description: 'Propose a script or B-roll shot list, confirm once, then sequentially generate and place shots end-to-end. Pass a script or shots[]. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
+    parameters: {
+      type: 'object',
+      properties: {
+        script: { type: 'string', description: 'Pasted script or scene list to parse into shots' },
+        shots: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['prompt'],
+            properties: {
+              id: { type: 'string' },
+              prompt: { type: 'string' },
+              duration: { type: 'number' },
+              title: { type: 'string', description: 'Scene slug; placed as a text clip' },
+              imageAssetId: { type: 'string', description: 'Reuse an existing still instead of generating one' },
+              skipStill: { type: 'boolean' },
+            },
+          },
+        },
+        kind: { type: 'string', enum: ['script', 'broll'] },
+        destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
+        trackIndex: { type: 'number' },
+        startTime: { type: 'number' },
+        model: { type: 'string' },
+        resolution: { type: 'string' },
+        audio: { type: 'boolean' },
+        skipStills: { type: 'boolean' },
+        confirmed: { type: 'boolean' },
+        confirmedMore: { type: 'boolean', description: 'Required when the assembly exceeds 8 generate jobs' },
+      },
+    },
+  },
+]
+
 export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   ...READ_TOOL_DEFINITIONS,
   ...EDIT_TOOL_DEFINITIONS,
   ...GENERATE_TOOL_DEFINITIONS,
+  ...ASSEMBLY_TOOL_DEFINITIONS,
 ]
 
 function countLabel(count: number, singular: string, plural: string): string {
@@ -515,6 +586,10 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
       return 'Regenerate clip'
     case 'enhance_prompt':
       return 'Enhance prompt'
+    case 'assemble_shots': {
+      const shots = Array.isArray(args?.shots) ? args.shots.length : null
+      return shots != null ? `Assemble ${shots} shots` : 'Assemble shots'
+    }
     default:
       return name
   }
