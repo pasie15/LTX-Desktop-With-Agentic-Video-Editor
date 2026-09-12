@@ -387,6 +387,10 @@ export class ApiClient {
     exactErrorStatuses: [404, 409] as const,
   })
 
+  static agentTurn = makeEndpointClient('/api/agent/turn', 'post', {
+    exactErrorStatuses: [400] as const,
+  })
+
   static retake = makeEndpointClient('/api/retake', 'post')
 
   static extend = makeEndpointClient('/api/extend', 'post')

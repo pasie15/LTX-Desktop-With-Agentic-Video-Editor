@@ -49,6 +49,330 @@
         "title": "ActiveDownloadResponse",
         "type": "object"
       },
+      "AgentAskUserQuestionPayload": {
+        "properties": {
+          "allowMultiple": {
+            "default": false,
+            "title": "Allowmultiple",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "choice",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "kind"
+        ],
+        "title": "AgentAskUserQuestionPayload",
+        "type": "object"
+      },
+      "AgentMessagePartPayload": {
+        "properties": {
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "mimeType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mimetype"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "toolCallId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolcallid"
+          },
+          "toolName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolname"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "inline_image",
+              "tool_call",
+              "tool_result"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "AgentMessagePartPayload",
+        "type": "object"
+      },
+      "AgentMessagePayload": {
+        "properties": {
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/AgentMessagePartPayload"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "parts"
+        ],
+        "title": "AgentMessagePayload",
+        "type": "object"
+      },
+      "AgentToolCallPayload": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentToolCallPayload",
+        "type": "object"
+      },
+      "AgentToolDeclarationPayload": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "AgentToolDeclarationPayload",
+        "type": "object"
+      },
+      "AgentTurnRequest": {
+        "properties": {
+          "availableTools": {
+            "items": {
+              "$ref": "#/components/schemas/AgentToolDeclarationPayload"
+            },
+            "title": "Availabletools",
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/AgentMessagePayload"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "projectContext": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Projectcontext",
+            "type": "object"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "AgentTurnRequest",
+        "type": "object"
+      },
+      "AgentTurnResponse": {
+        "properties": {
+          "askUser": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentAskUserQuestionPayload"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Askuser"
+          },
+          "finishReason": {
+            "default": "stop",
+            "enum": [
+              "stop",
+              "tool_calls",
+              "ask_user"
+            ],
+            "title": "Finishreason",
+            "type": "string"
+          },
+          "status": {
+            "const": "success",
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "toolCalls": {
+            "items": {
+              "$ref": "#/components/schemas/AgentToolCallPayload"
+            },
+            "title": "Toolcalls",
+            "type": "array"
+          }
+        },
+        "title": "AgentTurnResponse",
+        "type": "object"
+      },
       "AppSettingsPatch": {
         "additionalProperties": false,
         "properties": {
@@ -4267,6 +4591,57 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/turn": {
+      "post": {
+        "operationId": "route_agent_turn_api_agent_turn_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTurnResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Turn",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/auth/huggingface/callback": {
       "get": {
         "operationId": "route_hf_callback_api_auth_huggingface_callback_get",

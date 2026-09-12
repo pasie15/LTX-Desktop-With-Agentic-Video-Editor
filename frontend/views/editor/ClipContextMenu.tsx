@@ -4,8 +4,10 @@ import {
   ZoomIn, Film, Eye, FolderOpen, RotateCcw, Volume2, VolumeX,
   FlipHorizontal2, FlipVertical2, Link2, Unlink2,
   ChevronLeft, ChevronRight, Sparkles,
-  Video, Camera,
+  Video, Camera, MessageSquare,
 } from 'lucide-react'
+import { dispatchAgentMention } from './agent/agent-types'
+import { mentionFromSelection } from './agent/agent-mentions'
 import type { Asset, TimelineClip, Track, TextOverlayStyle } from '../../types/project-model'
 import { TEXT_PRESETS } from '../../types/project'
 import { COLOR_LABELS } from './video-editor-utils'
@@ -542,6 +544,16 @@ function SingleClipMenu({
         </>
       )}
 
+      <Divider />
+      <MenuItem
+        icon={MessageSquare}
+        label="Add selection to Agent"
+        onClick={() => {
+          dispatchAgentMention(mentionFromSelection([contextClip.id]))
+          close()
+        }}
+      />
+
       {/* ── 7. Navigation ── */}
       {(contextClip.assetId || getLiveAsset(contextClip)?.path) && (
         <>
@@ -746,6 +758,16 @@ function MultiClipMenu({
           />
         ))}
       </div>
+
+      <Divider />
+      <MenuItem
+        icon={MessageSquare}
+        label="Add selection to Agent"
+        onClick={() => {
+          dispatchAgentMention(mentionFromSelection([...selectedClipIds]))
+          close()
+        }}
+      />
 
       {/* ── 6. Delete ── */}
       <Divider />
