@@ -9,6 +9,25 @@ export function toolErrorResult(message: string): Record<string, unknown> {
   return { ok: false, error: message }
 }
 
+export function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+export function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+export function asBoolean(value: unknown): boolean {
+  return value === true
+}
+
+export function asStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null
+  return value
+    .filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+    .map(item => item.trim())
+}
+
 export async function listGenerationModels(
   fetchImpl: (path: string, init?: RequestInit) => Promise<Response>,
 ): Promise<Record<string, unknown>> {

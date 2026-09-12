@@ -1,4 +1,4 @@
-"""Read-only agent turn handler (Gemini function calling). Tools execute in the renderer."""
+"""Agent turn handler (Gemini function calling). Tools execute in the renderer."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 _INSTRUCTIONS_PATH = Path(__file__).with_name("agent_instructions.md")
 _FALLBACK_INSTRUCTIONS = (
     "You are the LTX Desktop video editor agent. Answer from the project snapshot. "
-    "This phase is read-only. Use tools when you need a fresher slice. Time is seconds."
+    "Edit the timeline with the provided tools. Time is seconds. Generate is not enabled yet."
 )
 _ASK_USER_TOOL = "ask_user"
 
