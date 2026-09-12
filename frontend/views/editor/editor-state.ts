@@ -81,6 +81,7 @@ export interface EditorUiState {
   showExportModal: boolean
   showSourceMonitor: boolean
   showPropertiesPanel: boolean
+  showAgentChat: boolean
   showEffectsBrowser: boolean
   activeFocusArea: 'source' | 'timeline'
   sourceSplitPercent: number
@@ -213,6 +214,7 @@ export interface MenuState {
   showEffectsBrowser: boolean
   showSourceMonitor: boolean
   showPropertiesPanel: boolean
+  showAgentChat: boolean
   hasSourceAsset: boolean
   activeTool: ToolType
   activeTimeline: Timeline | null
@@ -269,6 +271,7 @@ export function createInitialEditorState(
         showExportModal: false,
         showSourceMonitor: false,
         showPropertiesPanel: false,
+        showAgentChat: false,
         showEffectsBrowser: false,
         activeFocusArea: 'timeline',
         sourceSplitPercent: 50,

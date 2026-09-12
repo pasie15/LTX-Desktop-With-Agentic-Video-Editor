@@ -384,6 +384,10 @@ export function selectShowPropertiesPanel(state: EditorState): boolean {
   return state.session.ui.showPropertiesPanel
 }
 
+export function selectShowAgentChat(state: EditorState): boolean {
+  return state.session.ui.showAgentChat
+}
+
 export function selectShowEffectsBrowser(state: EditorState): boolean {
   return state.session.ui.showEffectsBrowser
 }
@@ -650,6 +654,7 @@ export function selectMenuState(state: EditorState): MenuState {
     showEffectsBrowser: selectShowEffectsBrowser(state),
     showSourceMonitor: selectShowSourceMonitor(state),
     showPropertiesPanel: selectShowPropertiesPanel(state),
+    showAgentChat: selectShowAgentChat(state),
     hasSourceAsset: selectHasSourceAsset(state),
     activeTool: selectActiveTool(state),
     activeTimeline: selectActiveTimeline(state),

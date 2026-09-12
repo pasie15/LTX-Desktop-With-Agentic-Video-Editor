@@ -22,7 +22,14 @@ import {
   DEFAULT_LETTERBOX,
   DEFAULT_TEXT_STYLE,
 } from '../../types/project-model'
-import { resolveOverlaps, type EditorLayout, type ToolType } from './video-editor-utils'
+import {
+  DEFAULT_LAYOUT,
+  normalizeEditorLayout,
+  resolveOverlaps,
+  shouldCollapsePropertiesForAgentChat,
+  type EditorLayout,
+  type ToolType,
+} from './video-editor-utils'
 import {
   applyUndoSnapshot,
   createInitialEditorState,
@@ -2238,6 +2245,19 @@ export function setShowPropertiesPanel(state: EditorState, value: boolean): Edit
   }))
 }
 
+export function setShowAgentChat(state: EditorState, value: boolean, viewportWidth?: number): EditorState {
+  const width = viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : Number.POSITIVE_INFINITY)
+  const collapseProperties = value && shouldCollapsePropertiesForAgentChat(width)
+  return updateSession(state, session => ({
+    ...session,
+    ui: {
+      ...session.ui,
+      showAgentChat: value,
+      showPropertiesPanel: collapseProperties ? false : session.ui.showPropertiesPanel,
+    },
+  }))
+}
+
 export function setShowEffectsBrowser(state: EditorState, value: boolean): EditorState {
   return updateSession(state, session => ({
     ...session,
@@ -2381,18 +2401,13 @@ export function setLayout(state: EditorState, layout: EditorLayout): EditorState
     ...session,
     ui: {
       ...session.ui,
-      layout,
+      layout: normalizeEditorLayout(layout),
     },
   }))
 }
 
 export function resetLayout(state: EditorState): EditorState {
-  return setLayout(state, {
-    leftPanelWidth: 288,
-    rightPanelWidth: 256,
-    timelineHeight: 224,
-    assetsHeight: 0,
-  })
+  return setLayout(state, { ...DEFAULT_LAYOUT })
 }
 
 export function setSubtitleTrackStyleEditorTrack(state: EditorState, trackIdx?: number): EditorState {

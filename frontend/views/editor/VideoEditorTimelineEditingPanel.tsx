@@ -66,6 +66,7 @@ import {
   selectSelectedClipForProperties,
   selectSelectedClipIds,
   selectSelectedSubtitleId,
+  selectShowAgentChat,
   selectShowPropertiesPanel,
   selectSnapEnabled,
   selectSubtitleTrackStyleIdx,
@@ -226,6 +227,7 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
   const lastTrimTool = useEditorStore(selectLastTrimTool)
   const snapEnabled = useEditorStore(selectSnapEnabled)
   const showPropertiesPanel = useEditorStore(selectShowPropertiesPanel)
+  const showAgentChat = useEditorStore(selectShowAgentChat)
   const openTimelineIds = useEditorStore(selectOpenTimelineIds)
   const { renamingTimelineId, renameValue, renameSource } = useEditorStore(selectTimelineRenameState, shallow)
   const subtitleTrackStyleIdx = useEditorStore(selectSubtitleTrackStyleIdx)
@@ -277,6 +279,10 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
   const setShowPropertiesPanel = useCallback((value: React.SetStateAction<boolean>) => {
     actions.setShowPropertiesPanel(applyStateAction(value, showPropertiesPanel))
   }, [actions, showPropertiesPanel])
+
+  const setShowAgentChat = useCallback((value: React.SetStateAction<boolean>) => {
+    actions.setShowAgentChat(applyStateAction(value, showAgentChat))
+  }, [actions, showAgentChat])
 
   const setRenameValue = useCallback((value: string) => {
     actions.setTimelineRenameValue(value)
@@ -1751,6 +1757,20 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
             )}
 
             <div className="flex-1" />
+
+            <Tooltip content={tooltipLabel(showAgentChat ? 'Hide Agent' : 'Show Agent', getShortcutLabel(kbLayout, 'view.agentChat'))} side="right">
+              <button
+                onClick={() => setShowAgentChat(p => !p)}
+                className={`p-1.5 rounded-lg transition-colors flex-shrink-0 group relative ${
+                  showAgentChat ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="h-4 w-4" />
+                <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-800 rounded text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50">
+                  {showAgentChat ? 'Hide Agent' : 'Show Agent'}
+                </div>
+              </button>
+            </Tooltip>
 
             <Tooltip content={showPropertiesPanel ? 'Hide Properties Panel' : 'Show Properties Panel'} side="right">
               <button

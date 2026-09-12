@@ -20,7 +20,7 @@ import {
   type EditorLayout,
   DEFAULT_LAYOUT,
   LAYOUT_LIMITS,
-  loadLayout, saveLayout,
+  loadLayout, saveLayout, normalizeEditorLayout,
 } from './editor/video-editor-utils'
 import { createInitialEditorState } from './editor/editor-state'
 import {
@@ -39,6 +39,7 @@ import {
   selectPixelsPerSecond,
   selectSelectedClipForProperties,
   selectSelectedClipIds,
+  selectShowAgentChat,
   selectShowExportModal,
   selectShowImportTimelineModal,
   selectShowSourceMonitor,
@@ -77,6 +78,7 @@ import {
 } from './editor/editor-store'
 import { GenerationErrorDialog } from '../components/GenerationErrorDialog'
 import { SubtitleTrackStyleEditor } from './editor/SubtitleTrackStyleEditor'
+import { AgentChatPanel } from './editor/agent/AgentChatPanel'
 
 interface VideoEditorProps {
   currentProject: Project
@@ -181,6 +183,7 @@ function VideoEditorWithStore({
   const isPlaying = useEditorStore(state => state.session.transport.isPlaying)
   const selectedClipIds = useEditorStore(selectSelectedClipIds)
   const showPropertiesPanel = useEditorStore(state => state.session.ui.showPropertiesPanel)
+  const showAgentChat = useEditorStore(selectShowAgentChat)
   const showImportTimelineModal = useEditorStore(selectShowImportTimelineModal)
   const showExportModal = useEditorStore(selectShowExportModal)
   const layout = useEditorStore(selectLayout)
@@ -242,6 +245,7 @@ function VideoEditorWithStore({
   // Resizable layout
   const leftPanelResizeRef = useRef<PanelImperativeHandle | null>(null)
   const rightPanelResizeRef = useRef<PanelImperativeHandle | null>(null)
+  const chatPanelResizeRef = useRef<PanelImperativeHandle | null>(null)
   const timelinePanelResizeRef = useRef<PanelImperativeHandle | null>(null)
   const assetsPanelResizeRef = useRef<PanelImperativeHandle | null>(null)
   const assetsPanelActionsRef = useRef<VideoEditorAssetsPanelHandle | null>(null)
@@ -264,6 +268,7 @@ function VideoEditorWithStore({
     rightPanelWidth: number
     timelineHeight: number
     assetsHeight: number | string
+    chatPanelWidth: number
   } | null>(null)
   if (!initialPanelDefaultsRef.current) {
     initialPanelDefaultsRef.current = {
@@ -271,6 +276,7 @@ function VideoEditorWithStore({
       rightPanelWidth: layout.rightPanelWidth,
       timelineHeight: layout.timelineHeight,
       assetsHeight: layout.assetsHeight > 0 ? layout.assetsHeight : '60%',
+      chatPanelWidth: layout.chatPanelWidth,
     }
   }
 
@@ -291,10 +297,13 @@ function VideoEditorWithStore({
     if (showPropertiesPanel) {
       rightPanelResizeRef.current?.resize(nextLayout.rightPanelWidth)
     }
-  }, [showPropertiesPanel])
+    if (showAgentChat) {
+      chatPanelResizeRef.current?.resize(nextLayout.chatPanelWidth)
+    }
+  }, [showAgentChat, showPropertiesPanel])
 
   const updateLayoutField = useCallback((
-    field: 'leftPanelWidth' | 'rightPanelWidth' | 'timelineHeight' | 'assetsHeight',
+    field: 'leftPanelWidth' | 'rightPanelWidth' | 'timelineHeight' | 'assetsHeight' | 'chatPanelWidth',
     inPixels: number,
   ) => {
     const value = Math.round(inPixels)
@@ -306,9 +315,10 @@ function VideoEditorWithStore({
   }, [actions, getEditorState])
 
   const handleApplyLayout = useCallback((nextLayout: EditorLayout) => {
-    actions.setLayout(nextLayout)
-    saveLayout(nextLayout)
-    requestAnimationFrame(() => applyLayoutToPanels(nextLayout))
+    const normalized = normalizeEditorLayout(nextLayout)
+    actions.setLayout(normalized)
+    saveLayout(normalized)
+    requestAnimationFrame(() => applyLayoutToPanels(normalized))
   }, [actions, applyLayoutToPanels])
   
   const handleResetLayout = useCallback(() => {
@@ -336,6 +346,17 @@ function VideoEditorWithStore({
     }
     prevShowPropertiesPanelRef.current = showPropertiesPanel
   }, [getEditorState, showPropertiesPanel])
+
+  const prevShowAgentChatRef = useRef(showAgentChat)
+  useEffect(() => {
+    if (showAgentChat && !prevShowAgentChatRef.current) {
+      const currentLayout = selectLayout(getEditorState())
+      requestAnimationFrame(() => {
+        chatPanelResizeRef.current?.resize(currentLayout.chatPanelWidth)
+      })
+    }
+    prevShowAgentChatRef.current = showAgentChat
+  }, [getEditorState, showAgentChat])
 
   const { subtitleFileInputRef, handleImportSrt, handleExportSrt } = useSubtitleImportExport()
   const { handleExportTimelineXml } = useTimelineXmlExport()
@@ -964,6 +985,26 @@ function VideoEditorWithStore({
                   </div>
                 ) : null}
                 </div>
+              </Panel>
+            </>
+          )}
+          {showAgentChat && (
+            <>
+              <Separator className="w-1 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors relative z-10" />
+              <Panel
+                id="editor-agent-panel"
+                panelRef={chatPanelResizeRef}
+                defaultSize={initialPanelDefaultsRef.current.chatPanelWidth}
+                minSize={LAYOUT_LIMITS.chatPanelWidth.min}
+                maxSize={LAYOUT_LIMITS.chatPanelWidth.max}
+                groupResizeBehavior="preserve-pixel-size"
+                onResize={(size, _id, prev) => {
+                  if (!prev) return
+                  updateLayoutField('chatPanelWidth', size.inPixels)
+                }}
+                className="min-w-0"
+              >
+                <AgentChatPanel getSelectedGap={() => selectedGapRef.current} />
               </Panel>
             </>
           )}
