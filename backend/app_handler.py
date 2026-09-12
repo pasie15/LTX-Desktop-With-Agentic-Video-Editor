@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from state.app_settings import AppSettings
 from handlers import (
     AgentHandler,
+    AgentLlmOAuthHandler,
     DownloadHandler,
     GenerationHandler,
     HealthHandler,
@@ -229,6 +230,15 @@ class AppHandler:
             lock=self._lock,
             config=config,
             http=http,
+            settings_handler=self.settings,
+        )
+
+        self.agent_llm_oauth = AgentLlmOAuthHandler(
+            state=self.state,
+            lock=self._lock,
+            config=config,
+            http=http,
+            settings_handler=self.settings,
         )
 
         self.retake = RetakeHandler(

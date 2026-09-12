@@ -95,8 +95,178 @@
         "title": "AgentAskUserQuestionPayload",
         "type": "object"
       },
+      "AgentLlmOAuthCancelRequest": {
+        "properties": {
+          "sessionId": {
+            "default": "",
+            "title": "Sessionid",
+            "type": "string"
+          }
+        },
+        "title": "AgentLlmOAuthCancelRequest",
+        "type": "object"
+      },
+      "AgentLlmOAuthCompleteRequest": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "sessionId": {
+            "title": "Sessionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "code"
+        ],
+        "title": "AgentLlmOAuthCompleteRequest",
+        "type": "object"
+      },
+      "AgentLlmOAuthDisconnectRequest": {
+        "properties": {
+          "providerId": {
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId"
+        ],
+        "title": "AgentLlmOAuthDisconnectRequest",
+        "type": "object"
+      },
+      "AgentLlmOAuthOkResponse": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "AgentLlmOAuthOkResponse",
+        "type": "object"
+      },
+      "AgentLlmOAuthPollRequest": {
+        "properties": {
+          "sessionId": {
+            "title": "Sessionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "title": "AgentLlmOAuthPollRequest",
+        "type": "object"
+      },
+      "AgentLlmOAuthPollResponse": {
+        "properties": {
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "providerId": {
+            "default": "",
+            "title": "Providerid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "authenticated",
+              "error",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "AgentLlmOAuthPollResponse",
+        "type": "object"
+      },
+      "AgentLlmOAuthStartRequest": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "providerId": {
+            "default": "",
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "AgentLlmOAuthStartRequest",
+        "type": "object"
+      },
+      "AgentLlmOAuthStartResponse": {
+        "properties": {
+          "authorizeUrl": {
+            "title": "Authorizeurl",
+            "type": "string"
+          },
+          "expiresIn": {
+            "title": "Expiresin",
+            "type": "integer"
+          },
+          "flow": {
+            "enum": [
+              "device",
+              "code"
+            ],
+            "title": "Flow",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "sessionId": {
+            "title": "Sessionid",
+            "type": "string"
+          },
+          "userCode": {
+            "default": "",
+            "title": "Usercode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "kind",
+          "flow",
+          "authorizeUrl",
+          "expiresIn"
+        ],
+        "title": "AgentLlmOAuthStartResponse",
+        "type": "object"
+      },
       "AgentLlmProviderPublic": {
         "properties": {
+          "authMode": {
+            "default": "api_key",
+            "enum": [
+              "api_key",
+              "oauth"
+            ],
+            "title": "Authmode",
+            "type": "string"
+          },
           "baseUrl": {
             "default": "",
             "title": "Baseurl",
@@ -105,6 +275,11 @@
           "hasApiKey": {
             "default": false,
             "title": "Hasapikey",
+            "type": "boolean"
+          },
+          "hasOAuth": {
+            "default": false,
+            "title": "Hasoauth",
             "type": "boolean"
           },
           "id": {
@@ -120,6 +295,7 @@
               "zai",
               "minimax",
               "moonshot",
+              "xai",
               "groq",
               "deepseek",
               "custom_openai",
@@ -153,6 +329,15 @@
             "title": "Apikey",
             "type": "string"
           },
+          "authMode": {
+            "default": "api_key",
+            "enum": [
+              "api_key",
+              "oauth"
+            ],
+            "title": "Authmode",
+            "type": "string"
+          },
           "baseUrl": {
             "default": "",
             "title": "Baseurl",
@@ -171,6 +356,7 @@
               "zai",
               "minimax",
               "moonshot",
+              "xai",
               "groq",
               "deepseek",
               "custom_openai",
@@ -187,6 +373,31 @@
           "model": {
             "default": "",
             "title": "Model",
+            "type": "string"
+          },
+          "oauthAccessToken": {
+            "default": "",
+            "title": "Oauthaccesstoken",
+            "type": "string"
+          },
+          "oauthAccountId": {
+            "default": "",
+            "title": "Oauthaccountid",
+            "type": "string"
+          },
+          "oauthAccountLabel": {
+            "default": "",
+            "title": "Oauthaccountlabel",
+            "type": "string"
+          },
+          "oauthExpiresAt": {
+            "default": 0,
+            "title": "Oauthexpiresat",
+            "type": "number"
+          },
+          "oauthRefreshToken": {
+            "default": "",
+            "title": "Oauthrefreshtoken",
             "type": "string"
           }
         },
@@ -4735,6 +4946,261 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/llm/oauth/cancel": {
+      "post": {
+        "operationId": "route_agent_llm_oauth_cancel_api_agent_llm_oauth_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLlmOAuthCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLlmOAuthOkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Llm Oauth Cancel",
+        "tags": [
+          "agent_llm_oauth"
+        ]
+      }
+    },
+    "/api/agent/llm/oauth/complete": {
+      "post": {
+        "operationId": "route_agent_llm_oauth_complete_api_agent_llm_oauth_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLlmOAuthCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLlmOAuthPollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Llm Oauth Complete",
+        "tags": [
+          "agent_llm_oauth"
+        ]
+      }
+    },
+    "/api/agent/llm/oauth/disconnect": {
+      "post": {
+        "operationId": "route_agent_llm_oauth_disconnect_api_agent_llm_oauth_disconnect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLlmOAuthDisconnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLlmOAuthOkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Llm Oauth Disconnect",
+        "tags": [
+          "agent_llm_oauth"
+        ]
+      }
+    },
+    "/api/agent/llm/oauth/poll": {
+      "post": {
+        "operationId": "route_agent_llm_oauth_poll_api_agent_llm_oauth_poll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLlmOAuthPollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLlmOAuthPollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Llm Oauth Poll",
+        "tags": [
+          "agent_llm_oauth"
+        ]
+      }
+    },
+    "/api/agent/llm/oauth/start": {
+      "post": {
+        "operationId": "route_agent_llm_oauth_start_api_agent_llm_oauth_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLlmOAuthStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLlmOAuthStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Llm Oauth Start",
+        "tags": [
+          "agent_llm_oauth"
+        ]
+      }
+    },
     "/api/agent/turn": {
       "post": {
         "operationId": "route_agent_turn_api_agent_turn_post",

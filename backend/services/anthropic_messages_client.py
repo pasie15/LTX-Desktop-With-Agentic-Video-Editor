@@ -186,6 +186,7 @@ def call_anthropic_messages_turn(
     system_instruction: str,
     messages: list[JSONValue],
     tools: list[JSONValue],
+    use_oauth_bearer: bool = False,
     timeout: int = 60,
 ) -> LlmTurnResult:
     if not base_url.strip() or not model.strip():
@@ -201,14 +202,20 @@ def call_anthropic_messages_turn(
     if tools:
         payload["tools"] = tools
 
+    headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": _ANTHROPIC_VERSION,
+    }
+    if use_oauth_bearer:
+        headers["Authorization"] = f"Bearer {api_key}"
+        headers["anthropic-beta"] = "oauth-2025-04-20"
+    else:
+        headers["x-api-key"] = api_key
+
     try:
         response = http.post(
             anthropic_messages_url(base_url),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": _ANTHROPIC_VERSION,
-            },
+            headers=headers,
             json_payload=payload,
             timeout=timeout,
         )

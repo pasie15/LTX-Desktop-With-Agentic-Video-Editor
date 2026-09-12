@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/agent/llm/oauth/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Llm Oauth Cancel */
+        post: operations["route_agent_llm_oauth_cancel_api_agent_llm_oauth_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/llm/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Llm Oauth Complete */
+        post: operations["route_agent_llm_oauth_complete_api_agent_llm_oauth_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/llm/oauth/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Llm Oauth Disconnect */
+        post: operations["route_agent_llm_oauth_disconnect_api_agent_llm_oauth_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/llm/oauth/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Llm Oauth Poll */
+        post: operations["route_agent_llm_oauth_poll_api_agent_llm_oauth_poll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/llm/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Llm Oauth Start */
+        post: operations["route_agent_llm_oauth_start_api_agent_llm_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/turn": {
         parameters: {
             query?: never;
@@ -771,8 +856,102 @@ export interface components {
             /** Prompt */
             prompt: string;
         };
+        /** AgentLlmOAuthCancelRequest */
+        AgentLlmOAuthCancelRequest: {
+            /**
+             * Sessionid
+             * @default
+             */
+            sessionId: string;
+        };
+        /** AgentLlmOAuthCompleteRequest */
+        AgentLlmOAuthCompleteRequest: {
+            /** Code */
+            code: string;
+            /** Sessionid */
+            sessionId: string;
+        };
+        /** AgentLlmOAuthDisconnectRequest */
+        AgentLlmOAuthDisconnectRequest: {
+            /** Providerid */
+            providerId: string;
+        };
+        /** AgentLlmOAuthOkResponse */
+        AgentLlmOAuthOkResponse: {
+            /**
+             * Status
+             * @default ok
+             * @constant
+             */
+            status: "ok";
+        };
+        /** AgentLlmOAuthPollRequest */
+        AgentLlmOAuthPollRequest: {
+            /** Sessionid */
+            sessionId: string;
+        };
+        /** AgentLlmOAuthPollResponse */
+        AgentLlmOAuthPollResponse: {
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Providerid
+             * @default
+             */
+            providerId: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "authenticated" | "error" | "expired";
+        };
+        /** AgentLlmOAuthStartRequest */
+        AgentLlmOAuthStartRequest: {
+            /** Kind */
+            kind: string;
+            /**
+             * Providerid
+             * @default
+             */
+            providerId: string;
+        };
+        /** AgentLlmOAuthStartResponse */
+        AgentLlmOAuthStartResponse: {
+            /** Authorizeurl */
+            authorizeUrl: string;
+            /** Expiresin */
+            expiresIn: number;
+            /**
+             * Flow
+             * @enum {string}
+             */
+            flow: "device" | "code";
+            /** Kind */
+            kind: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Sessionid */
+            sessionId: string;
+            /**
+             * Usercode
+             * @default
+             */
+            userCode: string;
+        };
         /** AgentLlmProviderPublic */
         AgentLlmProviderPublic: {
+            /**
+             * Authmode
+             * @default api_key
+             * @enum {string}
+             */
+            authMode: "api_key" | "oauth";
             /**
              * Baseurl
              * @default
@@ -783,13 +962,18 @@ export interface components {
              * @default false
              */
             hasApiKey: boolean;
+            /**
+             * Hasoauth
+             * @default false
+             */
+            hasOAuth: boolean;
             /** Id */
             id: string;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "gemini" | "openai" | "anthropic" | "openrouter" | "zai" | "minimax" | "moonshot" | "groq" | "deepseek" | "custom_openai" | "custom_anthropic";
+            kind: "gemini" | "openai" | "anthropic" | "openrouter" | "zai" | "minimax" | "moonshot" | "xai" | "groq" | "deepseek" | "custom_openai" | "custom_anthropic";
             /**
              * Label
              * @default
@@ -809,6 +993,12 @@ export interface components {
              */
             apiKey: string;
             /**
+             * Authmode
+             * @default api_key
+             * @enum {string}
+             */
+            authMode: "api_key" | "oauth";
+            /**
              * Baseurl
              * @default
              */
@@ -819,7 +1009,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "gemini" | "openai" | "anthropic" | "openrouter" | "zai" | "minimax" | "moonshot" | "groq" | "deepseek" | "custom_openai" | "custom_anthropic";
+            kind: "gemini" | "openai" | "anthropic" | "openrouter" | "zai" | "minimax" | "moonshot" | "xai" | "groq" | "deepseek" | "custom_openai" | "custom_anthropic";
             /**
              * Label
              * @default
@@ -830,6 +1020,31 @@ export interface components {
              * @default
              */
             model: string;
+            /**
+             * Oauthaccesstoken
+             * @default
+             */
+            oauthAccessToken: string;
+            /**
+             * Oauthaccountid
+             * @default
+             */
+            oauthAccountId: string;
+            /**
+             * Oauthaccountlabel
+             * @default
+             */
+            oauthAccountLabel: string;
+            /**
+             * Oauthexpiresat
+             * @default 0
+             */
+            oauthExpiresAt: number;
+            /**
+             * Oauthrefreshtoken
+             * @default
+             */
+            oauthRefreshToken: string;
         };
         /** AgentMessagePartPayload */
         AgentMessagePartPayload: {
@@ -2451,6 +2666,216 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    route_agent_llm_oauth_cancel_api_agent_llm_oauth_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentLlmOAuthCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLlmOAuthOkResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
+    route_agent_llm_oauth_complete_api_agent_llm_oauth_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentLlmOAuthCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLlmOAuthPollResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
+    route_agent_llm_oauth_disconnect_api_agent_llm_oauth_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentLlmOAuthDisconnectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLlmOAuthOkResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
+    route_agent_llm_oauth_poll_api_agent_llm_oauth_poll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentLlmOAuthPollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLlmOAuthPollResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
+    route_agent_llm_oauth_start_api_agent_llm_oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentLlmOAuthStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLlmOAuthStartResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
     route_agent_turn_api_agent_turn_post: {
         parameters: {
             query?: never;

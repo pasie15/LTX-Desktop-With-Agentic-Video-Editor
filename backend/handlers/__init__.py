@@ -1,6 +1,7 @@
 """State handler exports."""
 
 from handlers.agent_handler import AgentHandler
+from handlers.agent_llm_oauth_handler import AgentLlmOAuthHandler
 from handlers.download_handler import DownloadHandler
 from handlers.hf_auth_handler import HuggingFaceAuthHandler
 from handlers.generation_handler import GenerationHandler
@@ -21,6 +22,7 @@ from handlers.video_generation_handler import VideoGenerationHandler
 
 __all__ = [
     "AgentHandler",
+    "AgentLlmOAuthHandler",
     "SettingsHandler",
     "ModelsHandler",
     "DownloadHandler",

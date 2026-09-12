@@ -41,6 +41,7 @@ def test_catalog_covers_requested_providers() -> None:
         "zai",
         "minimax",
         "moonshot",
+        "xai",
         "custom_openai",
         "custom_anthropic",
     }
@@ -53,6 +54,29 @@ def test_builtin_gemini_when_no_provider_selected() -> None:
     assert resolved.api_kind == "gemini"
     assert resolved.api_key == "g-key"
     assert resolved.model == "gemini-2.0-flash"
+    assert has_usable_agent_llm_key(settings) is True
+
+
+def test_oauth_openai_uses_codex_not_api_key() -> None:
+    settings = AppSettings(
+        agent_llm_provider_id="prov_oai",
+        agent_llm_providers=[
+            AgentLlmProviderSettings(
+                id="prov_oai",
+                kind="openai",
+                api_key="sk-fallback",
+                oauth_access_token="oauth-access",
+                oauth_account_id="acct_1",
+                auth_mode="oauth",
+                model="gpt-4o",
+            )
+        ],
+    )
+    resolved = resolve_agent_llm(settings)
+    assert resolved.auth_mode == "oauth"
+    assert resolved.api_key == "oauth-access"
+    assert resolved.oauth_account_id == "acct_1"
+    assert resolved.base_url == "https://chatgpt.com/backend-api/codex"
     assert has_usable_agent_llm_key(settings) is True
 
 
@@ -123,6 +147,7 @@ def test_settings_response_redacts_provider_keys() -> None:
     assert len(response.agent_llm_providers) == 1
     public = response.agent_llm_providers[0]
     assert public.has_api_key is True
+    assert public.has_oauth is False
     assert public.model == "gpt-4o"
     dumped = response.model_dump()
     assert "api_key" not in dumped
@@ -143,8 +168,36 @@ def test_merge_preserves_existing_keys() -> None:
             "api_key": "sk-keep",
             "model": "gpt-4.1",
             "base_url": "",
+            "auth_mode": "api_key",
+            "oauth_access_token": "",
+            "oauth_refresh_token": "",
+            "oauth_expires_at": 0.0,
+            "oauth_account_id": "",
+            "oauth_account_label": "",
         }
     ]
+
+
+def test_merge_preserves_oauth_tokens() -> None:
+    existing = [
+        AgentLlmProviderSettings(
+            id="prov_oai",
+            kind="openai",
+            api_key="sk-keep",
+            oauth_access_token="tok",
+            oauth_refresh_token="ref",
+            oauth_expires_at=99.0,
+            oauth_account_id="acct",
+            auth_mode="oauth",
+        )
+    ]
+    merged = merge_agent_llm_providers(
+        existing,
+        [{"id": "prov_oai", "kind": "openai", "label": "Work", "api_key": "", "model": "gpt-4.1"}],
+    )
+    assert merged[0]["oauth_access_token"] == "tok"
+    assert merged[0]["oauth_refresh_token"] == "ref"
+    assert merged[0]["auth_mode"] == "oauth"
 
 
 def test_openai_url_and_messages() -> None:

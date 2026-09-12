@@ -269,6 +269,22 @@ class HfAuthenticated:
 HfAuthState = HfNotAuthenticated | HfOAuthPending | HfAuthenticated
 
 
+@dataclass(frozen=True)
+class AgentLlmOAuthPending:
+    session_id: str
+    kind: str
+    provider_id: str
+    flow: str
+    created_at: float
+    expires_at: float
+    poll_after: float
+    code_verifier: str
+    state: str
+    device_code: str
+    user_code: str
+    redirect_uri: str
+
+
 # ============================================================
 # Top-level state
 # ============================================================
@@ -286,6 +302,7 @@ class AppState:
         default_factory=_default_completed_download_sessions
     )
     hf_auth_state: HfAuthState = field(default_factory=HfNotAuthenticated)
+    agent_llm_oauth_pending: AgentLlmOAuthPending | None = None
     ic_lora_download_session: CatalogDownloadSession | None = None
     completed_ic_lora_download_sessions: dict[DownloadSessionId, DownloadSessionResult] = field(
         default_factory=_default_completed_ic_lora_download_sessions

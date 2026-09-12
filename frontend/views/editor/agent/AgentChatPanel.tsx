@@ -250,14 +250,14 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
             <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-2">
               <MessageSquare className="h-6 w-6 text-zinc-600" />
               <p className="text-[12px] text-zinc-400 leading-relaxed">
-                Add an Agent API key in Settings to use chat.
+                Connect an Agent provider or add an API key in Settings to use chat.
               </p>
               <button
                 type="button"
                 onClick={openAgentLlmSettings}
                 className="text-[12px] font-medium text-blue-400 hover:text-blue-300 transition-colors"
               >
-                Add an Agent API key in Settings
+                Open Agent LLM Settings
               </button>
             </div>
           ) : showEmpty ? (

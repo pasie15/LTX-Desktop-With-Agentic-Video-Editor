@@ -27,9 +27,11 @@ from services.openai_compatible_chat import (
 from state.app_settings import (
     BUILTIN_GEMINI_PROVIDER_ID,
     CUSTOM_AGENT_LLM_KINDS,
+    AgentLlmAuthMode,
     AgentLlmProviderKind,
     AgentLlmProviderSettings,
     AppSettings,
+    provider_has_oauth,
     selected_agent_llm_provider,
 )
 
@@ -44,6 +46,9 @@ class AgentLlmCatalogEntry:
     default_model: str
     default_base_url: str
     key_url: str
+    supports_oauth: bool = False
+    oauth_api_kind: AgentLlmApiKind | None = None
+    oauth_base_url: str = ""
 
 
 AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
@@ -62,6 +67,9 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         default_model="gpt-4o",
         default_base_url="https://api.openai.com/v1",
         key_url="https://platform.openai.com/api-keys",
+        supports_oauth=True,
+        oauth_api_kind="openai",
+        oauth_base_url="https://chatgpt.com/backend-api/codex",
     ),
     AgentLlmCatalogEntry(
         kind="anthropic",
@@ -70,6 +78,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         default_model="claude-sonnet-4-5",
         default_base_url="https://api.anthropic.com",
         key_url="https://console.anthropic.com/settings/keys",
+        supports_oauth=True,
     ),
     AgentLlmCatalogEntry(
         kind="openrouter",
@@ -94,6 +103,9 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         default_model="MiniMax-M2",
         default_base_url="https://api.minimax.io/v1",
         key_url="https://platform.minimax.io/user-center/basic-information/interface-key",
+        supports_oauth=True,
+        oauth_api_kind="anthropic",
+        oauth_base_url="https://api.minimax.io/anthropic",
     ),
     AgentLlmCatalogEntry(
         kind="moonshot",
@@ -102,6 +114,17 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         default_model="kimi-k2-0905-preview",
         default_base_url="https://api.moonshot.ai/v1",
         key_url="https://platform.moonshot.ai/console/api-keys",
+        supports_oauth=True,
+        oauth_base_url="https://api.kimi.com/coding/v1",
+    ),
+    AgentLlmCatalogEntry(
+        kind="xai",
+        label="xAI (Grok)",
+        api_kind="openai",
+        default_model="grok-4",
+        default_base_url="https://api.x.ai/v1",
+        key_url="https://console.x.ai/team/default/api-keys",
+        supports_oauth=True,
     ),
     AgentLlmCatalogEntry(
         kind="groq",
@@ -162,6 +185,10 @@ class ResolvedAgentLlm:
     api_key: str
     model: str
     base_url: str
+    auth_mode: AgentLlmAuthMode = "api_key"
+    oauth_account_id: str = ""
+    oauth_refresh_token: str = ""
+    oauth_expires_at: float = 0.0
 
 
 def catalog_entry(kind: AgentLlmProviderKind) -> AgentLlmCatalogEntry:
@@ -228,23 +255,29 @@ def resolve_agent_llm(settings: AppSettings, model_override: str | None = None) 
         return _resolve_builtin_gemini(settings, override)
 
     entry = catalog_entry(provider.kind)
-    api_key = provider.api_key
+    use_oauth = provider_has_oauth(provider)
+    api_key = provider.oauth_access_token if use_oauth else provider.api_key
     if provider.kind == "gemini" and not api_key:
         api_key = settings.gemini_api_key
     model = override or provider.model or entry.default_model
     if provider.kind == "gemini" and not model:
         model = settings.gemini_model
-    base_url = provider.base_url or entry.default_base_url
+    api_kind = entry.oauth_api_kind if use_oauth and entry.oauth_api_kind else entry.api_kind
+    base_url = provider.base_url or ((entry.oauth_base_url if use_oauth else "") or entry.default_base_url)
     if provider.kind in CUSTOM_AGENT_LLM_KINDS and (not base_url or not (override or provider.model)):
         raise HTTPError(400, "AGENT_LLM_PROVIDER_INVALID")
     return ResolvedAgentLlm(
         provider_id=provider.id,
         kind=provider.kind,
-        api_kind=entry.api_kind,
+        api_kind=api_kind,
         label=provider.label or entry.label,
         api_key=api_key,
         model=model,
         base_url=base_url,
+        auth_mode="oauth" if use_oauth else "api_key",
+        oauth_account_id=provider.oauth_account_id,
+        oauth_refresh_token=provider.oauth_refresh_token,
+        oauth_expires_at=provider.oauth_expires_at,
     )
 
 
@@ -301,6 +334,20 @@ def run_agent_llm_turn(
             ),
         )
 
+    if resolved.kind == "openai" and resolved.auth_mode == "oauth":
+        from services.codex_responses_client import call_codex_responses_turn
+
+        return call_codex_responses_turn(
+            http,
+            access_token=resolved.api_key,
+            account_id=resolved.oauth_account_id,
+            model=resolved.model,
+            messages=messages,
+            available_tools=available_tools,
+            system_instruction=system_instruction,
+            timeout=60,
+        )
+
     if resolved.api_kind == "openai":
         return call_openai_compatible_turn(
             http,
@@ -321,6 +368,7 @@ def run_agent_llm_turn(
         system_instruction=system_instruction,
         messages=anthropic_messages_from_agent(messages),
         tools=anthropic_tools_from_declarations(available_tools),
+        use_oauth_bearer=resolved.auth_mode == "oauth",
         timeout=60,
     )
 
@@ -376,6 +424,28 @@ def merge_agent_llm_providers(
         api_key = str(fields.get("api_key") or "").strip()
         if not api_key and previous is not None:
             api_key = previous.api_key
+        oauth_access = str(fields.get("oauth_access_token") or "").strip()
+        oauth_refresh = str(fields.get("oauth_refresh_token") or "").strip()
+        oauth_account_id = str(fields.get("oauth_account_id") or "").strip()
+        oauth_account_label = str(fields.get("oauth_account_label") or "").strip()
+        raw_expires = fields.get("oauth_expires_at")
+        oauth_expires_at = float(raw_expires) if isinstance(raw_expires, (int, float)) else 0.0
+        auth_mode = fields.get("auth_mode")
+        if auth_mode not in ("api_key", "oauth"):
+            auth_mode = previous.auth_mode if previous is not None else "api_key"
+        if previous is not None:
+            if not oauth_access:
+                oauth_access = previous.oauth_access_token
+            if not oauth_refresh:
+                oauth_refresh = previous.oauth_refresh_token
+            if oauth_expires_at <= 0:
+                oauth_expires_at = previous.oauth_expires_at
+            if not oauth_account_id:
+                oauth_account_id = previous.oauth_account_id
+            if not oauth_account_label:
+                oauth_account_label = previous.oauth_account_label
+        if oauth_access and auth_mode != "api_key":
+            auth_mode = "oauth"
         merged.append(
             {
                 "id": provider_id,
@@ -384,6 +454,12 @@ def merge_agent_llm_providers(
                 "api_key": api_key,
                 "model": str(fields.get("model") or "").strip(),
                 "base_url": str(fields.get("base_url") or "").strip(),
+                "auth_mode": auth_mode,
+                "oauth_access_token": oauth_access,
+                "oauth_refresh_token": oauth_refresh,
+                "oauth_expires_at": oauth_expires_at,
+                "oauth_account_id": oauth_account_id,
+                "oauth_account_label": oauth_account_label,
             }
         )
     return merged
