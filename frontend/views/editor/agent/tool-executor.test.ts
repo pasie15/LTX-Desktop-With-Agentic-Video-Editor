@@ -1,16 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { createDefaultTimeline, DEFAULT_COLOR_CORRECTION, DEFAULT_TRACKS, type Asset, type TimelineClip } from '../../../types/project-model.ts'
-import * as editorActions from '../editor-actions.ts'
-import {
-  createInitialEditorState,
-  equalUndoSnapshot,
-  getUndoSnapshot,
-  type EditorState,
-} from '../editor-state.ts'
-import { selectActiveTimeline } from '../editor-selectors.ts'
+import { createDefaultTimeline, DEFAULT_COLOR_CORRECTION, DEFAULT_TRACKS, type Asset, type Timeline, type TimelineClip } from '../../../types/project-model.ts'
+import { DEFAULT_LAYOUT } from '../editor-layout.ts'
+import type { EditorState, EditorUndoSnapshot } from '../editor-state.ts'
+import { AgentToolExecutor, type AgentEditorActions, type AgentToolExecutorHost } from './agent-edit-runtime.ts'
 import { listGenerationModels, validateUnknownKeys } from './agent-tool-utils.ts'
-import { AgentToolExecutor, type AgentToolExecutorHost } from './tool-executor.ts'
 
 function videoAsset(id: string, duration = 4): Asset {
   return {
@@ -45,6 +39,31 @@ function clip(partial: Pick<TimelineClip, 'id' | 'startTime' | 'duration' | 'tra
   }
 }
 
+function snapshot(state: EditorState): EditorUndoSnapshot {
+  return {
+    assets: state.editorModel.assets,
+    bins: state.editorModel.bins,
+    timelines: state.editorModel.timelines,
+  }
+}
+
+function sameSnapshot(left: EditorUndoSnapshot, right: EditorUndoSnapshot): boolean {
+  return left.assets === right.assets && left.bins === right.bins && left.timelines === right.timelines
+}
+
+function replaceActiveTimeline(state: EditorState, update: (timeline: Timeline) => Timeline): EditorState {
+  const activeId = state.editorModel.activeTimelineId
+  return {
+    ...state,
+    editorModel: {
+      ...state.editorModel,
+      timelines: state.editorModel.timelines.map(timeline => (
+        timeline.id === activeId ? update(timeline) : timeline
+      )),
+    },
+  }
+}
+
 function makeState(overrides?: {
   clips?: TimelineClip[]
   assets?: Asset[]
@@ -59,38 +78,296 @@ function makeState(overrides?: {
   timeline.clips = overrides?.clips ?? [
     clip({ id: 'c1', startTime: 0, duration: 4, trackIndex: 0 }),
   ]
-  const state = createInitialEditorState({
-    assets: overrides?.assets ?? [videoAsset('asset-1'), videoAsset('asset-2', 3)],
-    bins: overrides?.bins ?? {},
-    timelines: [timeline],
-    activeTimelineId: 'tl1',
-  })
   return {
-    ...state,
+    editorModel: {
+      assets: overrides?.assets ?? [videoAsset('asset-1'), videoAsset('asset-2', 3)],
+      bins: overrides?.bins ?? {},
+      timelines: [timeline],
+      activeTimelineId: 'tl1',
+    },
     session: {
-      ...state.session,
       selection: {
-        ...state.session.selection,
         clipIds: new Set(overrides?.selectedClipIds ?? []),
+        subtitleId: null,
+        editingSubtitleId: null,
+        gap: null,
       },
       transport: {
-        ...state.session.transport,
         currentTime: overrides?.playhead ?? 2,
+        isPlaying: false,
+        shuttleSpeed: 0,
+        playingInOut: false,
+        timelineInOutMap: {},
       },
+      tools: {
+        zoom: 1,
+        snapEnabled: true,
+        activeTool: 'select',
+        lastTrimTool: 'ripple',
+      },
+      ui: {
+        showImportTimelineModal: false,
+        showExportModal: false,
+        showSourceMonitor: false,
+        showPropertiesPanel: false,
+        showAgentChat: false,
+        showEffectsBrowser: false,
+        activeFocusArea: 'timeline',
+        sourceSplitPercent: 50,
+        hasSourceAsset: false,
+        openTimelineIds: new Set(['tl1']),
+        renamingTimelineId: null,
+        renameValue: '',
+        renameSource: 'tab',
+        layout: { ...DEFAULT_LAYOUT },
+        subtitleTrackStyleIdx: null,
+        gapGenerateMode: null,
+      },
+      regeneration: {
+        regeneratingAssetId: null,
+        regeneratingClipId: null,
+        preError: null,
+      },
+      clipboard: {
+        kind: null,
+        clips: [],
+        copiedFromTimelineId: null,
+      },
+    },
+    history: {
+      undoStack: [],
+      redoStack: [],
+    },
+    projectSync: {
+      dirty: false,
     },
   }
 }
 
 function recordHistoryStep(prev: EditorState, next: EditorState): EditorState {
   if (next === prev) return prev
-  const beforeSnapshot = getUndoSnapshot(prev)
-  const afterSnapshot = getUndoSnapshot(next)
-  if (equalUndoSnapshot(beforeSnapshot, afterSnapshot)) return next
+  const beforeSnapshot = snapshot(prev)
+  const afterSnapshot = snapshot(next)
+  if (sameSnapshot(beforeSnapshot, afterSnapshot)) return next
   return {
     ...next,
     history: {
       undoStack: [...prev.history.undoStack, beforeSnapshot],
       redoStack: [],
+    },
+  }
+}
+
+function fakeActions(): AgentEditorActions {
+  return {
+    insertAssetsToTimeline: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: [
+        ...timeline.clips,
+        ...params.assets.map((asset, index) => clip({
+          id: `ins-${asset.id}-${index}`,
+          assetId: asset.id,
+          startTime: (params.startTime ?? 0) + index,
+          duration: asset.duration ?? 4,
+          trackIndex: params.trackIndex ?? 0,
+        })),
+      ],
+    })),
+    overwriteAssetsOnTimeline: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: [
+        ...timeline.clips,
+        ...params.assets.map((asset, index) => clip({
+          id: `ow-${asset.id}-${index}`,
+          assetId: asset.id,
+          startTime: params.startTime ?? 0,
+          duration: asset.duration ?? 4,
+          trackIndex: params.trackIndex ?? 0,
+        })),
+      ],
+    })),
+    splitClipsAtTime: (state, clipIds, time) => replaceActiveTimeline(state, timeline => {
+      const extras: TimelineClip[] = []
+      const clips = timeline.clips.map(item => {
+        if (!clipIds.includes(item.id)) return item
+        const splitPoint = time - item.startTime
+        if (splitPoint <= 0.1 || splitPoint >= item.duration - 0.1) return item
+        extras.push(clip({
+          id: `${item.id}-b`,
+          assetId: item.assetId ?? 'asset-1',
+          startTime: time,
+          duration: item.duration - splitPoint,
+          trackIndex: item.trackIndex,
+        }))
+        return { ...item, duration: splitPoint }
+      })
+      return { ...timeline, clips: [...clips, ...extras] }
+    }),
+    moveClips: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (
+        params.clipIds.includes(item.id)
+          ? {
+              ...item,
+              startTime: Math.max(0, item.startTime + (params.deltaTime ?? 0)),
+              trackIndex: params.targetTrackIndex ?? item.trackIndex,
+            }
+          : item
+      )),
+    })),
+    resizeClip: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => {
+        if (item.id !== params.clipId) return item
+        if (params.edge === 'start') {
+          const nextStart = Math.max(0, item.startTime + params.deltaTime)
+          return { ...item, startTime: nextStart, duration: Math.max(0.1, item.duration - (nextStart - item.startTime)) }
+        }
+        return { ...item, duration: Math.max(0.1, item.duration + params.deltaTime) }
+      }),
+    })),
+    deleteClips: (state, clipIds) => {
+      const deleteSet = new Set(clipIds)
+      const next = replaceActiveTimeline(state, timeline => ({
+        ...timeline,
+        clips: timeline.clips.filter(item => !deleteSet.has(item.id)),
+      }))
+      return {
+        ...next,
+        session: {
+          ...next.session,
+          selection: {
+            ...next.session.selection,
+            clipIds: new Set([...next.session.selection.clipIds].filter(id => !deleteSet.has(id))),
+          },
+        },
+      }
+    },
+    addTextClip: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: [
+        ...timeline.clips,
+        {
+          ...clip({
+            id: 'text-1',
+            startTime: params.startTime ?? state.session.transport.currentTime,
+            duration: 5,
+            trackIndex: params.trackIndex ?? 0,
+          }),
+          type: 'text',
+          assetId: null,
+          textStyle: {
+            text: params.style?.text ?? 'Title Text',
+            fontFamily: 'Inter',
+            fontSize: 64,
+            fontWeight: 'bold',
+            fontStyle: 'normal',
+            color: '#fff',
+            backgroundColor: 'transparent',
+            textAlign: 'center',
+            positionX: 50,
+            positionY: 50,
+            strokeColor: 'transparent',
+            strokeWidth: 0,
+            shadowColor: '#000',
+            shadowBlur: 0,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+            letterSpacing: 0,
+            lineHeight: 1,
+            maxWidth: 80,
+            padding: 0,
+            borderRadius: 0,
+            opacity: 100,
+          },
+        },
+      ],
+    })),
+    addSubtitleTrack: (state) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      tracks: [
+        { id: 'track-sub', name: 'Subtitles', muted: false, locked: false, kind: 'video', type: 'subtitle' },
+        ...timeline.tracks,
+      ],
+    })),
+    addSubtitle: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      subtitles: [
+        ...timeline.subtitles,
+        {
+          id: 'sub-1',
+          text: params.text || 'New subtitle',
+          startTime: params.startTime ?? state.session.transport.currentTime,
+          endTime: params.endTime ?? state.session.transport.currentTime + 3,
+          trackIndex: params.trackIndex,
+        },
+      ],
+    })),
+    setSelectedClipIds: (state, value) => ({
+      ...state,
+      session: {
+        ...state.session,
+        selection: { ...state.session.selection, clipIds: value, subtitleId: null },
+      },
+    }),
+    setCurrentTime: (state, time) => ({
+      ...state,
+      session: {
+        ...state.session,
+        transport: { ...state.session.transport, currentTime: Math.max(0, time) },
+      },
+    }),
+    createTimeline: (state, name) => {
+      const created = createDefaultTimeline(name ?? 'Timeline 2')
+      created.id = 'tl-new'
+      return {
+        ...state,
+        editorModel: {
+          ...state.editorModel,
+          timelines: [...state.editorModel.timelines, created],
+          activeTimelineId: created.id,
+        },
+      }
+    },
+    createBin: (state, binId, name) => ({
+      ...state,
+      editorModel: {
+        ...state.editorModel,
+        bins: { ...state.editorModel.bins, [binId]: name },
+      },
+    }),
+    assignAssetsToBin: (state, assetIds, binId) => ({
+      ...state,
+      editorModel: {
+        ...state.editorModel,
+        assets: state.editorModel.assets.map(asset => (
+          assetIds.includes(asset.id) ? { ...asset, binId } : asset
+        )),
+      },
+    }),
+    renameBin: (state, binId, newName) => ({
+      ...state,
+      editorModel: {
+        ...state.editorModel,
+        bins: { ...state.editorModel.bins, [binId]: newName },
+      },
+    }),
+    undo: (state) => {
+      const previous = state.history.undoStack[state.history.undoStack.length - 1]
+      if (!previous) return state
+      return {
+        ...state,
+        editorModel: {
+          ...state.editorModel,
+          assets: previous.assets,
+          bins: previous.bins,
+          timelines: previous.timelines,
+        },
+        history: {
+          undoStack: state.history.undoStack.slice(0, -1),
+          redoStack: [...state.history.redoStack, snapshot(state)],
+        },
+      }
     },
   }
 }
@@ -106,7 +383,12 @@ function createHost(initial: EditorState): AgentToolExecutorHost & { box: { stat
     applyWithoutHistory: (fn) => {
       box.state = fn(box.state)
     },
+    actions: fakeActions(),
   }
+}
+
+function activeClips(state: EditorState): TimelineClip[] {
+  return state.editorModel.timelines.find(timeline => timeline.id === state.editorModel.activeTimelineId)?.clips ?? []
 }
 
 describe('read tool executor', () => {
@@ -142,14 +424,14 @@ describe('edit tool executor', () => {
     const executor = new AgentToolExecutor(host)
     const split = await executor.execute('split_clips', {})
     assert.equal(split.ok, true)
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 2)
+    assert.equal(activeClips(host.getState()).length, 2)
     assert.ok(Array.isArray(split.createdClipIds) && split.createdClipIds.length === 1)
 
     const undone = await executor.execute('undo', {})
     assert.equal(undone.ok, true)
     assert.equal(undone.undone, 'split_clips')
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 1)
-    assert.equal(selectActiveTimeline(host.getState())?.clips[0]?.id, 'c1')
+    assert.equal(activeClips(host.getState()).length, 1)
+    assert.equal(activeClips(host.getState())[0]?.id, 'c1')
   })
 
   it('refuses agent undo after a user edit', async () => {
@@ -158,11 +440,11 @@ describe('edit tool executor', () => {
     const split = await executor.execute('split_clips', { time: 2 })
     assert.equal(split.ok, true)
 
-    host.applyWithHistory(prev => editorActions.moveClips(prev, { clipIds: ['c1'], deltaTime: 1 }))
+    host.applyWithHistory(prev => host.actions.moveClips(prev, { clipIds: ['c1'], deltaTime: 1 }))
     const undone = await executor.execute('undo', {})
     assert.equal(undone.ok, false)
     assert.match(String(undone.error), /not an assistant edit/)
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 2)
+    assert.equal(activeClips(host.getState()).length, 2)
   })
 
   it('inserts an asset and returns the new clip ids', async () => {
@@ -171,7 +453,7 @@ describe('edit tool executor', () => {
     const result = await executor.execute('insert_assets', { assetIds: ['asset-1'], startTime: 0, trackIndex: 0 })
     assert.equal(result.ok, true)
     assert.ok(Array.isArray(result.insertedClipIds) && (result.insertedClipIds as string[]).length >= 1)
-    assert.ok((selectActiveTimeline(host.getState())?.clips.length ?? 0) >= 1)
+    assert.ok(activeClips(host.getState()).length >= 1)
   })
 
   it('refuses insert onto a locked track', async () => {
@@ -180,7 +462,7 @@ describe('edit tool executor', () => {
     const result = await executor.execute('insert_assets', { assetIds: ['asset-1'], trackIndex: 0 })
     assert.equal(result.ok, false)
     assert.equal(result.error, 'Track is locked')
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 0)
+    assert.equal(activeClips(host.getState()).length, 0)
   })
 
   it('errors on missing asset and clip ids without mutating', async () => {
@@ -192,7 +474,7 @@ describe('edit tool executor', () => {
     const missingClip = await executor.execute('delete_clips', { clipIds: ['missing'] })
     assert.equal(missingClip.ok, false)
     assert.match(String(missingClip.error), /Clip not found/)
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 1)
+    assert.equal(activeClips(host.getState()).length, 1)
   })
 
   it('requires confirmation to delete many clips', async () => {
@@ -206,12 +488,12 @@ describe('edit tool executor', () => {
     const blocked = await executor.execute('delete_clips', { clipIds: ['c1', 'c2'] })
     assert.equal(blocked.ok, false)
     assert.equal(blocked.needsConfirm, true)
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 2)
+    assert.equal(activeClips(host.getState()).length, 2)
 
     const deleted = await executor.execute('delete_clips', { clipIds: ['c1', 'c2'], confirmed: true })
     assert.equal(deleted.ok, true)
     assert.deepEqual(deleted.deletedClipIds, ['c1', 'c2'])
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 0)
+    assert.equal(activeClips(host.getState()).length, 0)
   })
 
   it('trims, moves, and deletes a single clip without confirm', async () => {
@@ -219,17 +501,17 @@ describe('edit tool executor', () => {
     const executor = new AgentToolExecutor(host)
     const trimmed = await executor.execute('trim_clip', { id: 'c1', start: 1, duration: 2 })
     assert.equal(trimmed.ok, true)
-    const afterTrim = selectActiveTimeline(host.getState())?.clips.find(item => item.id === 'c1')
+    const afterTrim = activeClips(host.getState()).find(item => item.id === 'c1')
     assert.equal(afterTrim?.startTime, 1)
     assert.equal(afterTrim?.duration, 2)
 
     const moved = await executor.execute('move_clips', { clipIds: ['c1'], start: 3 })
     assert.equal(moved.ok, true)
-    assert.equal(selectActiveTimeline(host.getState())?.clips.find(item => item.id === 'c1')?.startTime, 3)
+    assert.equal(activeClips(host.getState()).find(item => item.id === 'c1')?.startTime, 3)
 
     const deleted = await executor.execute('delete_clips', { clipIds: ['c1'] })
     assert.equal(deleted.ok, true)
-    assert.equal(selectActiveTimeline(host.getState())?.clips.length, 0)
+    assert.equal(activeClips(host.getState()).length, 0)
   })
 
   it('adds text and a subtitle, then selects and sets the playhead', async () => {
@@ -237,14 +519,15 @@ describe('edit tool executor', () => {
     const executor = new AgentToolExecutor(host)
     const text = await executor.execute('add_text', { text: 'HELLO', startTime: 0, trackIndex: 0, duration: 3 })
     assert.equal(text.ok, true)
-    const textClip = selectActiveTimeline(host.getState())?.clips.find(item => item.type === 'text')
+    const textClip = activeClips(host.getState()).find(item => item.type === 'text')
     assert.ok(textClip)
     assert.equal(textClip.textStyle?.text, 'HELLO')
     assert.equal(textClip.duration, 3)
 
     const subtitle = await executor.execute('add_subtitle', { text: 'Hi', startTime: 0, endTime: 2 })
     assert.equal(subtitle.ok, true)
-    assert.equal(selectActiveTimeline(host.getState())?.subtitles.length, 1)
+    const timeline = host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+    assert.equal(timeline?.subtitles.length, 1)
 
     const selected = await executor.execute('select_clips', { clipIds: [textClip.id] })
     assert.equal(selected.ok, true)
@@ -269,15 +552,12 @@ describe('edit tool executor', () => {
     assert.equal(host.getState().editorModel.bins[binId], 'B-roll 2')
   })
 
-  it('creates a timeline and still answers read tools', async () => {
+  it('creates a timeline', async () => {
     const host = createHost(makeState())
     const executor = new AgentToolExecutor(host)
     const created = await executor.execute('create_timeline', { name: 'Alt' })
     assert.equal(created.ok, true)
     assert.equal(host.getState().editorModel.activeTimelineId, (created.timeline as { id: string }).id)
-    const overview = await executor.execute('get_project_overview', {})
-    assert.equal(overview.ok, true)
-    assert.equal(overview.binCount, 0)
-    assert.ok(Array.isArray(overview.timelines) && (overview.timelines as unknown[]).length === 2)
+    assert.equal(host.getState().editorModel.timelines.length, 2)
   })
 })

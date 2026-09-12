@@ -9,7 +9,7 @@ import { mentionPartsForMessage } from './agent-mentions'
 import { getAgentChatStorage, loadAgentSessions } from './agent-persistence'
 import { buildAgentSnapshot } from './agent-snapshot'
 import { AGENT_TOOL_DEFINITIONS } from './tool-definitions'
-import { AgentToolExecutor } from './tool-executor'
+import { createAgentToolExecutor, executeAgentTool } from './tool-executor'
 import {
   AGENT_ADD_MENTION_EVENT,
   createAgentMessageId,
@@ -69,9 +69,13 @@ export function useAgentChat(params: UseAgentChatParams) {
   executorHostRef.current.getState = getEditorState
   executorHostRef.current.applyWithHistory = applyWithHistory
   executorHostRef.current.applyWithoutHistory = applyWithoutHistory
-  const executorRef = useRef<AgentToolExecutor | null>(null)
+  const executorRef = useRef<ReturnType<typeof createAgentToolExecutor> | null>(null)
   if (!executorRef.current) {
-    executorRef.current = new AgentToolExecutor(executorHostRef.current)
+    executorRef.current = createAgentToolExecutor({
+      getState: () => executorHostRef.current.getState(),
+      applyWithHistory: fn => executorHostRef.current.applyWithHistory(fn),
+      applyWithoutHistory: fn => executorHostRef.current.applyWithoutHistory(fn),
+    })
   }
 
   const activeSession = sessions.find(session => session.id === activeSessionId) ?? null
@@ -212,7 +216,7 @@ export function useAgentChat(params: UseAgentChatParams) {
         availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,
         requestTurn: requestAgentTurn,
-        executeTool: (name, args) => executorRef.current!.execute(name, args),
+        executeTool: (name, args) => executeAgentTool(executorRef.current!, name, args),
         onMessages: (messages) => {
           latest = messages
           replaceSession({ ...seed, messages })
