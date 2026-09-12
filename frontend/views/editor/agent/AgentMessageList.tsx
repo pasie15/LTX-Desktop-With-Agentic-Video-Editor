@@ -1,7 +1,7 @@
 import { GEMINI_KEY_REQUIRED_SETTINGS_DETAIL } from '../../../lib/enhance-gemini-key'
 import { AgentMarkdown } from './agent-markdown'
 import { toolRowLabel } from './tool-definitions'
-import type { AgentChatMessage } from './agent-types'
+import type { AgentChatMessage, AgentGenerationProgress } from './agent-types'
 
 function openGeminiSettings(): void {
   window.dispatchEvent(new CustomEvent('open-settings', {
@@ -16,6 +16,7 @@ function isKeyError(code?: string): boolean {
 export function AgentMessageList(props: {
   messages: AgentChatMessage[]
   running: boolean
+  generationProgress?: AgentGenerationProgress | null
 }) {
   const visible = props.messages.filter(message => message.role !== 'tool')
   return (
@@ -34,12 +35,16 @@ export function AgentMessageList(props: {
               )
             }
             if (part.type === 'tool_call') {
+              const progress = props.generationProgress?.toolName === part.name ? props.generationProgress : null
+              const label = toolRowLabel(part.name, part.arguments)
               return (
                 <div
                   key={`${message.id}-c${index}`}
                   className="text-[11px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded px-2 py-1"
                 >
-                  {toolRowLabel(part.name, part.arguments)}
+                  {progress
+                    ? `${label}… ${Math.max(0, Math.min(100, Math.round(progress.percent)))}%`
+                    : label}
                 </div>
               )
             }

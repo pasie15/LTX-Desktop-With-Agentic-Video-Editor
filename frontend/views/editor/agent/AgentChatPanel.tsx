@@ -47,7 +47,7 @@ function openGeminiSettings(): void {
 export function AgentChatPanel(props: AgentChatPanelProps) {
   const actions = useEditorActions()
   const getEditorState = useEditorGetState()
-  const { settings } = useAppSettings()
+  const { settings, shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi } = useAppSettings()
   const generationLock = useGlobalGenerationLock()
   const hasGeminiApiKey = settings.hasGeminiApiKey
   const storeSelectedGap = useEditorStore(selectSelectedGap)
@@ -72,8 +72,10 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
     assets,
     generationBusy: generationLock.isRunning,
     generationCanCancel: generationLock.canCancel,
-    currentModelLabel: settings.geminiModel || 'Settings default',
+    currentModelLabel: 'fast',
     hasGeminiApiKey,
+    shouldVideoGenerateWithLtxApi,
+    shouldImageGenerateWithFalApi,
   })
 
   const mentionQuery = findMentionQuery(chat.draft, caret)
@@ -275,7 +277,11 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
               </div>
             </div>
           ) : (
-            <AgentMessageList messages={messages} running={chat.running} />
+            <AgentMessageList
+              messages={messages}
+              running={chat.running}
+              generationProgress={chat.generationProgress}
+            />
           )}
         </div>
 

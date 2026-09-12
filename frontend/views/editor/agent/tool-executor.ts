@@ -1,6 +1,6 @@
 import { backendFetch } from '../../../lib/backend'
 import * as editorActions from '../editor-actions'
-import type { EditorState } from '../editor-state'
+import type { EditorState, TimelineGapSelection } from '../editor-state'
 import {
   selectActiveTimeline,
   selectActiveTimelineInPoint,
@@ -12,10 +12,11 @@ import {
   selectSelectedClips,
   selectSelectedGap,
 } from '../editor-selectors'
+import type { AgentGenerationJobs } from './agent-generate-runtime'
 import { AgentToolExecutor, type AgentToolExecutorHost } from './agent-edit-runtime'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice'
 import { asNumber, asString, listGenerationModels, toolErrorResult, validateUnknownKeys } from './agent-tool-utils'
-import { EDIT_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
+import { EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
 
 export { AgentToolExecutor, DELETE_MANY_THRESHOLD } from './agent-edit-runtime'
 export type { AgentEditorActions, AgentToolExecutorHost } from './agent-edit-runtime'
@@ -33,6 +34,11 @@ export interface CreateAgentToolExecutorInput {
   applyWithHistory: (fn: (state: EditorState) => EditorState) => void
   applyWithoutHistory: (fn: (state: EditorState) => EditorState) => void
   fetchImpl?: typeof backendFetch
+  generation?: AgentGenerationJobs
+  getSelectedGap?: () => TimelineGapSelection | null
+  projectId?: string
+  getAbortSignal?: () => AbortSignal | null
+  onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
 }
 
 function errorResult(message: string): Record<string, unknown> {
@@ -61,6 +67,11 @@ export function createAgentToolExecutor(input: CreateAgentToolExecutorInput): Ag
     applyWithHistory: input.applyWithHistory,
     applyWithoutHistory: input.applyWithoutHistory,
     actions: editorActions,
+    generation: input.generation,
+    getSelectedGap: input.getSelectedGap,
+    projectId: input.projectId,
+    getAbortSignal: input.getAbortSignal,
+    onProgress: input.onProgress,
   }
   return new AgentToolExecutor(host)
 }
@@ -79,7 +90,10 @@ export async function executeAgentTool(
       fetchImpl: fetchImpl ?? backendFetch,
     })
   }
-  if (Object.prototype.hasOwnProperty.call(EDIT_TOOL_ALLOWED_KEYS, name)) {
+  if (
+    Object.prototype.hasOwnProperty.call(EDIT_TOOL_ALLOWED_KEYS, name)
+    || Object.prototype.hasOwnProperty.call(GENERATE_TOOL_ALLOWED_KEYS, name)
+  ) {
     return executor.execute(name, args)
   }
   return errorResult(`Unknown tool: ${name}`)

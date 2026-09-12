@@ -1,3 +1,4 @@
+import { confirmQuestionsFromToolResult } from './agent-generate-runtime.ts'
 import {
   createAgentMessageId,
   MAX_AGENT_MODEL_TURNS,
@@ -144,6 +145,10 @@ export async function runAgentLoop(deps: AgentLoopDeps): Promise<AgentLoopResult
         const result = await deps.executeTool(call.name, call.arguments)
         messages = append(messages, toolResultMessage(call, result))
         deps.onMessages(messages)
+        if (result.needsConfirm === true) {
+          deps.onAskUser(confirmQuestionsFromToolResult(result))
+          return { messages, stopReason: 'ask_user' }
+        }
       }
       continue
     }
