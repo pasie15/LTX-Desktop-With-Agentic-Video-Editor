@@ -165,10 +165,10 @@ def parse_openai_turn_payload(payload: object) -> LlmTurnResult:
 
 def _parse_tool_arguments(value: object) -> dict[str, JSONValue]:
     if isinstance(value, dict):
-        return _json_object(value)
+        return _json_object(cast(dict[str, object], value))
     if isinstance(value, str) and value.strip():
         try:
-            parsed = json.loads(value)
+            parsed: object = json.loads(value)
         except json.JSONDecodeError:
             return {}
         return _json_object(parsed)

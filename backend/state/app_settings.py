@@ -113,7 +113,9 @@ class AppSettings(SettingsBaseModel):
     # Selected Agent chat provider. Empty or "gemini" uses the built-in Gemini key/model
     # already stored above. Other ids must match an entry in agent_llm_providers.
     agent_llm_provider_id: str = ""
-    agent_llm_providers: list[AgentLlmProviderSettings] = Field(default_factory=list)
+    agent_llm_providers: list[AgentLlmProviderSettings] = Field(
+        default_factory=list[AgentLlmProviderSettings]
+    )
     seed_locked: bool = False
     locked_seed: int = 42
     models_dir: str = ""
@@ -192,7 +194,9 @@ class SettingsResponse(SettingsBaseModel):
     gemini_model: str = ""
     has_agent_llm_key: bool = False
     agent_llm_provider_id: str = ""
-    agent_llm_providers: list[AgentLlmProviderPublic] = Field(default_factory=list)
+    agent_llm_providers: list[AgentLlmProviderPublic] = Field(
+        default_factory=list[AgentLlmProviderPublic]
+    )
     seed_locked: bool = False
     locked_seed: int = 42
     models_dir: str = ""

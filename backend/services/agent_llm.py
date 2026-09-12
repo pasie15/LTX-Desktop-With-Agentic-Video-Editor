@@ -357,9 +357,9 @@ def _openai_extra_headers(kind: AgentLlmProviderKind) -> dict[str, str] | None:
 def merge_agent_llm_providers(
     existing: list[AgentLlmProviderSettings],
     incoming: list[object],
-) -> list[dict[str, object]]:
+) -> list[JSONValue]:
     existing_by_id = {provider.id: provider for provider in existing}
-    merged: list[dict[str, object]] = []
+    merged: list[JSONValue] = []
     seen_ids: set[str] = set()
     for item in incoming:
         if not isinstance(item, dict):

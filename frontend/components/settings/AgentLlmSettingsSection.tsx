@@ -14,7 +14,7 @@ import type { AppSettings } from '../../contexts/AppSettingsContext'
 
 interface AgentLlmSettingsSectionProps {
   settings: AppSettings
-  sectionRef: RefObject<HTMLDivElement | null>
+  sectionRef: RefObject<HTMLDivElement>
   showBanner: boolean
   onSaved: () => Promise<void>
 }
@@ -40,6 +40,7 @@ function toPublicPatch(providers: AgentLlmProviderPublic[]) {
     id: provider.id,
     kind: provider.kind,
     label: provider.label,
+    apiKey: '',
     model: provider.model,
     baseUrl: provider.baseUrl,
   }))
