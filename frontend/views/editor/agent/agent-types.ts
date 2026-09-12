@@ -23,6 +23,7 @@ export interface AgentAskUserShot {
   prompt: string
   duration: number
   title?: string
+  assetId?: string
 }
 
 export interface AgentAskUserQuestion {

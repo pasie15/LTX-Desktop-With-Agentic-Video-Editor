@@ -3,6 +3,7 @@ import type { Asset } from '../../../types/project-model'
 import type { EditorState, TimelineGapSelection } from '../editor-state'
 import { useEditorApply } from '../editor-store'
 import { addVisualAssetToProject } from '../../../lib/asset-copy'
+import { importLocalMediaPath } from '../import-local-media'
 import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
 import { createAgentGenerationJobs } from './agent-generation-jobs'
@@ -104,6 +105,14 @@ export function useAgentChat(params: UseAgentChatParams) {
       applyWithHistory: fn => executorHostRef.current.applyWithHistory(fn),
       applyWithoutHistory: fn => executorHostRef.current.applyWithoutHistory(fn),
       generation: generationJobsRef.current,
+      importMedia: {
+        importPath: ({ srcPath, type, displayName }) => importLocalMediaPath({
+          srcPath,
+          projectId: projectIdRef.current,
+          type,
+          displayName,
+        }),
+      },
       getSelectedGap: () => executorHostRef.current.getSelectedGap?.() ?? null,
       projectId,
       getAbortSignal: () => executorHostRef.current.getAbortSignal(),
@@ -111,6 +120,14 @@ export function useAgentChat(params: UseAgentChatParams) {
     })
   }
   executorRef.current.host.generation = generationJobsRef.current
+  executorRef.current.host.importMedia = {
+    importPath: ({ srcPath, type, displayName }) => importLocalMediaPath({
+      srcPath,
+      projectId: projectIdRef.current,
+      type,
+      displayName,
+    }),
+  }
   executorRef.current.host.getSelectedGap = () => executorHostRef.current.getSelectedGap?.() ?? null
   executorRef.current.host.projectId = projectId
   executorRef.current.host.getAbortSignal = () => executorHostRef.current.getAbortSignal()

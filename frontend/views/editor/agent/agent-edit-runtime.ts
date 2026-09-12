@@ -2,6 +2,7 @@ import type { Asset, AssetTake, Timeline, TimelineClip } from '../../../types/pr
 import { createAssetBinId } from '../../../types/project-model.ts'
 import type { EditorState, EditorUndoSnapshot, TimelineGapSelection } from '../editor-state.ts'
 import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
+import { executeImportTool, type AgentImportJobs } from './agent-import-runtime.ts'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice.ts'
 import {
   asBoolean,
@@ -18,7 +19,7 @@ import {
 } from './agent-assembly-runtime.ts'
 import type { AgentAssemblyProposal } from './agent-assembly.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
-import { EDIT_TOOL_ALLOWED_KEYS, isAssemblyToolName, isGenerateToolName, type AgentEditToolName } from './tool-definitions.ts'
+import { EDIT_TOOL_ALLOWED_KEYS, isAssemblyToolName, isGenerateToolName, isImportToolName, type AgentEditToolName } from './tool-definitions.ts'
 
 export const DELETE_MANY_THRESHOLD = 2
 
@@ -54,6 +55,7 @@ export interface AgentToolExecutorHost {
   applyWithoutHistory: (fn: (state: EditorState) => EditorState) => void
   actions: AgentEditorActions
   generation?: AgentGenerationJobs
+  importMedia?: AgentImportJobs
   getSelectedGap?: () => TimelineGapSelection | null
   projectId?: string
   getAbortSignal?: () => AbortSignal | null
@@ -135,6 +137,14 @@ function trackLocked(state: EditorState, trackIndex: number): boolean {
   return Boolean(activeTimeline(state)?.tracks[trackIndex]?.locked)
 }
 
+function defaultTrackIndex(state: EditorState, assets: Asset[], explicit: number | null): number {
+  if (explicit != null) return explicit
+  const allAudio = assets.length > 0 && assets.every(asset => asset.type === 'audio')
+  if (!allAudio) return 0
+  const audioIndex = activeTimeline(state)?.tracks.findIndex(track => track.kind === 'audio' && !track.locked) ?? -1
+  return audioIndex >= 0 ? audioIndex : 0
+}
+
 function resolveClipIds(state: EditorState, rawIds: unknown): { ok: true; ids: string[] } | { ok: false; error: Record<string, unknown> } {
   if (rawIds != null && !Array.isArray(rawIds)) {
     return { ok: false, error: errorResult('clipIds must be an array of exact ids') }
@@ -210,6 +220,17 @@ export class AgentToolExecutor {
     if (isGenerateToolName(name)) {
       const before = undoSnapshot(this.host.getState())
       const result = await executeGenerateTool(this.host, name, args)
+      if (result.ok !== false) {
+        const after = undoSnapshot(this.host.getState())
+        if (!sameUndoSnapshot(before, after)) {
+          this.assistantUndo.push({ name, after })
+        }
+      }
+      return result
+    }
+    if (isImportToolName(name)) {
+      const before = undoSnapshot(this.host.getState())
+      const result = await executeImportTool(this.host, name, args)
       if (result.ok !== false) {
         const after = undoSnapshot(this.host.getState())
         if (!sameUndoSnapshot(before, after)) {
@@ -302,7 +323,7 @@ export class AgentToolExecutor {
     if (!timeline) return errorResult('No active timeline')
     const resolved = resolveAssets(state, args.assetIds)
     if (!resolved.ok) return resolved.error
-    const trackIndex = asNumber(args.trackIndex) ?? 0
+    const trackIndex = defaultTrackIndex(state, resolved.assets, asNumber(args.trackIndex))
     if (trackLocked(state, trackIndex)) return errorResult('Track is locked')
     const startTime = asNumber(args.startTime)
     const beforeIds = new Set(timeline.clips.map(item => item.id))

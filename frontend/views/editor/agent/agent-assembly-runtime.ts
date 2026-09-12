@@ -172,9 +172,11 @@ export async function executeAssemblyTool(
     )
   }
 
-  const jobs = host.generation
-  if (!jobs) return errorResult('Generation is not available')
-  if (jobs.isBusy()) return errorResult('Generation slot is busy. Wait or stop the current job.')
+  if (proposal.jobCount > 0) {
+    const jobs = host.generation
+    if (!jobs) return errorResult('Generation is not available')
+    if (jobs.isBusy()) return errorResult('Generation slot is busy. Wait or stop the current job.')
+  }
 
   const state = host.getState()
   if (proposal.destination !== 'assets' && trackLocked(state, proposal.trackIndex)) {
@@ -207,7 +209,9 @@ export async function executeAssemblyTool(
     host.onProgress?.({
       toolName: 'assemble_shots',
       percent: Math.round((index / total) * 100),
-      status: `${index + 1}/${total} generating…`,
+      status: shot.assetId
+        ? `${index + 1}/${total} placing…`
+        : `${index + 1}/${total} generating…`,
     })
 
     const result = await generateAndPlaceShot(host, proposal, shot, cursor, index === 0)
@@ -250,6 +254,10 @@ async function generateAndPlaceShot(
   startTime: number,
   isFirst: boolean,
 ): Promise<AgentAssemblyShotResult> {
+  if (shot.assetId) {
+    return placeExistingShot(host, proposal, shot, startTime)
+  }
+
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
   let imageAssetId = shot.imageAssetId
   const wantStill = !proposal.skipStills && !shot.skipStill && !imageAssetId
@@ -326,6 +334,67 @@ async function generateAndPlaceShot(
     status: 'placed',
     assetId: typeof video.assetId === 'string' ? video.assetId : undefined,
     clipId,
+    start: placedStart,
+    duration: placedDuration,
+    ...(titleClipId ? { titleClipId } : {}),
+  }
+}
+
+function placeExistingShot(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+  shot: AgentAssemblyShot,
+  startTime: number,
+): AgentAssemblyShotResult {
+  const asset = host.getState().editorModel.assets.find(item => item.id === shot.assetId)
+  if (!asset) {
+    return {
+      id: shot.id,
+      ...(shot.title ? { title: shot.title } : {}),
+      status: 'failed',
+      error: `Asset not found: ${shot.assetId}`,
+    }
+  }
+
+  const beforeIds = new Set(
+    (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+      ?? host.getState().editorModel.timelines[0])?.clips.map(item => item.id) ?? [],
+  )
+
+  if (proposal.destination !== 'assets') {
+    host.applyWithHistory(prev => host.actions.insertAssetsToTimeline(prev, {
+      assets: [asset],
+      trackIndex: proposal.trackIndex,
+      startTime,
+    }))
+  }
+
+  const inserted = (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+    ?? host.getState().editorModel.timelines[0])?.clips.find(item => !beforeIds.has(item.id))
+  const placedStart = inserted?.startTime ?? startTime
+  const placedDuration = inserted?.duration ?? asset.duration ?? shot.duration
+  let titleClipId: string | undefined
+
+  if (shot.title) {
+    const titleBefore = new Set(
+      (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+        ?? host.getState().editorModel.timelines[0])?.clips.map(item => item.id) ?? [],
+    )
+    host.applyWithHistory(prev => host.actions.addTextClip(prev, {
+      style: { text: shot.title },
+      startTime: placedStart,
+      trackIndex: proposal.trackIndex,
+    }))
+    titleClipId = (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+      ?? host.getState().editorModel.timelines[0])?.clips.find(item => !titleBefore.has(item.id))?.id
+  }
+
+  return {
+    id: shot.id,
+    ...(shot.title ? { title: shot.title } : {}),
+    status: 'placed',
+    assetId: asset.id,
+    clipId: inserted?.id,
     start: placedStart,
     duration: placedDuration,
     ...(titleClipId ? { titleClipId } : {}),

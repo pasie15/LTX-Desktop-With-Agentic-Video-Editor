@@ -49,7 +49,18 @@ export const ASSEMBLY_TOOL_NAMES = [
 
 export type AgentAssemblyToolName = (typeof ASSEMBLY_TOOL_NAMES)[number]
 
-export type AgentToolName = AgentReadToolName | AgentEditToolName | AgentGenerateToolName | AgentAssemblyToolName
+export const IMPORT_TOOL_NAMES = [
+  'import_media',
+] as const
+
+export type AgentImportToolName = (typeof IMPORT_TOOL_NAMES)[number]
+
+export type AgentToolName =
+  | AgentReadToolName
+  | AgentEditToolName
+  | AgentGenerateToolName
+  | AgentAssemblyToolName
+  | AgentImportToolName
 
 export function isGenerateToolName(name: string): name is AgentGenerateToolName {
   return (GENERATE_TOOL_NAMES as readonly string[]).includes(name)
@@ -57,6 +68,10 @@ export function isGenerateToolName(name: string): name is AgentGenerateToolName 
 
 export function isAssemblyToolName(name: string): name is AgentAssemblyToolName {
   return (ASSEMBLY_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isImportToolName(name: string): name is AgentImportToolName {
+  return (IMPORT_TOOL_NAMES as readonly string[]).includes(name)
 }
 
 export function isSlotHoldingToolName(name: string): boolean {
@@ -117,11 +132,26 @@ export const ASSEMBLY_TOOL_ALLOWED_KEYS: Record<AgentAssemblyToolName, readonly 
   ],
 }
 
+export const IMPORT_TOOL_ALLOWED_KEYS: Record<AgentImportToolName, readonly string[]> = {
+  import_media: [
+    'path',
+    'paths',
+    'type',
+    'destination',
+    'trackIndex',
+    'startTime',
+    'start',
+    'end',
+    'binId',
+  ],
+}
+
 export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> = {
   ...READ_TOOL_ALLOWED_KEYS,
   ...EDIT_TOOL_ALLOWED_KEYS,
   ...GENERATE_TOOL_ALLOWED_KEYS,
   ...ASSEMBLY_TOOL_ALLOWED_KEYS,
+  ...IMPORT_TOOL_ALLOWED_KEYS,
 }
 
 export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -210,7 +240,7 @@ export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const EDIT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'insert_assets',
-    description: 'Ripple/append assets onto the active timeline. Uses playhead or track end if startTime is omitted.',
+    description: 'Ripple/append assets onto the active timeline. Uses playhead or track end if startTime is omitted. Audio assets default to the first unlocked audio track.',
     parameters: {
       type: 'object',
       required: ['assetIds'],
@@ -472,7 +502,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Propose a script or B-roll shot list, confirm once, then sequentially generate and place shots end-to-end. Pass a script or shots[]. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
+    description: 'Propose a script or B-roll shot list, confirm once, then sequentially generate and/or place shots end-to-end. Pass a script or shots[]. Use assetId on a shot to place an existing user asset instead of generating. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
     parameters: {
       type: 'object',
       properties: {
@@ -488,6 +518,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               duration: { type: 'number' },
               title: { type: 'string', description: 'Scene slug; placed as a text clip' },
               imageAssetId: { type: 'string', description: 'Reuse an existing still instead of generating one' },
+              assetId: { type: 'string', description: 'Place this existing image, video, or audio asset instead of generating' },
               skipStill: { type: 'boolean' },
             },
           },
@@ -507,11 +538,33 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
 ]
 
+export const IMPORT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'import_media',
+    description: 'Copy user-provided image, video, music, or audio files into the project from filesystem paths. Then insert_assets to place them, or pass destination to place now.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'One filesystem path' },
+        paths: { type: 'array', items: { type: 'string' }, description: 'One or more filesystem paths' },
+        type: { type: 'string', enum: ['image', 'video', 'audio'] },
+        destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
+        trackIndex: { type: 'number' },
+        startTime: { type: 'number' },
+        start: { type: 'number', description: 'Gap start in seconds when destination is gap' },
+        end: { type: 'number', description: 'Gap end in seconds when destination is gap' },
+        binId: { type: 'string' },
+      },
+    },
+  },
+]
+
 export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   ...READ_TOOL_DEFINITIONS,
   ...EDIT_TOOL_DEFINITIONS,
   ...GENERATE_TOOL_DEFINITIONS,
   ...ASSEMBLY_TOOL_DEFINITIONS,
+  ...IMPORT_TOOL_DEFINITIONS,
 ]
 
 function countLabel(count: number, singular: string, plural: string): string {
@@ -589,6 +642,10 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
     case 'assemble_shots': {
       const shots = Array.isArray(args?.shots) ? args.shots.length : null
       return shots != null ? `Assemble ${shots} shots` : 'Assemble shots'
+    }
+    case 'import_media': {
+      const paths = Array.isArray(args?.paths) ? args.paths.length : typeof args?.path === 'string' ? 1 : null
+      return paths != null ? `Import ${countLabel(paths, 'file', 'files')}` : 'Import media'
     }
     default:
       return name
