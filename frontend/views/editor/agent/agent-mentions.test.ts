@@ -29,7 +29,10 @@ describe('agent mentions', () => {
 
   it('filters assets and builds mention chips', () => {
     const video: Asset = { ...still, id: 'vid-1', type: 'video', prompt: 'B-roll' }
+    const music: Asset = { ...still, id: 'aud-1', type: 'audio', prompt: 'Theme music' }
     assert.deepEqual(filterAssetsForMention([still, video], 'hero').map(asset => asset.id), ['img-1'])
+    assert.deepEqual(filterAssetsForMention([still, video, music], 'audio').map(asset => asset.id), ['aud-1'])
+    assert.equal(mentionFromAsset(music).assetType, 'audio')
     assert.equal(mentionFromAsset(still).assetId, 'img-1')
     assert.deepEqual(mentionFromSelection(['c1', 'c2']).clipIds, ['c1', 'c2'])
     assert.equal(mentionFromRange(4.2, 8).label, `${formatAgentTimecode(4.2)}–${formatAgentTimecode(8)}`)
