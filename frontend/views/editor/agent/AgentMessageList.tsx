@@ -43,7 +43,7 @@ export function AgentMessageList(props: {
                   className="text-[11px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded px-2 py-1"
                 >
                   {progress
-                    ? `${label}… ${Math.max(0, Math.min(100, Math.round(progress.percent)))}%`
+                    ? `${label} — ${progress.status} ${Math.max(0, Math.min(100, Math.round(progress.percent)))}%`
                     : label}
                 </div>
               )

@@ -250,7 +250,7 @@ function fakeActions(): AgentEditorActions {
         ...timeline.clips,
         {
           ...clip({
-            id: 'text-1',
+            id: `text-${timeline.clips.filter(item => item.type === 'text').length + 1}`,
             startTime: params.startTime ?? state.session.transport.currentTime,
             duration: 5,
             trackIndex: params.trackIndex ?? 0,
@@ -727,5 +727,118 @@ describe('generate tool executor', () => {
     const updated = host.getState().editorModel.assets.find(item => item.id === 'asset-1')
     assert.ok(updated?.takes && updated.takes.length >= 1)
     assert.match(updated.path, /cut\.mp4/)
+  })
+})
+
+describe('assembly tool executor', () => {
+  it('proposes a shot list without starting generate jobs', async () => {
+    let videoCalls = 0
+    const host = createHost(makeState({ clips: [], playhead: 0 }), {
+      generation: fakeJobs({
+        runVideo: async () => {
+          videoCalls += 1
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const blocked = await executor.execute('assemble_shots', {
+      script: 'INT. KITCHEN - DAY\nA woman pours coffee.\n\nEXT. STREET - NIGHT\nRain on asphalt.',
+      kind: 'script',
+    })
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.needsConfirm, true)
+    const proposal = blocked.proposal as { shots: Array<{ title?: string; prompt: string }>; jobCount: number }
+    assert.equal(proposal.shots.length, 2)
+    assert.equal(proposal.shots[0]?.title, 'KITCHEN - DAY')
+    assert.equal(proposal.jobCount, 4)
+    assert.equal(videoCalls, 0)
+    assert.equal(activeClips(host.getState()).length, 0)
+  })
+
+  it('assembles confirmed shots sequentially and adds titles', async () => {
+    const progress: string[] = []
+    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs() })
+    host.onProgress = item => { progress.push(item.status) }
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'woman pours coffee, warm window light', duration: 4, title: 'KITCHEN' },
+        { id: 's2', prompt: 'rain on asphalt, slow push in', duration: 4, title: 'STREET' },
+      ],
+      skipStills: true,
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.jobCount, 2)
+    const clips = activeClips(host.getState())
+    const videos = clips.filter(item => item.type === 'video')
+    const titles = clips.filter(item => item.type === 'text')
+    assert.equal(videos.length, 2)
+    assert.equal(titles.length, 2)
+    assert.equal(videos[0]?.startTime, 0)
+    assert.equal(videos[1]?.startTime, 4)
+    assert.ok(progress.some(status => status.includes('1/2 generating')))
+  })
+
+  it('requires confirmedMore when the assembly exceeds eight generate jobs', async () => {
+    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs() })
+    const executor = new AgentToolExecutor(host)
+    const shots = Array.from({ length: 5 }, (_, index) => ({
+      id: `s${index + 1}`,
+      prompt: `shot ${index + 1} wide of a street`,
+      duration: 4,
+    }))
+    const blocked = await executor.execute('assemble_shots', { shots, confirmed: true })
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.needsConfirm, true)
+    const proposal = blocked.proposal as { jobCount: number; exceedsJobCap: boolean }
+    assert.equal(proposal.jobCount, 10)
+    assert.equal(proposal.exceedsJobCap, true)
+    assert.equal(activeClips(host.getState()).length, 0)
+
+    const ran = await executor.execute('assemble_shots', { shots, confirmed: true, confirmedMore: true })
+    assert.equal(ran.ok, true)
+    assert.equal((ran.placed as unknown[]).length, 5)
+  })
+
+  it('stops the queue on a failed shot and keeps earlier placements', async () => {
+    let videos = 0
+    const host = createHost(makeState({ clips: [], playhead: 0 }), {
+      generation: fakeJobs({
+        runVideo: async () => {
+          videos += 1
+          if (videos === 2) return { status: 'error', error: 'GPU OOM' }
+          return { status: 'complete', path: `/tmp/cut-${videos}.mp4` }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'first shot', duration: 4 },
+        { id: 's2', prompt: 'second shot', duration: 4 },
+      ],
+      skipStills: true,
+      confirmed: true,
+    })
+    assert.equal(result.ok, false)
+    assert.match(String(result.error), /GPU OOM/)
+    assert.equal(result.failedAt, 's2')
+    assert.equal((result.completed as unknown[]).length, 1)
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
+  })
+
+  it('reuses the last proposed shot list after accept', async () => {
+    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs() })
+    const executor = new AgentToolExecutor(host)
+    await executor.execute('assemble_shots', {
+      script: '1. Hands pour coffee [4s]\n2. Street in rain [4s]',
+      skipStills: true,
+    })
+    executor.rememberAssemblyAcceptance({ shot_list: 'Accept' })
+    const result = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(result.ok, true)
+    assert.equal((result.placed as unknown[]).length, 2)
   })
 })

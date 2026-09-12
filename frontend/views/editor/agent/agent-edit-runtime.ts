@@ -11,8 +11,14 @@ import {
   toolErrorResult,
   validateUnknownKeys,
 } from './agent-tool-utils.ts'
+import {
+  executeAssemblyTool,
+  rememberAssemblyAcceptance,
+  type AgentAssemblyMemory,
+} from './agent-assembly-runtime.ts'
+import type { AgentAssemblyProposal } from './agent-assembly.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
-import { EDIT_TOOL_ALLOWED_KEYS, isGenerateToolName, type AgentEditToolName } from './tool-definitions.ts'
+import { EDIT_TOOL_ALLOWED_KEYS, isAssemblyToolName, isGenerateToolName, type AgentEditToolName } from './tool-definitions.ts'
 
 export const DELETE_MANY_THRESHOLD = 2
 
@@ -172,6 +178,8 @@ function resolveAssets(state: EditorState, rawIds: unknown): { ok: true; assets:
 export class AgentToolExecutor {
   readonly host: AgentToolExecutorHost
   private assistantUndo: AssistantUndoEntry[] = []
+  private lastAssemblyProposal: AgentAssemblyProposal | null = null
+  private lastAssemblyConfirmedMore = false
 
   constructor(host: AgentToolExecutorHost) {
     this.host = host
@@ -179,6 +187,19 @@ export class AgentToolExecutor {
 
   resetAssistantUndo(): void {
     this.assistantUndo = []
+  }
+
+  private assemblyMemory(): AgentAssemblyMemory {
+    return {
+      getProposal: () => this.lastAssemblyProposal,
+      setProposal: proposal => { this.lastAssemblyProposal = proposal },
+      getConfirmedMore: () => this.lastAssemblyConfirmedMore,
+      setConfirmedMore: value => { this.lastAssemblyConfirmedMore = value },
+    }
+  }
+
+  rememberAssemblyAcceptance(answers: Record<string, string | string[]>): void {
+    rememberAssemblyAcceptance(this.assemblyMemory(), answers)
   }
 
   assistantUndoNames(): readonly string[] {
@@ -189,6 +210,17 @@ export class AgentToolExecutor {
     if (isGenerateToolName(name)) {
       const before = undoSnapshot(this.host.getState())
       const result = await executeGenerateTool(this.host, name, args)
+      if (result.ok !== false) {
+        const after = undoSnapshot(this.host.getState())
+        if (!sameUndoSnapshot(before, after)) {
+          this.assistantUndo.push({ name, after })
+        }
+      }
+      return result
+    }
+    if (isAssemblyToolName(name)) {
+      const before = undoSnapshot(this.host.getState())
+      const result = await executeAssemblyTool(this.host, name, args, this.assemblyMemory())
       if (result.ok !== false) {
         const after = undoSnapshot(this.host.getState())
         if (!sameUndoSnapshot(before, after)) {

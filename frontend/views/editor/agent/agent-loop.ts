@@ -1,3 +1,4 @@
+import { assemblyConfirmQuestionsFromResult } from './agent-assembly-runtime.ts'
 import { confirmQuestionsFromToolResult } from './agent-generate-runtime.ts'
 import {
   createAgentMessageId,
@@ -146,7 +147,7 @@ export async function runAgentLoop(deps: AgentLoopDeps): Promise<AgentLoopResult
         messages = append(messages, toolResultMessage(call, result))
         deps.onMessages(messages)
         if (result.needsConfirm === true) {
-          deps.onAskUser(confirmQuestionsFromToolResult(result))
+          deps.onAskUser(assemblyConfirmQuestionsFromResult(result) ?? confirmQuestionsFromToolResult(result))
           return { messages, stopReason: 'ask_user' }
         }
       }

@@ -1,5 +1,6 @@
 import type { Asset, AssetTake, GenerationParams } from '../../../types/project-model.ts'
 import type { EditorState, TimelineGapSelection } from '../editor-state.ts'
+import type { AgentAskUserQuestion } from './agent-types.ts'
 import {
   asBoolean,
   asNumber,
@@ -607,12 +608,7 @@ async function regenerateClip(
   }
 }
 
-export function confirmQuestionsFromToolResult(result: Record<string, unknown>): Array<{
-  id: string
-  prompt: string
-  kind: 'choice'
-  options: string[]
-}> {
+export function confirmQuestionsFromToolResult(result: Record<string, unknown>): AgentAskUserQuestion[] {
   const proposal = result.proposal
   const lines: string[] = []
   if (proposal && typeof proposal === 'object' && !Array.isArray(proposal)) {

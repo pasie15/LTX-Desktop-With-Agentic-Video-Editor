@@ -28,6 +28,14 @@ describe('agent starter chips', () => {
     assert.equal(shouldAutoSendStarter(fillGap, false), false)
     assert.equal(shouldAutoSendStarter(fillGap, true), true)
 
+    const assemble = AGENT_STARTER_PROMPTS.find(starter => starter.id === 'assemble-script')
+    assert.ok(assemble)
+    assert.match(resolveStarterComposerText(assemble), /Assemble this script on the timeline:/)
+
+    const broll = AGENT_STARTER_PROMPTS.find(starter => starter.id === 'b-roll')
+    assert.ok(broll)
+    assert.match(resolveStarterComposerText(broll), /Propose a shot list/)
+
     for (const starter of AGENT_STARTER_PROMPTS) {
       if (starter.id === 'fill-gap') continue
       assert.equal(shouldAutoSendStarter(starter, true), false)
