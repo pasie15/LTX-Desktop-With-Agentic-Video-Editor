@@ -13,6 +13,28 @@ export const READ_TOOL_NAMES = [
 
 export type AgentReadToolName = (typeof READ_TOOL_NAMES)[number]
 
+export const EDIT_TOOL_NAMES = [
+  'insert_assets',
+  'overwrite_assets',
+  'split_clips',
+  'move_clips',
+  'trim_clip',
+  'delete_clips',
+  'add_text',
+  'add_subtitle',
+  'select_clips',
+  'set_playhead',
+  'create_timeline',
+  'create_bin',
+  'assign_assets_to_bin',
+  'rename_bin',
+  'undo',
+] as const
+
+export type AgentEditToolName = (typeof EDIT_TOOL_NAMES)[number]
+
+export type AgentToolName = AgentReadToolName | AgentEditToolName
+
 export const READ_TOOL_ALLOWED_KEYS: Record<AgentReadToolName, readonly string[]> = {
   get_project_overview: [],
   get_timeline: ['start', 'end'],
@@ -22,6 +44,29 @@ export const READ_TOOL_ALLOWED_KEYS: Record<AgentReadToolName, readonly string[]
   get_asset: ['id'],
   list_generation_models: [],
   ask_user: ['questions'],
+}
+
+export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]> = {
+  insert_assets: ['assetIds', 'startTime', 'trackIndex'],
+  overwrite_assets: ['assetIds', 'startTime', 'trackIndex'],
+  split_clips: ['clipIds', 'time'],
+  move_clips: ['clipIds', 'deltaTime', 'start', 'trackIndex'],
+  trim_clip: ['id', 'start', 'duration', 'end'],
+  delete_clips: ['clipIds', 'confirmed'],
+  add_text: ['text', 'startTime', 'trackIndex', 'duration'],
+  add_subtitle: ['text', 'startTime', 'endTime', 'trackIndex'],
+  select_clips: ['clipIds'],
+  set_playhead: ['time'],
+  create_timeline: ['name'],
+  create_bin: ['name'],
+  assign_assets_to_bin: ['assetIds', 'binId'],
+  rename_bin: ['binId', 'name'],
+  undo: [],
+}
+
+export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> = {
+  ...READ_TOOL_ALLOWED_KEYS,
+  ...EDIT_TOOL_ALLOWED_KEYS,
 }
 
 export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -107,7 +152,202 @@ export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
 ]
 
-export function toolRowLabel(name: string): string {
+export const EDIT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'insert_assets',
+    description: 'Ripple/append assets onto the active timeline. Uses playhead or track end if startTime is omitted.',
+    parameters: {
+      type: 'object',
+      required: ['assetIds'],
+      properties: {
+        assetIds: { type: 'array', items: { type: 'string' } },
+        startTime: { type: 'number', description: 'Insert time in seconds' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'overwrite_assets',
+    description: 'Replace the landing region with assets. Does not ripple later clips.',
+    parameters: {
+      type: 'object',
+      required: ['assetIds'],
+      properties: {
+        assetIds: { type: 'array', items: { type: 'string' } },
+        startTime: { type: 'number' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'split_clips',
+    description: 'Split clips at a time in seconds. Defaults to the selection and the playhead.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipIds: { type: 'array', items: { type: 'string' } },
+        time: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'move_clips',
+    description: 'Move clips by deltaTime seconds and/or to trackIndex. start is an absolute time for the earliest clip.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipIds: { type: 'array', items: { type: 'string' } },
+        deltaTime: { type: 'number' },
+        start: { type: 'number' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'trim_clip',
+    description: 'Set a clip start and/or duration (or end) in seconds.',
+    parameters: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'string' },
+        start: { type: 'number' },
+        duration: { type: 'number' },
+        end: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'delete_clips',
+    description: 'Delete clips. Deleting 2+ clips requires confirmed=true after ask_user.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipIds: { type: 'array', items: { type: 'string' } },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'add_text',
+    description: 'Add a title/text clip on a video track.',
+    parameters: {
+      type: 'object',
+      required: ['text'],
+      properties: {
+        text: { type: 'string' },
+        startTime: { type: 'number' },
+        trackIndex: { type: 'number' },
+        duration: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'add_subtitle',
+    description: 'Add a subtitle cue. Creates a subtitle track if needed.',
+    parameters: {
+      type: 'object',
+      required: ['text'],
+      properties: {
+        text: { type: 'string' },
+        startTime: { type: 'number' },
+        endTime: { type: 'number' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'select_clips',
+    description: 'Select clips by exact id. Pass [] to clear.',
+    parameters: {
+      type: 'object',
+      required: ['clipIds'],
+      properties: {
+        clipIds: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
+  {
+    name: 'set_playhead',
+    description: 'Move the playhead to a time in seconds.',
+    parameters: {
+      type: 'object',
+      required: ['time'],
+      properties: {
+        time: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'create_timeline',
+    description: 'Create a timeline and switch to it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'create_bin',
+    description: 'Create an asset bin. Returns the new bin id.',
+    parameters: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'assign_assets_to_bin',
+    description: 'Move assets into a bin. Omit binId to unassign.',
+    parameters: {
+      type: 'object',
+      required: ['assetIds'],
+      properties: {
+        assetIds: { type: 'array', items: { type: 'string' } },
+        binId: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'rename_bin',
+    description: 'Rename a bin by exact id.',
+    parameters: {
+      type: 'object',
+      required: ['binId', 'name'],
+      properties: {
+        binId: { type: 'string' },
+        name: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'undo',
+    description: 'Undo the last assistant edit only. Refuses if the user changed the document since.',
+    parameters: { type: 'object', properties: {} },
+  },
+]
+
+export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  ...READ_TOOL_DEFINITIONS,
+  ...EDIT_TOOL_DEFINITIONS,
+]
+
+function countLabel(count: number, singular: string, plural: string): string {
+  return count === 1 ? `1 ${singular}` : `${count} ${plural}`
+}
+
+function clipCountFromArgs(args?: Record<string, unknown>): number | null {
+  if (!args) return null
+  if (Array.isArray(args.clipIds)) return args.clipIds.length
+  if (Array.isArray(args.assetIds)) return args.assetIds.length
+  return null
+}
+
+export function toolRowLabel(name: string, args?: Record<string, unknown>): string {
+  const count = clipCountFromArgs(args)
   switch (name) {
     case 'get_project_overview':
       return 'Read project'
@@ -125,6 +365,36 @@ export function toolRowLabel(name: string): string {
       return 'List generation models'
     case 'ask_user':
       return 'Asked a question'
+    case 'insert_assets':
+      return count != null ? `Insert ${countLabel(count, 'asset', 'assets')}` : 'Insert assets'
+    case 'overwrite_assets':
+      return count != null ? `Overwrite ${countLabel(count, 'asset', 'assets')}` : 'Overwrite assets'
+    case 'split_clips':
+      return count != null ? `Split ${countLabel(count, 'clip', 'clips')}` : 'Split clips'
+    case 'move_clips':
+      return count != null ? `Move ${countLabel(count, 'clip', 'clips')}` : 'Move clips'
+    case 'trim_clip':
+      return 'Trim clip'
+    case 'delete_clips':
+      return count != null ? `Delete ${countLabel(count, 'clip', 'clips')}` : 'Delete clips'
+    case 'add_text':
+      return 'Add text'
+    case 'add_subtitle':
+      return 'Add subtitle'
+    case 'select_clips':
+      return count != null ? `Select ${countLabel(count, 'clip', 'clips')}` : 'Select clips'
+    case 'set_playhead':
+      return 'Set playhead'
+    case 'create_timeline':
+      return 'Create timeline'
+    case 'create_bin':
+      return 'Create bin'
+    case 'assign_assets_to_bin':
+      return 'Assign assets to bin'
+    case 'rename_bin':
+      return 'Rename bin'
+    case 'undo':
+      return 'Undo assistant edit'
     default:
       return name
   }

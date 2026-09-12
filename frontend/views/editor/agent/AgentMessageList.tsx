@@ -39,7 +39,7 @@ export function AgentMessageList(props: {
                   key={`${message.id}-c${index}`}
                   className="text-[11px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded px-2 py-1"
                 >
-                  {toolRowLabel(part.name)}
+                  {toolRowLabel(part.name, part.arguments)}
                 </div>
               )
             }

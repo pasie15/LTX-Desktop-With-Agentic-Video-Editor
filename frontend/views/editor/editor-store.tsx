@@ -106,6 +106,18 @@ function useEditorStoreSetStateWithoutHistory(): (value: EditorSetStateAction) =
   }, [store])
 }
 
+export function useEditorApply(): {
+  applyWithHistory: (fn: (state: EditorState) => EditorState) => void
+  applyWithoutHistory: (fn: (state: EditorState) => EditorState) => void
+} {
+  const applyWithHistory = useEditorStoreSetStateWithHistory()
+  const applyWithoutHistory = useEditorStoreSetStateWithoutHistory()
+  return useMemo(() => ({
+    applyWithHistory: (fn) => applyWithHistory(fn),
+    applyWithoutHistory: (fn) => applyWithoutHistory(fn),
+  }), [applyWithHistory, applyWithoutHistory])
+}
+
 type EditorActionModule = typeof editorActions
 
 type ReducerActionKeys = {

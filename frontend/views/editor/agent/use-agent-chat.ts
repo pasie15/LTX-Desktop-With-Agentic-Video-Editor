@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Asset } from '../../../types/project-model'
 import type { EditorState, TimelineGapSelection } from '../editor-state'
+import { useEditorApply } from '../editor-store'
 import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
 import { answersToUserMessage, runAgentLoop } from './agent-loop'
 import { mentionPartsForMessage } from './agent-mentions'
 import { getAgentChatStorage, loadAgentSessions } from './agent-persistence'
 import { buildAgentSnapshot } from './agent-snapshot'
-import { READ_TOOL_DEFINITIONS } from './tool-definitions'
-import { executeReadTool } from './tool-executor'
+import { AGENT_TOOL_DEFINITIONS } from './tool-definitions'
+import { createAgentToolExecutor, executeAgentTool } from './tool-executor'
 import {
   AGENT_ADD_MENTION_EVENT,
   createAgentMessageId,
@@ -59,6 +60,23 @@ export function useAgentChat(params: UseAgentChatParams) {
   const persistTimerRef = useRef<number | null>(null)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
+  const { applyWithHistory, applyWithoutHistory } = useEditorApply()
+  const executorHostRef = useRef({
+    getState: getEditorState,
+    applyWithHistory,
+    applyWithoutHistory,
+  })
+  executorHostRef.current.getState = getEditorState
+  executorHostRef.current.applyWithHistory = applyWithHistory
+  executorHostRef.current.applyWithoutHistory = applyWithoutHistory
+  const executorRef = useRef<ReturnType<typeof createAgentToolExecutor> | null>(null)
+  if (!executorRef.current) {
+    executorRef.current = createAgentToolExecutor({
+      getState: () => executorHostRef.current.getState(),
+      applyWithHistory: fn => executorHostRef.current.applyWithHistory(fn),
+      applyWithoutHistory: fn => executorHostRef.current.applyWithoutHistory(fn),
+    })
+  }
 
   const activeSession = sessions.find(session => session.id === activeSessionId) ?? null
 
@@ -81,6 +99,10 @@ export function useAgentChat(params: UseAgentChatParams) {
     })
     persistSession(titled)
   }, [persistSession])
+
+  useEffect(() => {
+    executorRef.current?.resetAssistantUndo()
+  }, [projectId])
 
   useEffect(() => {
     let cancelled = false
@@ -191,14 +213,10 @@ export function useAgentChat(params: UseAgentChatParams) {
           currentModelLabel,
           selectedGapOverride: getSelectedGap?.() ?? null,
         }) as unknown as Record<string, unknown>,
-        availableTools: READ_TOOL_DEFINITIONS,
+        availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,
         requestTurn: requestAgentTurn,
-        executeTool: (name, args) => executeReadTool({
-          name,
-          args,
-          state: getEditorState(),
-        }),
+        executeTool: (name, args) => executeAgentTool(executorRef.current!, name, args),
         onMessages: (messages) => {
           latest = messages
           replaceSession({ ...seed, messages })

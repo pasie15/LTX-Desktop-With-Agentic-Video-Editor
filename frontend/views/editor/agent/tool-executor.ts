@@ -1,4 +1,5 @@
 import { backendFetch } from '../../../lib/backend'
+import * as editorActions from '../editor-actions'
 import type { EditorState } from '../editor-state'
 import {
   selectActiveTimeline,
@@ -11,10 +12,13 @@ import {
   selectSelectedClips,
   selectSelectedGap,
 } from '../editor-selectors'
+import { AgentToolExecutor, type AgentToolExecutorHost } from './agent-edit-runtime'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice'
-import { listGenerationModels, toolErrorResult, validateUnknownKeys } from './agent-tool-utils'
-import { READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
+import { asNumber, asString, listGenerationModels, toolErrorResult, validateUnknownKeys } from './agent-tool-utils'
+import { EDIT_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
 
+export { AgentToolExecutor, DELETE_MANY_THRESHOLD } from './agent-edit-runtime'
+export type { AgentEditorActions, AgentToolExecutorHost } from './agent-edit-runtime'
 export { listGenerationModels, validateUnknownKeys } from './agent-tool-utils'
 
 export interface ExecuteReadToolInput {
@@ -24,12 +28,11 @@ export interface ExecuteReadToolInput {
   fetchImpl?: typeof backendFetch
 }
 
-function asNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null
+export interface CreateAgentToolExecutorInput {
+  getState: () => EditorState
+  applyWithHistory: (fn: (state: EditorState) => EditorState) => void
+  applyWithoutHistory: (fn: (state: EditorState) => EditorState) => void
+  fetchImpl?: typeof backendFetch
 }
 
 function errorResult(message: string): Record<string, unknown> {
@@ -50,6 +53,36 @@ function clipSlice(clip: ReturnType<typeof selectSelectedClips>[number]) {
     volume: clip.volume,
     opacity: clip.opacity,
   }
+}
+
+export function createAgentToolExecutor(input: CreateAgentToolExecutorInput): AgentToolExecutor {
+  const host: AgentToolExecutorHost = {
+    getState: input.getState,
+    applyWithHistory: input.applyWithHistory,
+    applyWithoutHistory: input.applyWithoutHistory,
+    actions: editorActions,
+  }
+  return new AgentToolExecutor(host)
+}
+
+export async function executeAgentTool(
+  executor: AgentToolExecutor,
+  name: string,
+  args: Record<string, unknown>,
+  fetchImpl?: typeof backendFetch,
+): Promise<Record<string, unknown>> {
+  if (Object.prototype.hasOwnProperty.call(READ_TOOL_ALLOWED_KEYS, name)) {
+    return executeReadTool({
+      name,
+      args,
+      state: executor.host.getState(),
+      fetchImpl: fetchImpl ?? backendFetch,
+    })
+  }
+  if (Object.prototype.hasOwnProperty.call(EDIT_TOOL_ALLOWED_KEYS, name)) {
+    return executor.execute(name, args)
+  }
+  return errorResult(`Unknown tool: ${name}`)
 }
 
 export async function executeReadTool(input: ExecuteReadToolInput): Promise<Record<string, unknown>> {
@@ -205,4 +238,3 @@ function readAsset(state: EditorState, id: string | null): Record<string, unknow
     },
   }
 }
-
