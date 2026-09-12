@@ -229,6 +229,7 @@ export function useBuildMenuDefinitions(p: MenuDepsParams): MenuDefinition[] {
       items: [
         { id: 'clip-viewer', label: menuState.showSourceMonitor ? 'Hide Clip Viewer' : 'Show Clip Viewer', action: () => actions.setShowSourceMonitor(!menuState.showSourceMonitor) },
         { id: 'properties-panel', label: menuState.showPropertiesPanel ? 'Hide Properties Panel' : 'Show Properties Panel', action: () => actions.setShowPropertiesPanel(!menuState.showPropertiesPanel) },
+        { id: 'agent-chat', label: menuState.showAgentChat ? 'Hide Agent' : 'Show Agent', shortcut: getShortcutLabel(p.kbLayout, 'view.agentChat'), action: () => actions.setShowAgentChat(!menuState.showAgentChat) },
         { id: 'sep-1', label: '', separator: true },
         { id: 'fit-to-view', label: 'Zoom to Fit', shortcut: getShortcutLabel(p.kbLayout, 'timeline.fitToView'), action: () => p.fitToViewRef.current?.() },
         { id: 'zoom-in', label: 'Zoom In', shortcut: getShortcutLabel(p.kbLayout, 'timeline.zoomIn'), action: () => actions.zoomIn() },

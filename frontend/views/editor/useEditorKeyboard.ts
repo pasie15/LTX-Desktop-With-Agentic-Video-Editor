@@ -321,6 +321,9 @@ export function useEditorKeyboard(params: UseEditorKeyboardParams) {
         case 'view.fullscreen':
           refs.toggleFullscreenRef.current()
           break
+        case 'view.agentChat':
+          editorActions.setShowAgentChat(!state.session.ui.showAgentChat)
+          break
       }
     }
 

@@ -57,10 +57,13 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
   const [customPresets, setCustomPresets] = useState<KeyboardPreset[]>(stored.current?.customPresets || [])
   const [isEditorOpen, setEditorOpen] = useState(false)
 
-  // Resolve active layout: if customLayout is set, use it; otherwise use the preset's layout
-  const activeLayout: KeyboardLayout = customLayout
-    || [...BUILT_IN_PRESETS, ...customPresets].find(p => p.id === activePresetId)?.layout
+  // Resolve active layout: custom bindings override the preset, but new actions
+  // still pick up preset defaults until the user remaps them.
+  const presetLayout = [...BUILT_IN_PRESETS, ...customPresets].find(p => p.id === activePresetId)?.layout
     || LTX_DEFAULT_LAYOUT
+  const activeLayout: KeyboardLayout = customLayout
+    ? { ...presetLayout, ...customLayout }
+    : presetLayout
 
   // Keep a ref to the active layout so updateBinding always reads the latest
   const activeLayoutRef = useRef(activeLayout)

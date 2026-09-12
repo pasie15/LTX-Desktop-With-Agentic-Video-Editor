@@ -54,6 +54,7 @@ export type ActionId =
   | 'nav.nextEdit'
   // View
   | 'view.fullscreen'
+  | 'view.agentChat'
 
 // ── Key Combo ──
 export interface KeyCombo {
@@ -123,6 +124,7 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
   { id: 'nav.prevEdit',        label: 'Go to Previous Edit Point', category: 'Transport', description: 'Jump playhead to previous cut on timeline' },
   { id: 'nav.nextEdit',        label: 'Go to Next Edit Point',     category: 'Transport', description: 'Jump playhead to next cut on timeline' },
   { id: 'view.fullscreen',     label: 'Fullscreen Preview', category: 'Timeline' },
+  { id: 'view.agentChat',      label: 'Show / Hide Agent', category: 'Timeline' },
 ]
 
 // ── Keyboard Layout (mapping from ActionId to one or more key combos) ──
@@ -194,6 +196,7 @@ export const LTX_DEFAULT_LAYOUT: KeyboardLayout = {
   'nav.prevEdit': [k('arrowup')],
   'nav.nextEdit': [k('arrowdown')],
   'view.fullscreen': [k('`'), k('f11')],
+  'view.agentChat': [k('`', { ctrl: true })],
 }
 
 // ═══════════════════════════════════════════
@@ -248,6 +251,7 @@ export const PREMIERE_LAYOUT: KeyboardLayout = {
   'nav.prevEdit': [k('arrowup')],
   'nav.nextEdit': [k('arrowdown')],
   'view.fullscreen': [k('`')],           // Premiere: ` = fullscreen
+  'view.agentChat': [k('`', { ctrl: true })],
 }
 
 // ═══════════════════════════════════════════
@@ -302,6 +306,7 @@ export const DAVINCI_LAYOUT: KeyboardLayout = {
   'nav.prevEdit': [k('arrowup')],
   'nav.nextEdit': [k('arrowdown')],
   'view.fullscreen': [k('p', { ctrl: true, shift: true })], // DaVinci: Ctrl+Shift+P
+  'view.agentChat': [k('`', { ctrl: true })],
 }
 
 // ═══════════════════════════════════════════
@@ -356,6 +361,7 @@ export const AVID_LAYOUT: KeyboardLayout = {
   'nav.prevEdit': [k('arrowup')],
   'nav.nextEdit': [k('arrowdown')],
   'view.fullscreen': [k('`'), k('f11')],
+  'view.agentChat': [k('`', { ctrl: true })],
 }
 
 // ── All Built-in Presets ──
@@ -421,6 +427,8 @@ export function formatKeyCombo(combo: KeyCombo): string {
     'end': 'End',
     'f9': 'F9',
     'f10': 'F10',
+    'f11': 'F11',
+    '`': '`',
   }
   parts.push(keyMap[combo.key] || combo.key.toUpperCase())
   return parts.join('+')
