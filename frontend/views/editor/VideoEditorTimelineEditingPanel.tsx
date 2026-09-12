@@ -80,6 +80,7 @@ import {
 } from './editor-selectors'
 import { useTimelineDrag } from './useTimelineDrag'
 import { useEditorActions, useEditorStore } from './editor-store'
+import { AgentChatToggle } from './agent/AgentChatToggle'
 
 // Custom scissors cursor SVG for the blade tool (white with dark outline for contrast)
 const SCISSORS_CURSOR_SVG = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='6' cy='6' r='3'/><path d='M8.12 8.12 12 12'/><path d='M20 4 8.12 15.88'/><circle cx='6' cy='18' r='3'/><path d='M14.8 14.8 20 20'/></svg>`
@@ -1758,19 +1759,12 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
 
             <div className="flex-1" />
 
-            <Tooltip content={tooltipLabel(showAgentChat ? 'Hide Agent' : 'Show Agent', getShortcutLabel(kbLayout, 'view.agentChat'))} side="right">
-              <button
-                onClick={() => setShowAgentChat(p => !p)}
-                className={`p-1.5 rounded-lg transition-colors flex-shrink-0 group relative ${
-                  showAgentChat ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
-                }`}
-              >
-                <MessageSquare className="h-4 w-4" />
-                <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-800 rounded text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50">
-                  {showAgentChat ? 'Hide Agent' : 'Show Agent'}
-                </div>
-              </button>
-            </Tooltip>
+            <AgentChatToggle
+              open={showAgentChat}
+              shortcut={getShortcutLabel(kbLayout, 'view.agentChat')}
+              onToggle={() => setShowAgentChat(p => !p)}
+              variant="toolbar"
+            />
 
             <Tooltip content={showPropertiesPanel ? 'Hide Properties Panel' : 'Show Properties Panel'} side="right">
               <button

@@ -21,6 +21,7 @@ import {
   DEFAULT_LAYOUT,
   LAYOUT_LIMITS,
   loadLayout, saveLayout, normalizeEditorLayout,
+  getShortcutLabel,
 } from './editor/video-editor-utils'
 import { createInitialEditorState } from './editor/editor-state'
 import {
@@ -79,6 +80,7 @@ import {
 import { GenerationErrorDialog } from '../components/GenerationErrorDialog'
 import { SubtitleTrackStyleEditor } from './editor/SubtitleTrackStyleEditor'
 import { AgentChatPanel } from './editor/agent/AgentChatPanel'
+import { AgentChatToggle } from './editor/agent/AgentChatToggle'
 
 interface VideoEditorProps {
   currentProject: Project
@@ -763,16 +765,24 @@ function VideoEditorWithStore({
       <MenuBar
         menus={menuDefinitions}
         rightContent={(
-          <VideoEditorLayoutMenu
-            currentLayout={layout}
-            onApplyLayout={handleApplyLayout}
-            onResetLayout={handleResetLayout}
-          />
+          <div className="flex items-center gap-1">
+            <AgentChatToggle
+              open={showAgentChat}
+              shortcut={getShortcutLabel(kbLayout, 'view.agentChat')}
+              onToggle={() => actions.setShowAgentChat(!showAgentChat)}
+              variant="menubar"
+            />
+            <VideoEditorLayoutMenu
+              currentLayout={layout}
+              onApplyLayout={handleApplyLayout}
+              onResetLayout={handleResetLayout}
+            />
+          </div>
         )}
       />
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden min-h-0">
-        <Group orientation="horizontal" className="h-full w-full">
+      <div className="flex-1 overflow-hidden min-h-0 flex">
+        <Group orientation="horizontal" className="h-full min-w-0 flex-1">
           <Panel
             id="editor-left-panel"
             panelRef={leftPanelResizeRef}
@@ -1013,6 +1023,14 @@ function VideoEditorWithStore({
             </>
           )}
         </Group>
+        {!showAgentChat && (
+          <AgentChatToggle
+            open={false}
+            shortcut={getShortcutLabel(kbLayout, 'view.agentChat')}
+            onToggle={() => actions.setShowAgentChat(true)}
+            variant="rail"
+          />
+        )}
       </div>
       
       <input
