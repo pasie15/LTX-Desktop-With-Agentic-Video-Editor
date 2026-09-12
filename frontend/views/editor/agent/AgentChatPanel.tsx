@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { ChevronRight, MessageSquare, Send, Square, X } from 'lucide-react'
-import { GEMINI_KEY_REQUIRED_SETTINGS_DETAIL } from '../../../lib/enhance-gemini-key'
+import { AGENT_LLM_KEY_REQUIRED_SETTINGS_DETAIL } from '../../../lib/agent-llm'
 import { useAppSettings } from '../../../contexts/AppSettingsContext'
 import { useGlobalGenerationLock } from '../../../hooks/use-global-generation-lock'
 import { Tooltip } from '../../../components/ui/tooltip'
@@ -38,9 +38,9 @@ export interface AgentChatPanelProps {
 
 const COMPOSER_PLACEHOLDER = 'Ask, or type @ to reference media'
 
-function openGeminiSettings(): void {
+function openAgentLlmSettings(): void {
   window.dispatchEvent(new CustomEvent('open-settings', {
-    detail: GEMINI_KEY_REQUIRED_SETTINGS_DETAIL,
+    detail: AGENT_LLM_KEY_REQUIRED_SETTINGS_DETAIL,
   }))
 }
 
@@ -49,7 +49,7 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
   const getEditorState = useEditorGetState()
   const { settings, shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi } = useAppSettings()
   const generationLock = useGlobalGenerationLock()
-  const hasGeminiApiKey = settings.hasGeminiApiKey
+  const hasAgentLlmKey = settings.hasAgentLlmKey
   const storeSelectedGap = useEditorStore(selectSelectedGap)
   const assets = useEditorStore(selectAssets)
   const selectedClipIds = useEditorStore(selectSelectedClipIds)
@@ -73,7 +73,7 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
     generationBusy: generationLock.isRunning,
     generationCanCancel: generationLock.canCancel,
     currentModelLabel: 'fast',
-    hasGeminiApiKey,
+    hasAgentLlmKey,
     shouldVideoGenerateWithLtxApi,
     shouldImageGenerateWithFalApi,
   })
@@ -109,12 +109,12 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
   }, [caret, chat, focusComposer, mentionQuery])
 
   const handleSend = useCallback((text?: string) => {
-    if (!hasGeminiApiKey) {
-      openGeminiSettings()
+    if (!hasAgentLlmKey) {
+      openAgentLlmSettings()
       return
     }
     void chat.sendText(text ?? chat.draft)
-  }, [chat, hasGeminiApiKey])
+  }, [chat, hasAgentLlmKey])
 
   const applyStarter = useCallback((starter: AgentStarterPrompt) => {
     const nextDraft = resolveStarterComposerText(starter)
@@ -211,7 +211,7 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
   }, [importDroppedFiles])
 
   const messages = chat.activeSession?.messages ?? []
-  const showEmpty = hasGeminiApiKey && messages.length === 0 && !chat.running
+  const showEmpty = hasAgentLlmKey && messages.length === 0 && !chat.running
 
   return (
     <div className="relative h-full group" onDragOver={event => event.preventDefault()} onDrop={handleDrop}>
@@ -231,7 +231,7 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
           <span className="text-[11px] font-semibold text-zinc-400 tracking-wide">Agent</span>
         </div>
 
-        {hasGeminiApiKey && (
+        {hasAgentLlmKey && (
           <AgentTabBar
             sessions={chat.sessions}
             openSessionIds={chat.openSessionIds}
@@ -246,18 +246,18 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
         )}
 
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
-          {!hasGeminiApiKey ? (
+          {!hasAgentLlmKey ? (
             <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-2">
               <MessageSquare className="h-6 w-6 text-zinc-600" />
               <p className="text-[12px] text-zinc-400 leading-relaxed">
-                Add a Gemini API key in Settings to use Agent.
+                Add an Agent API key in Settings to use chat.
               </p>
               <button
                 type="button"
-                onClick={openGeminiSettings}
+                onClick={openAgentLlmSettings}
                 className="text-[12px] font-medium text-blue-400 hover:text-blue-300 transition-colors"
               >
-                Add a Gemini API key in Settings
+                Add an Agent API key in Settings
               </button>
             </div>
           ) : showEmpty ? (

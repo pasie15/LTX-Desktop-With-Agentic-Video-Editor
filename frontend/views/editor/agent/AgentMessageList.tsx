@@ -1,16 +1,12 @@
-import { GEMINI_KEY_REQUIRED_SETTINGS_DETAIL } from '../../../lib/enhance-gemini-key'
+import { AGENT_LLM_KEY_REQUIRED_SETTINGS_DETAIL, isAgentLlmKeyError } from '../../../lib/agent-llm'
 import { AgentMarkdown } from './agent-markdown'
 import { toolRowLabel } from './tool-definitions'
 import type { AgentChatMessage, AgentGenerationProgress } from './agent-types'
 
-function openGeminiSettings(): void {
+function openAgentLlmSettings(): void {
   window.dispatchEvent(new CustomEvent('open-settings', {
-    detail: GEMINI_KEY_REQUIRED_SETTINGS_DETAIL,
+    detail: AGENT_LLM_KEY_REQUIRED_SETTINGS_DETAIL,
   }))
-}
-
-function isKeyError(code?: string): boolean {
-  return code === 'GEMINI_API_KEY_MISSING' || code === 'GEMINI_INVALID_API_KEY'
 }
 
 export function AgentMessageList(props: {
@@ -60,13 +56,13 @@ export function AgentMessageList(props: {
             }
             return null
           })}
-          {isKeyError(message.errorCode) && (
+          {isAgentLlmKeyError(message.errorCode) && (
             <button
               type="button"
-              onClick={openGeminiSettings}
+              onClick={openAgentLlmSettings}
               className="self-start text-[11px] text-blue-400 hover:text-blue-300"
             >
-              Fix Gemini API key in Settings
+              Fix Agent API key in Settings
             </button>
           )}
         </article>

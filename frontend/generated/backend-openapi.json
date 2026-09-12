@@ -95,6 +95,108 @@
         "title": "AgentAskUserQuestionPayload",
         "type": "object"
       },
+      "AgentLlmProviderPublic": {
+        "properties": {
+          "baseUrl": {
+            "default": "",
+            "title": "Baseurl",
+            "type": "string"
+          },
+          "hasApiKey": {
+            "default": false,
+            "title": "Hasapikey",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "gemini",
+              "openai",
+              "anthropic",
+              "openrouter",
+              "zai",
+              "minimax",
+              "moonshot",
+              "groq",
+              "deepseek",
+              "custom_openai",
+              "custom_anthropic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "AgentLlmProviderPublic",
+        "type": "object"
+      },
+      "AgentLlmProviderSettings": {
+        "properties": {
+          "apiKey": {
+            "default": "",
+            "title": "Apikey",
+            "type": "string"
+          },
+          "baseUrl": {
+            "default": "",
+            "title": "Baseurl",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "gemini",
+              "openai",
+              "anthropic",
+              "openrouter",
+              "zai",
+              "minimax",
+              "moonshot",
+              "groq",
+              "deepseek",
+              "custom_openai",
+              "custom_anthropic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "AgentLlmProviderSettings",
+        "type": "object"
+      },
       "AgentMessagePartPayload": {
         "properties": {
           "arguments": {
@@ -391,6 +493,31 @@
               }
             ],
             "title": "Activeltxmodelid"
+          },
+          "agentLlmProviderId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentllmproviderid"
+          },
+          "agentLlmProviders": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentLlmProviderSettings"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentllmproviders"
           },
           "diffusionStageCacheEnabled": {
             "anyOf": [
@@ -4226,6 +4353,18 @@
             ],
             "title": "Activeltxmodelid"
           },
+          "agentLlmProviderId": {
+            "default": "",
+            "title": "Agentllmproviderid",
+            "type": "string"
+          },
+          "agentLlmProviders": {
+            "items": {
+              "$ref": "#/components/schemas/AgentLlmProviderPublic"
+            },
+            "title": "Agentllmproviders",
+            "type": "array"
+          },
           "diffusionStageCacheEnabled": {
             "default": false,
             "title": "Diffusionstagecacheenabled",
@@ -4235,6 +4374,11 @@
             "default": "",
             "title": "Geminimodel",
             "type": "string"
+          },
+          "hasAgentLlmKey": {
+            "default": false,
+            "title": "Hasagentllmkey",
+            "type": "boolean"
           },
           "hasFalApiKey": {
             "default": false,
