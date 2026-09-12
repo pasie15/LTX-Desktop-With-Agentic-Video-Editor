@@ -1,6 +1,5 @@
-import type { Asset } from '../../types/project-model'
-import { addGenericAssetToProject, addVisualAssetToProject } from '../../lib/asset-copy'
-import { pathToFileUrl } from '../../lib/file-url'
+import type { Asset } from '../../types/project-model.ts'
+import { pathToFileUrl } from '../../lib/file-url.ts'
 
 export const IMPORTED_MEDIA_TYPES = ['image', 'video', 'audio'] as const
 export type ImportedMediaType = (typeof IMPORTED_MEDIA_TYPES)[number]
@@ -64,19 +63,13 @@ export interface ImportLocalMediaCopyFns {
   createId?: () => string
 }
 
-export const defaultImportLocalMediaCopyFns: ImportLocalMediaCopyFns = {
-  copyVisual: addVisualAssetToProject,
-  copyGeneric: addGenericAssetToProject,
-  probeDuration: probeHtmlMediaDuration,
-}
-
 export async function importLocalMediaPath(input: {
   srcPath: string
   projectId: string
   displayName?: string
   mimeType?: string
   type?: ImportedMediaType
-  copy?: ImportLocalMediaCopyFns
+  copy: ImportLocalMediaCopyFns
 }): Promise<Asset | null> {
   const type = detectImportedMediaType({
     path: input.srcPath,
@@ -91,7 +84,7 @@ export async function importLocalMediaPath(input: {
     displayName: input.displayName?.trim() || leafName(input.srcPath) || type,
     type,
     probeUrl: pathToFileUrl(input.srcPath),
-    copy: input.copy ?? defaultImportLocalMediaCopyFns,
+    copy: input.copy,
   })
 }
 
@@ -99,7 +92,7 @@ export async function importLocalMediaFile(input: {
   file: File
   projectId: string
   srcPath?: string | null
-  copy?: ImportLocalMediaCopyFns
+  copy: ImportLocalMediaCopyFns
 }): Promise<Asset | null> {
   const type = detectImportedMediaType({
     name: input.file.name,
@@ -116,7 +109,7 @@ export async function importLocalMediaFile(input: {
       displayName: input.file.name,
       type,
       probeUrl,
-      copy: input.copy ?? defaultImportLocalMediaCopyFns,
+      copy: input.copy,
       skipCopy: !srcPath,
     })
   } finally {

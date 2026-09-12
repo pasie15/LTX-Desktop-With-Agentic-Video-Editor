@@ -28,6 +28,7 @@ import {
   replaceMentionQuery,
 } from './agent-mentions'
 import { useAgentChat } from './use-agent-chat'
+import { defaultImportLocalMediaCopyFns } from '../import-local-media-defaults'
 import { importLocalMediaFile } from '../import-local-media'
 import type { AgentMention } from './agent-types'
 
@@ -165,6 +166,7 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
         file,
         projectId: props.projectId,
         srcPath,
+        copy: defaultImportLocalMediaCopyFns,
       })
       if (!asset) continue
       actions.addAssetToEditor(asset)

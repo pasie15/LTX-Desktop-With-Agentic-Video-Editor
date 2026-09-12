@@ -3,6 +3,7 @@ import type { Asset } from '../../../types/project-model'
 import type { EditorState, TimelineGapSelection } from '../editor-state'
 import { useEditorApply } from '../editor-store'
 import { addVisualAssetToProject } from '../../../lib/asset-copy'
+import { defaultImportLocalMediaCopyFns } from '../import-local-media-defaults'
 import { importLocalMediaPath } from '../import-local-media'
 import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
@@ -111,6 +112,7 @@ export function useAgentChat(params: UseAgentChatParams) {
           projectId: projectIdRef.current,
           type,
           displayName,
+          copy: defaultImportLocalMediaCopyFns,
         }),
       },
       getSelectedGap: () => executorHostRef.current.getSelectedGap?.() ?? null,
@@ -126,6 +128,7 @@ export function useAgentChat(params: UseAgentChatParams) {
       projectId: projectIdRef.current,
       type,
       displayName,
+      copy: defaultImportLocalMediaCopyFns,
     }),
   }
   executorRef.current.host.getSelectedGap = () => executorHostRef.current.getSelectedGap?.() ?? null

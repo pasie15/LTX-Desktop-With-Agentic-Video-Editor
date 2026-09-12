@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { useEditorActions } from './editor-store'
+import { defaultImportLocalMediaCopyFns } from './import-local-media-defaults'
 import { importLocalMediaFile } from './import-local-media'
 
 interface UseEditorMediaImportParams {
@@ -21,6 +22,7 @@ export function useEditorMediaImport(params: UseEditorMediaImportParams) {
         file,
         projectId: currentProjectId,
         srcPath,
+        copy: defaultImportLocalMediaCopyFns,
       })
       if (asset) addAssetToEditor(asset)
     }
