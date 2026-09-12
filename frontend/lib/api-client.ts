@@ -391,6 +391,24 @@ export class ApiClient {
     exactErrorStatuses: [400] as const,
   })
 
+  static agentLlmOAuthStart = makeEndpointClient('/api/agent/llm/oauth/start', 'post', {
+    exactErrorStatuses: [400] as const,
+  })
+
+  static agentLlmOAuthPoll = makeEndpointClient('/api/agent/llm/oauth/poll', 'post', {
+    exactErrorStatuses: [400] as const,
+  })
+
+  static agentLlmOAuthComplete = makeEndpointClient('/api/agent/llm/oauth/complete', 'post', {
+    exactErrorStatuses: [400] as const,
+  })
+
+  static agentLlmOAuthCancel = makeEndpointClient('/api/agent/llm/oauth/cancel', 'post')
+
+  static agentLlmOAuthDisconnect = makeEndpointClient('/api/agent/llm/oauth/disconnect', 'post', {
+    exactErrorStatuses: [400] as const,
+  })
+
   static retake = makeEndpointClient('/api/retake', 'post')
 
   static extend = makeEndpointClient('/api/extend', 'post')

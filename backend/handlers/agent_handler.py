@@ -18,7 +18,9 @@ from api_types import (
 )
 from _routes._errors import HTTPError
 from handlers.base import StateHandlerBase
+from handlers.settings_handler import SettingsHandler
 from services.agent_llm import LlmFunctionCall, missing_key_code, resolve_agent_llm, run_agent_llm_turn
+from services.agent_llm_oauth import apply_oauth_tokens, refresh_oauth_tokens
 from services.interfaces import HTTPClient, JSONValue
 from state.app_state_types import AppState
 
@@ -88,13 +90,39 @@ def _system_instruction(skills: str | None, project_context: dict[str, object]) 
 
 
 class AgentHandler(StateHandlerBase):
-    def __init__(self, state: AppState, lock: RLock, config: RuntimeConfig, http: HTTPClient) -> None:
+    def __init__(
+        self,
+        state: AppState,
+        lock: RLock,
+        config: RuntimeConfig,
+        http: HTTPClient,
+        settings_handler: SettingsHandler,
+    ) -> None:
         super().__init__(state, lock, config)
         self._http = http
+        self._settings = settings_handler
 
     def run_turn(self, req: AgentTurnRequest) -> AgentTurnResponse:
         with self.lock:
             settings = self.state.app_settings.model_copy(deep=True)
+        provider = next(
+            (item for item in settings.agent_llm_providers if item.id == settings.agent_llm_provider_id),
+            None,
+        )
+        if provider is not None and provider.oauth_refresh_token:
+            try:
+                tokens = refresh_oauth_tokens(self._http, provider)
+            except HTTPError:
+                tokens = None
+            if tokens is not None:
+                refreshed = apply_oauth_tokens(provider, tokens)
+                with self.lock:
+                    self.state.app_settings.agent_llm_providers = [
+                        refreshed if item.id == provider.id else item
+                        for item in self.state.app_settings.agent_llm_providers
+                    ]
+                    self._settings.save_settings()
+                    settings = self.state.app_settings.model_copy(deep=True)
         resolved = resolve_agent_llm(settings, req.model)
         if not resolved.api_key:
             raise HTTPError(400, missing_key_code(resolved))
