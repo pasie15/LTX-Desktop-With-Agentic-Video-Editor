@@ -299,6 +299,7 @@ export function useAgentChat(params: UseAgentChatParams) {
           selectedGapOverride: getSelectedGap?.() ?? null,
           refs: executorRef.current?.host.refs?.list() ?? [],
           approveAll: seed.approveAll === true,
+          plan: executorRef.current?.getLastPlan() ?? null,
         }) as unknown as Record<string, unknown>,
         availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,

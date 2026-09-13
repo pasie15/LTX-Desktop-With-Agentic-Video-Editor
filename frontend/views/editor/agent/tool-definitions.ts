@@ -30,6 +30,31 @@ export const EDIT_TOOL_NAMES = [
   'assign_assets_to_bin',
   'rename_bin',
   'undo',
+  'set_clip_speed',
+  'slip_clip',
+  'slide_clip',
+  'duplicate_clips',
+  'add_track',
+  'delete_track',
+  'rename_track',
+  'toggle_track_lock',
+  'toggle_track_mute',
+  'set_clip_opacity',
+  'toggle_clip_mute',
+  'toggle_clip_reverse',
+  'add_cross_dissolve',
+  'remove_cross_dissolve',
+  'switch_timeline',
+  'rename_timeline',
+  'delete_timeline',
+  'duplicate_timeline',
+  'set_in_point',
+  'set_out_point',
+  'clear_in_out',
+  'update_subtitle',
+  'delete_subtitle',
+  'add_adjustment_layer',
+  'unlink_clip_group',
 ] as const
 
 export type AgentEditToolName = (typeof EDIT_TOOL_NAMES)[number]
@@ -70,6 +95,14 @@ export const SPEECH_TOOL_NAMES = [
 
 export type AgentSpeechToolName = (typeof SPEECH_TOOL_NAMES)[number]
 
+export const NARRATIVE_TOOL_NAMES = [
+  'plan_edit',
+  'check_cut',
+  'sync_narration',
+] as const
+
+export type AgentNarrativeToolName = (typeof NARRATIVE_TOOL_NAMES)[number]
+
 export type AgentToolName =
   | AgentReadToolName
   | AgentEditToolName
@@ -78,6 +111,7 @@ export type AgentToolName =
   | AgentImportToolName
   | AgentRefToolName
   | AgentSpeechToolName
+  | AgentNarrativeToolName
 
 export function isGenerateToolName(name: string): name is AgentGenerateToolName {
   return (GENERATE_TOOL_NAMES as readonly string[]).includes(name)
@@ -97,6 +131,10 @@ export function isRefToolName(name: string): name is AgentRefToolName {
 
 export function isSpeechToolName(name: string): name is AgentSpeechToolName {
   return (SPEECH_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isNarrativeToolName(name: string): name is AgentNarrativeToolName {
+  return (NARRATIVE_TOOL_NAMES as readonly string[]).includes(name)
 }
 
 export function isSlotHoldingToolName(name: string): boolean {
@@ -131,6 +169,31 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
   assign_assets_to_bin: ['assetIds', 'binId'],
   rename_bin: ['binId', 'name'],
   undo: [],
+  set_clip_speed: ['clipId', 'id', 'speed'],
+  slip_clip: ['clipId', 'id', 'deltaTime'],
+  slide_clip: ['clipId', 'id', 'deltaTime'],
+  duplicate_clips: ['clipIds'],
+  add_track: ['kind'],
+  delete_track: ['trackId', 'trackIndex'],
+  rename_track: ['trackId', 'trackIndex', 'name'],
+  toggle_track_lock: ['trackId', 'trackIndex'],
+  toggle_track_mute: ['trackId', 'trackIndex'],
+  set_clip_opacity: ['clipId', 'id', 'opacity'],
+  toggle_clip_mute: ['clipId', 'id'],
+  toggle_clip_reverse: ['clipId', 'id'],
+  add_cross_dissolve: ['leftClipId', 'rightClipId'],
+  remove_cross_dissolve: ['leftClipId', 'rightClipId'],
+  switch_timeline: ['timelineId', 'id'],
+  rename_timeline: ['timelineId', 'id', 'name'],
+  delete_timeline: ['timelineId', 'id', 'confirmed'],
+  duplicate_timeline: ['timelineId', 'id'],
+  set_in_point: ['time'],
+  set_out_point: ['time'],
+  clear_in_out: [],
+  update_subtitle: ['id', 'subtitleId', 'text', 'start', 'end', 'startTime', 'endTime'],
+  delete_subtitle: ['id', 'subtitleId'],
+  add_adjustment_layer: ['startTime', 'trackIndex', 'duration'],
+  unlink_clip_group: ['clipId', 'id'],
 }
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
@@ -187,6 +250,12 @@ export const SPEECH_TOOL_ALLOWED_KEYS: Record<AgentSpeechToolName, readonly stri
   generate_speech: ['text', 'voiceId', 'modelId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
 }
 
+export const NARRATIVE_TOOL_ALLOWED_KEYS: Record<AgentNarrativeToolName, readonly string[]> = {
+  plan_edit: ['goal', 'brief', 'shots', 'voStrategy', 'voiceover', 'refs', 'titles', 'mix', 'timing', 'checks'],
+  check_cut: [],
+  sync_narration: [],
+}
+
 export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> = {
   ...READ_TOOL_ALLOWED_KEYS,
   ...EDIT_TOOL_ALLOWED_KEYS,
@@ -195,6 +264,7 @@ export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> =
   ...IMPORT_TOOL_ALLOWED_KEYS,
   ...REF_TOOL_ALLOWED_KEYS,
   ...SPEECH_TOOL_ALLOWED_KEYS,
+  ...NARRATIVE_TOOL_ALLOWED_KEYS,
 }
 
 export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -469,6 +539,293 @@ export const EDIT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
     description: 'Undo the last assistant edit only. Refuses if the user changed the document since.',
     parameters: { type: 'object', properties: {} },
   },
+  {
+    name: 'set_clip_speed',
+    description: 'Set clip playback speed. Use with trim_clip when fitting picture to voiceover (0.8–1.25 is the safe narrative range).',
+    parameters: {
+      type: 'object',
+      required: ['speed'],
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+        speed: { type: 'number', description: '1 is normal. 0.8 slower / longer, 1.25 faster / shorter.' },
+      },
+    },
+  },
+  {
+    name: 'slip_clip',
+    description: 'Slip the source window of a clip without moving it on the timeline.',
+    parameters: {
+      type: 'object',
+      required: ['deltaTime'],
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+        deltaTime: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'slide_clip',
+    description: 'Slide a clip earlier or later by deltaTime seconds.',
+    parameters: {
+      type: 'object',
+      required: ['deltaTime'],
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+        deltaTime: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'duplicate_clips',
+    description: 'Duplicate clips and place the copies after the originals.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipIds: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
+  {
+    name: 'add_track',
+    description: 'Add a video or audio track.',
+    parameters: {
+      type: 'object',
+      required: ['kind'],
+      properties: {
+        kind: { type: 'string', enum: ['video', 'audio'] },
+      },
+    },
+  },
+  {
+    name: 'delete_track',
+    description: 'Delete a track and the clips on it. Prefer trackId from get_timeline.',
+    parameters: {
+      type: 'object',
+      properties: {
+        trackId: { type: 'string' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'rename_track',
+    description: 'Rename a track.',
+    parameters: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        trackId: { type: 'string' },
+        trackIndex: { type: 'number' },
+        name: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'toggle_track_lock',
+    description: 'Lock or unlock a track.',
+    parameters: {
+      type: 'object',
+      properties: {
+        trackId: { type: 'string' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'toggle_track_mute',
+    description: 'Mute or unmute a track.',
+    parameters: {
+      type: 'object',
+      properties: {
+        trackId: { type: 'string' },
+        trackIndex: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'set_clip_opacity',
+    description: 'Set clip opacity from 0 to 100.',
+    parameters: {
+      type: 'object',
+      required: ['opacity'],
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+        opacity: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'toggle_clip_mute',
+    description: 'Mute or unmute one clip.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'toggle_clip_reverse',
+    description: 'Reverse a clip.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'add_cross_dissolve',
+    description: 'Add a cross-dissolve between two neighboring clips.',
+    parameters: {
+      type: 'object',
+      required: ['leftClipId', 'rightClipId'],
+      properties: {
+        leftClipId: { type: 'string' },
+        rightClipId: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'remove_cross_dissolve',
+    description: 'Remove a cross-dissolve between two clips.',
+    parameters: {
+      type: 'object',
+      required: ['leftClipId', 'rightClipId'],
+      properties: {
+        leftClipId: { type: 'string' },
+        rightClipId: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'switch_timeline',
+    description: 'Switch the active timeline.',
+    parameters: {
+      type: 'object',
+      properties: {
+        timelineId: { type: 'string' },
+        id: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'rename_timeline',
+    description: 'Rename a timeline. Defaults to the active timeline.',
+    parameters: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        timelineId: { type: 'string' },
+        id: { type: 'string' },
+        name: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'delete_timeline',
+    description: 'Delete a timeline. Requires confirmed=true unless Approve all is on.',
+    parameters: {
+      type: 'object',
+      properties: {
+        timelineId: { type: 'string' },
+        id: { type: 'string' },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'duplicate_timeline',
+    description: 'Duplicate a timeline and switch to the copy.',
+    parameters: {
+      type: 'object',
+      properties: {
+        timelineId: { type: 'string' },
+        id: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'set_in_point',
+    description: 'Set the timeline In mark. Defaults to the playhead.',
+    parameters: {
+      type: 'object',
+      properties: {
+        time: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'set_out_point',
+    description: 'Set the timeline Out mark. Defaults to the playhead.',
+    parameters: {
+      type: 'object',
+      properties: {
+        time: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'clear_in_out',
+    description: 'Clear In and Out marks.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'update_subtitle',
+    description: 'Change subtitle text and/or start/end times.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        subtitleId: { type: 'string' },
+        text: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        startTime: { type: 'number' },
+        endTime: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'delete_subtitle',
+    description: 'Delete a subtitle cue by id.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        subtitleId: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'add_adjustment_layer',
+    description: 'Add an adjustment layer clip on a video track.',
+    parameters: {
+      type: 'object',
+      properties: {
+        startTime: { type: 'number' },
+        trackIndex: { type: 'number' },
+        duration: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'unlink_clip_group',
+    description: 'Unlink a clip from its group (A/V unlink).',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string' },
+      },
+    },
+  },
 ]
 
 export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -561,7 +918,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Picture on V1, optional titles on V2, voiceover on A1, music on A2. Propose a 4–8 shot list, then generate still-then-video with a review pause after each still and placed shot unless approveAll is on. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId on shots for character/object consistency. First call without confirmed unless approveAll. After Accept, retry with confirmed=true. After each still review, retry again.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Call plan_edit first (Approve all does not skip planning). Picture on V1, titles on V2, voiceover on A1, music on A2. Voiceover duration drives picture: shots are sized to cover VO, then sync_narration / check_cut after place. Still-then-video with a review pause after each still unless approveAll. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId for continuity.',
     parameters: {
       type: 'object',
       properties: {
@@ -639,7 +996,7 @@ export const REF_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const SPEECH_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'generate_speech',
-    description: 'Generate ElevenLabs speech, add it as an audio asset, and place it on A1 (voiceover). Requires an ElevenLabs key in Settings. Confirm first.',
+    description: 'Generate ElevenLabs speech, add it as an audio asset, and place it on A1 (voiceover). Returns measured duration. After speech + picture exist, check_cut / sync_narration so VO and picture match. Confirm first.',
     parameters: {
       type: 'object',
       required: ['text'],
@@ -653,6 +1010,50 @@ export const SPEECH_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         confirmed: { type: 'boolean' },
       },
     },
+  },
+]
+
+export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'plan_edit',
+    description: 'Internal plan-then-execute step. Analyze the brief, timeline, assets, refs, and selection, then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots / multi-shot generate. Approve all does not skip this — it only skips asking the user. Does not mutate the timeline.',
+    parameters: {
+      type: 'object',
+      required: ['goal'],
+      properties: {
+        goal: { type: 'string' },
+        brief: { type: 'string' },
+        shots: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              prompt: { type: 'string' },
+              duration: { type: 'number' },
+              title: { type: 'string' },
+            },
+          },
+        },
+        voStrategy: { type: 'string' },
+        voiceover: { type: 'string' },
+        refs: { type: 'array', items: { type: 'string' } },
+        titles: { type: 'string' },
+        mix: { type: 'string' },
+        timing: { type: 'string', description: 'How VO duration will drive or be driven by picture' },
+        checks: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
+  {
+    name: 'check_cut',
+    description: 'Measure picture span vs A1 voiceover (and A2 music). Returns durations, gaps, mismatches, and suggested NLE fixes. Call after place. If mismatches exist, sync_narration or trim/extend/split/speed/generate extra until ok.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'sync_narration',
+    description: 'Fit picture to voiceover duration. Extends or trims the last picture clip, then speeds within 0.8–1.25 if needed. Do not leave a 10s VO on 4s of picture. Returns the new check_cut. If still short, generate extra shots.',
+    parameters: { type: 'object', properties: {} },
   },
 ]
 
@@ -685,6 +1086,7 @@ export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   ...IMPORT_TOOL_DEFINITIONS,
   ...REF_TOOL_DEFINITIONS,
   ...SPEECH_TOOL_DEFINITIONS,
+  ...NARRATIVE_TOOL_DEFINITIONS,
 ]
 
 function countLabel(count: number, singular: string, plural: string): string {
@@ -777,6 +1179,62 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
       return 'Forget ref'
     case 'generate_speech':
       return 'Generate speech'
+    case 'plan_edit':
+      return 'Plan edit'
+    case 'check_cut':
+      return 'Check cut'
+    case 'sync_narration':
+      return 'Sync narration'
+    case 'set_clip_speed':
+      return 'Set clip speed'
+    case 'slip_clip':
+      return 'Slip clip'
+    case 'slide_clip':
+      return 'Slide clip'
+    case 'duplicate_clips':
+      return count != null ? `Duplicate ${countLabel(count, 'clip', 'clips')}` : 'Duplicate clips'
+    case 'add_track':
+      return 'Add track'
+    case 'delete_track':
+      return 'Delete track'
+    case 'rename_track':
+      return 'Rename track'
+    case 'toggle_track_lock':
+      return 'Toggle track lock'
+    case 'toggle_track_mute':
+      return 'Toggle track mute'
+    case 'set_clip_opacity':
+      return 'Set clip opacity'
+    case 'toggle_clip_mute':
+      return 'Toggle clip mute'
+    case 'toggle_clip_reverse':
+      return 'Toggle clip reverse'
+    case 'add_cross_dissolve':
+      return 'Add cross dissolve'
+    case 'remove_cross_dissolve':
+      return 'Remove cross dissolve'
+    case 'switch_timeline':
+      return 'Switch timeline'
+    case 'rename_timeline':
+      return 'Rename timeline'
+    case 'delete_timeline':
+      return 'Delete timeline'
+    case 'duplicate_timeline':
+      return 'Duplicate timeline'
+    case 'set_in_point':
+      return 'Set in point'
+    case 'set_out_point':
+      return 'Set out point'
+    case 'clear_in_out':
+      return 'Clear in/out'
+    case 'update_subtitle':
+      return 'Update subtitle'
+    case 'delete_subtitle':
+      return 'Delete subtitle'
+    case 'add_adjustment_layer':
+      return 'Add adjustment layer'
+    case 'unlink_clip_group':
+      return 'Unlink clip group'
     default:
       return name
   }

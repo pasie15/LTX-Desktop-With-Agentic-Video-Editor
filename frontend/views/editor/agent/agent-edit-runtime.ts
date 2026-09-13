@@ -1,4 +1,4 @@
-import type { Asset, AssetTake, Timeline, TimelineClip } from '../../../types/project-model.ts'
+import type { Asset, AssetTake, SubtitleClip, Timeline, TimelineClip } from '../../../types/project-model.ts'
 import { createAssetBinId } from '../../../types/project-model.ts'
 import type { EditorState, EditorUndoSnapshot, TimelineGapSelection } from '../editor-state.ts'
 import type { AgentGenerateActionHost, AgentGenerationJobs } from './agent-generate-runtime.ts'
@@ -23,14 +23,19 @@ import {
 } from './agent-assembly-runtime.ts'
 import type { AgentAssemblyProposal } from './agent-assembly.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
+import { analyzeCut, applyNarrationSync, cutReportAsToolResult } from './agent-cut.ts'
+import { normalizeEditPlan, type AgentEditPlan } from './agent-plan.ts'
 import {
   EDIT_TOOL_ALLOWED_KEYS,
+  NARRATIVE_TOOL_ALLOWED_KEYS,
   isAssemblyToolName,
   isGenerateToolName,
   isImportToolName,
+  isNarrativeToolName,
   isRefToolName,
   isSpeechToolName,
   type AgentEditToolName,
+  type AgentNarrativeToolName,
 } from './tool-definitions.ts'
 
 export const DELETE_MANY_THRESHOLD = 2
@@ -60,6 +65,31 @@ export interface AgentEditorActions {
   applyGeneratedTake: (state: EditorState, assetId: string, take: AssetTake, clipId?: string) => EditorState
   setClipAudioLevel: (state: EditorState, clipId: string, volume: number) => EditorState
   undo: (state: EditorState) => EditorState
+  setClipSpeed: (state: EditorState, clipId: string, speed: number) => EditorState
+  slipClip: (state: EditorState, params: { clipId: string; deltaTime: number }) => EditorState
+  slideClip: (state: EditorState, params: { clipId: string; deltaTime: number }) => EditorState
+  duplicateClips: (state: EditorState, clipIds: string[]) => EditorState
+  addTrack: (state: EditorState, kind: 'video' | 'audio') => EditorState
+  deleteTrack: (state: EditorState, trackId: string) => EditorState
+  renameTrack: (state: EditorState, trackId: string, name: string) => EditorState
+  toggleTrackLock: (state: EditorState, trackId: string) => EditorState
+  toggleTrackMute: (state: EditorState, trackId: string) => EditorState
+  setClipOpacity: (state: EditorState, clipId: string, opacity: number) => EditorState
+  toggleClipMute: (state: EditorState, clipId: string) => EditorState
+  toggleClipReverse: (state: EditorState, clipId: string) => EditorState
+  addCrossDissolve: (state: EditorState, leftClipId: string, rightClipId: string) => EditorState
+  removeCrossDissolve: (state: EditorState, leftClipId: string, rightClipId: string) => EditorState
+  switchActiveTimeline: (state: EditorState, timelineId: string | null) => EditorState
+  renameTimeline: (state: EditorState, timelineId: string, name: string) => EditorState
+  deleteTimeline: (state: EditorState, timelineId: string) => EditorState
+  duplicateTimeline: (state: EditorState, timelineId: string) => EditorState
+  setTimelineInPoint: (state: EditorState, time?: number | null) => EditorState
+  setTimelineOutPoint: (state: EditorState, time?: number | null) => EditorState
+  clearTimelineMarks: (state: EditorState) => EditorState
+  updateSubtitle: (state: EditorState, subtitleId: string, patch: Partial<SubtitleClip>) => EditorState
+  deleteSubtitle: (state: EditorState, subtitleId: string) => EditorState
+  addAdjustmentLayer: (state: EditorState, params?: { startTime?: number; trackIndex?: number; duration?: number }) => EditorState
+  unlinkClipGroup: (state: EditorState, clipId: string) => EditorState
 }
 
 export interface AgentToolExecutorHost {
@@ -209,6 +239,7 @@ export class AgentToolExecutor {
   private lastAssemblyConfirmedMore = false
   private lastAssemblyProgress: AgentAssemblyProgress | null = null
   private lastAssemblyReviewDecision: 'approve' | 'reject' | 'revise' | null = null
+  private lastPlan: AgentEditPlan | null = null
 
   constructor(host: AgentToolExecutorHost) {
     this.host = host
@@ -228,11 +259,21 @@ export class AgentToolExecutor {
       setProgress: progress => { this.lastAssemblyProgress = progress },
       getReviewDecision: () => this.lastAssemblyReviewDecision,
       setReviewDecision: value => { this.lastAssemblyReviewDecision = value },
+      getPlan: () => this.lastPlan,
+      setPlan: plan => { this.lastPlan = plan },
     }
   }
 
   rememberAssemblyAcceptance(answers: Record<string, string | string[]>): void {
     rememberAssemblyAcceptance(this.assemblyMemory(), answers)
+  }
+
+  getLastPlan(): AgentEditPlan | null {
+    return this.lastPlan
+  }
+
+  rememberPlan(plan: AgentEditPlan | null): void {
+    this.lastPlan = plan
   }
 
   assistantUndoNames(): readonly string[] {
@@ -286,6 +327,9 @@ export class AgentToolExecutor {
         }
       }
       return result
+    }
+    if (isNarrativeToolName(name)) {
+      return this.executeNarrative(name, args)
     }
     if (!isEditTool(name)) return errorResult(`Unknown tool: ${name}`)
     const unknown = validateUnknownKeys(args, EDIT_TOOL_ALLOWED_KEYS[name])
@@ -353,7 +397,86 @@ export class AgentToolExecutor {
         return this.renameBin(args)
       case 'undo':
         return this.undoAssistantEdit()
+      case 'set_clip_speed':
+        return this.setClipSpeed(args)
+      case 'slip_clip':
+        return this.slipOrSlide(args, 'slip')
+      case 'slide_clip':
+        return this.slipOrSlide(args, 'slide')
+      case 'duplicate_clips':
+        return this.duplicateClips(args)
+      case 'add_track':
+        return this.addTrack(args)
+      case 'delete_track':
+        return this.mutateTrack(args, 'delete')
+      case 'rename_track':
+        return this.renameTrack(args)
+      case 'toggle_track_lock':
+        return this.mutateTrack(args, 'lock')
+      case 'toggle_track_mute':
+        return this.mutateTrack(args, 'mute')
+      case 'set_clip_opacity':
+        return this.setClipOpacity(args)
+      case 'toggle_clip_mute':
+        return this.toggleClipFlag(args, 'mute')
+      case 'toggle_clip_reverse':
+        return this.toggleClipFlag(args, 'reverse')
+      case 'add_cross_dissolve':
+        return this.crossDissolve(args, 'add')
+      case 'remove_cross_dissolve':
+        return this.crossDissolve(args, 'remove')
+      case 'switch_timeline':
+        return this.switchTimeline(args)
+      case 'rename_timeline':
+        return this.renameTimeline(args)
+      case 'delete_timeline':
+        return this.deleteTimeline(args)
+      case 'duplicate_timeline':
+        return this.duplicateTimeline(args)
+      case 'set_in_point':
+        return this.setMark(args, 'in')
+      case 'set_out_point':
+        return this.setMark(args, 'out')
+      case 'clear_in_out':
+        return this.clearMarks()
+      case 'update_subtitle':
+        return this.updateSubtitle(args)
+      case 'delete_subtitle':
+        return this.deleteSubtitle(args)
+      case 'add_adjustment_layer':
+        return this.addAdjustmentLayer(args)
+      case 'unlink_clip_group':
+        return this.unlinkClipGroup(args)
     }
+  }
+
+  private executeNarrative(name: AgentNarrativeToolName, args: Record<string, unknown>): Record<string, unknown> {
+    const unknown = validateUnknownKeys(args, NARRATIVE_TOOL_ALLOWED_KEYS[name])
+    if (unknown) return errorResult(unknown)
+    if (name === 'plan_edit') {
+      const plan = normalizeEditPlan(args)
+      if ('error' in plan) return errorResult(plan.error)
+      this.lastPlan = plan
+      return { ok: true, plan, approveAllSkipsAskOnly: true }
+    }
+    if (name === 'check_cut') {
+      return cutReportAsToolResult(analyzeCut(this.host.getState()))
+    }
+    const before = undoSnapshot(this.host.getState())
+    const synced = applyNarrationSync(this.host)
+    if (synced.synced) {
+      const after = undoSnapshot(this.host.getState())
+      if (!sameUndoSnapshot(before, after)) {
+        this.assistantUndo.push({ name, after })
+      }
+    }
+    return cutReportAsToolResult(synced.cut, {
+      ok: synced.ok,
+      synced: synced.synced,
+      actions: synced.actions,
+      needsGenerate: synced.needsGenerate,
+      shortfall: synced.shortfall,
+    })
   }
 
   private insertOrOverwrite(args: Record<string, unknown>, mode: 'insert' | 'overwrite'): Record<string, unknown> {
@@ -481,7 +604,11 @@ export class AgentToolExecutor {
     if (!resolved.ok) return resolved.error
     const locked = refuseIfLocked(state, resolved.ids)
     if (locked) return locked
-    if (resolved.ids.length >= DELETE_MANY_THRESHOLD && !asBoolean(args.confirmed)) {
+    if (
+      resolved.ids.length >= DELETE_MANY_THRESHOLD
+      && !asBoolean(args.confirmed)
+      && this.host.getApproveAll?.() !== true
+    ) {
       return {
         ok: false,
         needsConfirm: true,
@@ -677,5 +804,278 @@ export class AgentToolExecutor {
     }
     const next = this.mutate(prev => this.host.actions.renameBin(prev, binId, name))
     return { ok: true, binId, name: next.editorModel.bins[binId] }
+  }
+
+  private resolveClipId(args: Record<string, unknown>): { ok: true; id: string } | { ok: false; error: Record<string, unknown> } {
+    const id = asString(args.clipId) ?? asString(args.id)
+    if (!id) return { ok: false, error: errorResult('Missing clipId') }
+    if (!clipById(this.host.getState(), id)) return { ok: false, error: errorResult('Clip not found') }
+    return { ok: true, id }
+  }
+
+  private resolveTrackId(args: Record<string, unknown>): { ok: true; trackId: string } | { ok: false; error: Record<string, unknown> } {
+    const timeline = activeTimeline(this.host.getState())
+    if (!timeline) return { ok: false, error: errorResult('No active timeline') }
+    const trackId = asString(args.trackId)
+    if (trackId) {
+      if (!timeline.tracks.some(track => track.id === trackId)) return { ok: false, error: errorResult('Track not found') }
+      return { ok: true, trackId }
+    }
+    const index = asNumber(args.trackIndex)
+    if (index == null) return { ok: false, error: errorResult('Missing trackId') }
+    const track = timeline.tracks[index]
+    if (!track) return { ok: false, error: errorResult('Track not found') }
+    return { ok: true, trackId: track.id }
+  }
+
+  private resolveTimelineId(args: Record<string, unknown>, fallbackActive = true): { ok: true; id: string } | { ok: false; error: Record<string, unknown> } {
+    const state = this.host.getState()
+    const id = asString(args.timelineId) ?? asString(args.id) ?? (fallbackActive ? state.editorModel.activeTimelineId : null)
+    if (!id) return { ok: false, error: errorResult('Missing timelineId') }
+    if (!state.editorModel.timelines.some(timeline => timeline.id === id)) {
+      return { ok: false, error: errorResult('Timeline not found') }
+    }
+    return { ok: true, id }
+  }
+
+  private setClipSpeed(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveClipId(args)
+    if (!resolved.ok) return resolved.error
+    const speed = asNumber(args.speed)
+    if (speed == null || speed <= 0) return errorResult('speed must be a positive number')
+    const clip = clipById(this.host.getState(), resolved.id)
+    if (clip && trackLocked(this.host.getState(), clip.trackIndex)) return errorResult('Track is locked')
+    const next = this.mutate(prev => this.host.actions.setClipSpeed(prev, resolved.id, speed))
+    const updated = clipById(next, resolved.id)
+    if (!updated) return errorResult('Clip not found')
+    return timelineSlice(next, { clip: clipSlice(updated) })
+  }
+
+  private slipOrSlide(args: Record<string, unknown>, mode: 'slip' | 'slide'): Record<string, unknown> {
+    const resolved = this.resolveClipId(args)
+    if (!resolved.ok) return resolved.error
+    const deltaTime = asNumber(args.deltaTime)
+    if (deltaTime == null) return errorResult('Missing deltaTime')
+    const clip = clipById(this.host.getState(), resolved.id)
+    if (clip && trackLocked(this.host.getState(), clip.trackIndex)) return errorResult('Track is locked')
+    const next = this.mutate(prev => (
+      mode === 'slip'
+        ? this.host.actions.slipClip(prev, { clipId: resolved.id, deltaTime })
+        : this.host.actions.slideClip(prev, { clipId: resolved.id, deltaTime })
+    ))
+    const updated = clipById(next, resolved.id)
+    if (!updated) return errorResult('Clip not found')
+    return timelineSlice(next, { clip: clipSlice(updated) })
+  }
+
+  private duplicateClips(args: Record<string, unknown>): Record<string, unknown> {
+    const state = this.host.getState()
+    const resolved = resolveClipIds(state, args.clipIds)
+    if (!resolved.ok) return resolved.error
+    const locked = refuseIfLocked(state, resolved.ids)
+    if (locked) return locked
+    const beforeIds = new Set(activeTimeline(state)?.clips.map(item => item.id) ?? [])
+    const next = this.mutate(prev => this.host.actions.duplicateClips(prev, resolved.ids))
+    const created = (activeTimeline(next)?.clips ?? []).filter(item => !beforeIds.has(item.id)).map(clipSlice)
+    return timelineSlice(next, { createdClipIds: created.map(item => item.id), created })
+  }
+
+  private addTrack(args: Record<string, unknown>): Record<string, unknown> {
+    const kind = asString(args.kind)
+    if (kind !== 'video' && kind !== 'audio') return errorResult('kind must be video or audio')
+    const before = activeTimeline(this.host.getState())?.tracks.map(track => track.id) ?? []
+    const next = this.mutate(prev => this.host.actions.addTrack(prev, kind))
+    const created = activeTimeline(next)?.tracks.find(track => !before.includes(track.id))
+    if (!created) return errorResult('Failed to add track')
+    return timelineSlice(next, { track: { id: created.id, name: created.name, kind: created.kind } })
+  }
+
+  private mutateTrack(args: Record<string, unknown>, mode: 'delete' | 'lock' | 'mute'): Record<string, unknown> {
+    const resolved = this.resolveTrackId(args)
+    if (!resolved.ok) return resolved.error
+    const next = this.mutate(prev => {
+      if (mode === 'delete') return this.host.actions.deleteTrack(prev, resolved.trackId)
+      if (mode === 'lock') return this.host.actions.toggleTrackLock(prev, resolved.trackId)
+      return this.host.actions.toggleTrackMute(prev, resolved.trackId)
+    })
+    const timeline = activeTimeline(next)
+    const track = timeline?.tracks.find(item => item.id === resolved.trackId)
+    if (mode !== 'delete' && !track) return errorResult('Track not found')
+    return timelineSlice(next, {
+      trackId: resolved.trackId,
+      ...(track ? { locked: track.locked, muted: track.muted, name: track.name } : { deleted: true }),
+    })
+  }
+
+  private renameTrack(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveTrackId(args)
+    if (!resolved.ok) return resolved.error
+    const name = asString(args.name)
+    if (!name) return errorResult('Missing name')
+    const next = this.mutate(prev => this.host.actions.renameTrack(prev, resolved.trackId, name))
+    return timelineSlice(next, { trackId: resolved.trackId, name })
+  }
+
+  private setClipOpacity(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveClipId(args)
+    if (!resolved.ok) return resolved.error
+    const opacity = asNumber(args.opacity)
+    if (opacity == null) return errorResult('Missing opacity')
+    const clip = clipById(this.host.getState(), resolved.id)
+    if (clip && trackLocked(this.host.getState(), clip.trackIndex)) return errorResult('Track is locked')
+    const next = this.mutate(prev => this.host.actions.setClipOpacity(prev, resolved.id, opacity))
+    const updated = clipById(next, resolved.id)
+    if (!updated) return errorResult('Clip not found')
+    return timelineSlice(next, { clip: clipSlice(updated) })
+  }
+
+  private toggleClipFlag(args: Record<string, unknown>, mode: 'mute' | 'reverse'): Record<string, unknown> {
+    const resolved = this.resolveClipId(args)
+    if (!resolved.ok) return resolved.error
+    const clip = clipById(this.host.getState(), resolved.id)
+    if (clip && trackLocked(this.host.getState(), clip.trackIndex)) return errorResult('Track is locked')
+    const next = this.mutate(prev => (
+      mode === 'mute'
+        ? this.host.actions.toggleClipMute(prev, resolved.id)
+        : this.host.actions.toggleClipReverse(prev, resolved.id)
+    ))
+    const updated = clipById(next, resolved.id)
+    if (!updated) return errorResult('Clip not found')
+    return timelineSlice(next, { clip: clipSlice(updated) })
+  }
+
+  private crossDissolve(args: Record<string, unknown>, mode: 'add' | 'remove'): Record<string, unknown> {
+    const left = asString(args.leftClipId)
+    const right = asString(args.rightClipId)
+    if (!left || !right) return errorResult('Missing leftClipId or rightClipId')
+    const state = this.host.getState()
+    if (!clipById(state, left) || !clipById(state, right)) return errorResult('Clip not found')
+    const next = this.mutate(prev => (
+      mode === 'add'
+        ? this.host.actions.addCrossDissolve(prev, left, right)
+        : this.host.actions.removeCrossDissolve(prev, left, right)
+    ))
+    return timelineSlice(next, { leftClipId: left, rightClipId: right, dissolve: mode === 'add' })
+  }
+
+  private switchTimeline(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveTimelineId(args, false)
+    if (!resolved.ok) return resolved.error
+    const next = this.mutate(prev => this.host.actions.switchActiveTimeline(prev, resolved.id))
+    return { ok: true, timelineId: next.editorModel.activeTimelineId }
+  }
+
+  private renameTimeline(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveTimelineId(args)
+    if (!resolved.ok) return resolved.error
+    const name = asString(args.name)
+    if (!name) return errorResult('Missing name')
+    const next = this.mutate(prev => this.host.actions.renameTimeline(prev, resolved.id, name))
+    const timeline = next.editorModel.timelines.find(item => item.id === resolved.id)
+    return { ok: true, timelineId: resolved.id, name: timeline?.name ?? name }
+  }
+
+  private deleteTimeline(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveTimelineId(args)
+    if (!resolved.ok) return resolved.error
+    if (!asBoolean(args.confirmed) && this.host.getApproveAll?.() !== true) {
+      return {
+        ok: false,
+        needsConfirm: true,
+        timelineId: resolved.id,
+        error: 'Deleting a timeline needs confirmation. Use ask_user, then call delete_timeline with confirmed=true.',
+      }
+    }
+    if (this.host.getState().editorModel.timelines.length <= 1) {
+      return errorResult('Cannot delete the last timeline')
+    }
+    const next = this.mutate(prev => this.host.actions.deleteTimeline(prev, resolved.id))
+    return {
+      ok: true,
+      deletedTimelineId: resolved.id,
+      activeTimelineId: next.editorModel.activeTimelineId,
+    }
+  }
+
+  private duplicateTimeline(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveTimelineId(args)
+    if (!resolved.ok) return resolved.error
+    const before = new Set(this.host.getState().editorModel.timelines.map(timeline => timeline.id))
+    const next = this.mutate(prev => this.host.actions.duplicateTimeline(prev, resolved.id))
+    const created = next.editorModel.timelines.find(timeline => !before.has(timeline.id))
+    if (!created) return errorResult('Failed to duplicate timeline')
+    return { ok: true, timelineId: created.id, name: created.name }
+  }
+
+  private setMark(args: Record<string, unknown>, edge: 'in' | 'out'): Record<string, unknown> {
+    const time = asNumber(args.time) ?? this.host.getState().session.transport.currentTime
+    const next = this.mutate(prev => (
+      edge === 'in'
+        ? this.host.actions.setTimelineInPoint(prev, time)
+        : this.host.actions.setTimelineOutPoint(prev, time)
+    ))
+    return {
+      ok: true,
+      playhead: next.session.transport.currentTime,
+      mark: edge,
+      time,
+    }
+  }
+
+  private clearMarks(): Record<string, unknown> {
+    this.mutate(prev => this.host.actions.clearTimelineMarks(prev))
+    return { ok: true, inPoint: null, outPoint: null }
+  }
+
+  private updateSubtitle(args: Record<string, unknown>): Record<string, unknown> {
+    const id = asString(args.id) ?? asString(args.subtitleId)
+    if (!id) return errorResult('Missing id')
+    const timeline = activeTimeline(this.host.getState())
+    if (!timeline?.subtitles.some(subtitle => subtitle.id === id)) return errorResult('Subtitle not found')
+    const patch: Partial<SubtitleClip> = {}
+    const text = asString(args.text)
+    const start = asNumber(args.start) ?? asNumber(args.startTime)
+    const end = asNumber(args.end) ?? asNumber(args.endTime)
+    if (text) patch.text = text
+    if (start != null) patch.startTime = start
+    if (end != null) patch.endTime = end
+    if (Object.keys(patch).length === 0) return errorResult('Provide text, start, or end')
+    const next = this.mutate(prev => this.host.actions.updateSubtitle(prev, id, patch))
+    const updated = activeTimeline(next)?.subtitles.find(subtitle => subtitle.id === id)
+    return timelineSlice(next, {
+      subtitle: updated
+        ? { id: updated.id, text: updated.text, start: updated.startTime, end: updated.endTime }
+        : { id },
+    })
+  }
+
+  private deleteSubtitle(args: Record<string, unknown>): Record<string, unknown> {
+    const id = asString(args.id) ?? asString(args.subtitleId)
+    if (!id) return errorResult('Missing id')
+    const next = this.mutate(prev => this.host.actions.deleteSubtitle(prev, id))
+    return timelineSlice(next, { deletedSubtitleId: id })
+  }
+
+  private addAdjustmentLayer(args: Record<string, unknown>): Record<string, unknown> {
+    const startTime = asNumber(args.startTime)
+    const trackIndex = asNumber(args.trackIndex)
+    const duration = asNumber(args.duration)
+    if (trackIndex != null && trackLocked(this.host.getState(), trackIndex)) return errorResult('Track is locked')
+    const beforeIds = new Set(activeTimeline(this.host.getState())?.clips.map(item => item.id) ?? [])
+    const next = this.mutate(prev => this.host.actions.addAdjustmentLayer(prev, {
+      ...(startTime != null ? { startTime } : {}),
+      ...(trackIndex != null ? { trackIndex } : {}),
+      ...(duration != null ? { duration } : {}),
+    }))
+    const created = (activeTimeline(next)?.clips ?? []).find(item => !beforeIds.has(item.id))
+    if (!created) return errorResult('Failed to add adjustment layer')
+    return timelineSlice(next, { clip: clipSlice(created) })
+  }
+
+  private unlinkClipGroup(args: Record<string, unknown>): Record<string, unknown> {
+    const resolved = this.resolveClipId(args)
+    if (!resolved.ok) return resolved.error
+    const next = this.mutate(prev => this.host.actions.unlinkClipGroup(prev, resolved.id))
+    return timelineSlice(next, { clipId: resolved.id, unlinked: true })
   }
 }
