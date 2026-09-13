@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { answersToUserMessage, resolveOrphanToolUses, runAgentLoop } from './agent-loop.ts'
+import { answersToUserMessage, resolveOrphanToolUses, runAgentLoop, toAgentTurnApiParts } from './agent-loop.ts'
 import { createAgentMessageId, type AgentChatMessage, type AgentTurnResponse } from './agent-types.ts'
 import { READ_TOOL_DEFINITIONS } from './tool-definitions.ts'
 
@@ -166,5 +166,16 @@ describe('agent loop', () => {
     assert.equal(result.stopReason, 'ask_user')
     assert.deepEqual(asked, ['shot_list'])
     assert.equal(kind, 'shot_list')
+  })
+
+  it('maps renderer tool part ids to API toolCallId so the next turn is not an orphan output', () => {
+    const mapped = toAgentTurnApiParts([
+      { type: 'tool_call', id: 'call_timeline_1', name: 'get_timeline', arguments: {} },
+      { type: 'tool_result', id: 'call_timeline_1', name: 'get_timeline', result: { clipCount: 0 } },
+    ])
+    assert.deepEqual(mapped, [
+      { type: 'tool_call', toolCallId: 'call_timeline_1', toolName: 'get_timeline', arguments: {} },
+      { type: 'tool_result', toolCallId: 'call_timeline_1', toolName: 'get_timeline', result: { clipCount: 0 } },
+    ])
   })
 })

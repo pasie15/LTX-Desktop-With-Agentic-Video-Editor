@@ -240,6 +240,65 @@ def test_openai_oauth_turn_uses_codex_responses(client, test_state) -> None:
     assert sent["store"] is False
 
 
+def test_openai_oauth_followup_pairs_ui_tool_ids(client, test_state) -> None:
+    from state.app_settings import AgentLlmProviderSettings
+
+    test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(
+            id="prov_oai",
+            kind="openai",
+            oauth_access_token="oauth-tok",
+            oauth_account_id="acct_1",
+            auth_mode="oauth",
+            model="gpt-4o",
+        )
+    ]
+    test_state.http.queue(
+        "post",
+        FakeResponse(
+            status_code=200,
+            text=(
+                "event: response.completed\n"
+                'data: {"type":"response.completed","response":{"output":['
+                '{"type":"function_call","call_id":"call_asm_1","name":"assemble_shots",'
+                '"arguments":"{\\"shots\\":[{\\"prompt\\":\\"paper boy on a bicycle\\",\\"duration\\":4}]}"}'
+                "]}}\n\n"
+            ),
+        ),
+    )
+    response = client.post(
+        "/api/agent/turn",
+        json={
+            "messages": [
+                {"role": "user", "parts": [{"type": "text", "text": "Create a short film about a paper boy."}]},
+                {
+                    "role": "assistant",
+                    "parts": [{"type": "tool_call", "id": "call_timeline_1", "name": "get_timeline", "arguments": {}}],
+                },
+                {
+                    "role": "tool",
+                    "parts": [{"type": "tool_result", "id": "call_timeline_1", "name": "get_timeline", "result": {"clipCount": 0}}],
+                },
+            ],
+            "projectContext": {"name": "Demo"},
+            "availableTools": [
+                {"name": "get_timeline", "description": "Read", "parameters": {"type": "object"}},
+                {"name": "assemble_shots", "description": "Assemble", "parameters": {"type": "object"}},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["finishReason"] == "tool_calls"
+    assert payload["toolCalls"][0]["name"] == "assemble_shots"
+    sent = test_state.http.calls[-1].json_payload
+    assert sent is not None
+    calls = [item for item in sent["input"] if item.get("type") == "function_call"]
+    outputs = [item for item in sent["input"] if item.get("type") == "function_call_output"]
+    assert calls[0]["call_id"] == outputs[0]["call_id"] == "call_timeline_1"
+
+
 def test_anthropic_oauth_turn_uses_bearer(client, test_state) -> None:
     from state.app_settings import AgentLlmProviderSettings
 

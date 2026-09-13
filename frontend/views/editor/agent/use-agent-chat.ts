@@ -12,7 +12,7 @@ import { answersToUserMessage, runAgentLoop } from './agent-loop'
 import { mentionPartsForMessage } from './agent-mentions'
 import { getAgentChatStorage, loadAgentSessions } from './agent-persistence'
 import { buildAgentSnapshot } from './agent-snapshot'
-import { AGENT_TOOL_DEFINITIONS, isSlotHoldingToolName } from './tool-definitions'
+import { AGENT_TOOL_DEFINITIONS } from './tool-definitions'
 import { createAgentToolExecutor, executeAgentTool } from './tool-executor'
 import {
   AGENT_ADD_MENTION_EVENT,
@@ -280,9 +280,7 @@ export function useAgentChat(params: UseAgentChatParams) {
           currentModelLabel,
           selectedGapOverride: getSelectedGap?.() ?? null,
         }) as unknown as Record<string, unknown>,
-        availableTools: generationBusy
-          ? AGENT_TOOL_DEFINITIONS.filter(tool => !isSlotHoldingToolName(tool.name))
-          : AGENT_TOOL_DEFINITIONS,
+        availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,
         requestTurn: requestAgentTurn,
         executeTool: (name, args) => executeAgentTool(executorRef.current!, name, args),

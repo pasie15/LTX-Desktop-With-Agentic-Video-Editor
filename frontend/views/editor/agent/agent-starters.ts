@@ -28,6 +28,11 @@ export const AGENT_STARTER_PROMPTS: readonly AgentStarterPrompt[] = [
     composerText: 'Assemble this script on the timeline:\n\n',
   },
   {
+    id: 'short-film',
+    label: 'Make a short film about …',
+    composerText: 'Create a short film about ',
+  },
+  {
     id: 'titles',
     label: 'Add titles / subtitles',
     composerText: 'Add titles / subtitles',

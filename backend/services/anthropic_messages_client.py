@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
-from uuid import uuid4
 
 from api_types import AgentMessagePayload, AgentToolDeclarationPayload
 from _routes._errors import HTTPError
@@ -70,10 +69,13 @@ def anthropic_messages_from_agent(messages: list[AgentMessagePayload]) -> list[J
                 if part.type == "text" and part.text:
                     content.append({"type": "text", "text": part.text})
                 elif part.type == "tool_call" and part.toolName:
+                    call_id = (part.toolCallId or "").strip()
+                    if not call_id:
+                        continue
                     content.append(
                         {
                             "type": "tool_use",
-                            "id": (part.toolCallId or "").strip() or f"call_{uuid4().hex[:10]}",
+                            "id": call_id,
                             "name": part.toolName,
                             "input": _json_object(part.arguments),
                         }
@@ -86,11 +88,14 @@ def anthropic_messages_from_agent(messages: list[AgentMessagePayload]) -> list[J
             for part in message.parts:
                 if part.type != "tool_result":
                     continue
+                call_id = (part.toolCallId or "").strip()
+                if not call_id:
+                    continue
                 payload = part.result if part.result is not None else {"ok": True}
                 pending_tool_results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": (part.toolCallId or part.toolName or "").strip() or f"call_{uuid4().hex[:10]}",
+                        "tool_use_id": call_id,
                         "content": _stringify_result(payload),
                     }
                 )

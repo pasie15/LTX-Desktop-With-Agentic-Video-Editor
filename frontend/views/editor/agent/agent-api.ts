@@ -1,12 +1,18 @@
 import { ApiClient } from '../../../lib/api-client.ts'
-import { AgentTurnError } from './agent-loop.ts'
+import { AgentTurnError, toAgentTurnApiParts } from './agent-loop.ts'
 import type { AgentTurnRequest, AgentTurnResponse } from './agent-types.ts'
 
 export async function requestAgentTurn(
   request: AgentTurnRequest,
   signal: AbortSignal,
 ): Promise<AgentTurnResponse> {
-  const result = await ApiClient.agentTurn(request, { signal })
+  const result = await ApiClient.agentTurn({
+    ...request,
+    messages: request.messages.map(message => ({
+      role: message.role,
+      parts: toAgentTurnApiParts(message.parts),
+    })),
+  }, { signal })
   if (result.ok) {
     return {
       status: 'success',

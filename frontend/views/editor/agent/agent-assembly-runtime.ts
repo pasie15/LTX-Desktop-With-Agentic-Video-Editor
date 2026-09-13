@@ -10,6 +10,7 @@ import {
 } from './agent-assembly.ts'
 import {
   executeGenerateTool,
+  waitForHostGenerationSlot,
   type AgentGenerateActionHost,
   type AgentGenerateDestination,
 } from './agent-generate-runtime.ts'
@@ -173,9 +174,9 @@ export async function executeAssemblyTool(
   }
 
   if (proposal.jobCount > 0) {
-    const jobs = host.generation
-    if (!jobs) return errorResult('Generation is not available')
-    if (jobs.isBusy()) return errorResult('Generation slot is busy. Wait or stop the current job.')
+    if (!host.generation) return errorResult('Generation is not available')
+    const waited = await waitForHostGenerationSlot(host, 'assemble_shots')
+    if (waited) return waited
   }
 
   const state = host.getState()
@@ -282,7 +283,7 @@ async function generateAndPlaceShot(
   const video = await executeGenerateTool(host, 'generate_video', {
     prompt: shot.prompt,
     model: proposal.model,
-    duration: shot.duration,
+    duration: Math.max(shot.duration, 5),
     resolution: proposal.resolution,
     audio: proposal.audio,
     ...(imageAssetId ? { imageAssetId } : {}),

@@ -332,6 +332,39 @@ def complete_agent_llm_text(
     return text
 
 
+def bind_agent_tool_call_ids(messages: list[AgentMessagePayload]) -> list[AgentMessagePayload]:
+    """Give every tool_call a stable id and pair tool_result ids to those calls.
+
+    Adapters must not mint a fresh uuid for a function_call_output — Codex then
+    returns "No tool call found for function call output with call_id …".
+    Unmatched results are dropped instead of being sent as orphans.
+    """
+    pending: list[str] = []
+    bound: list[AgentMessagePayload] = []
+    for message in messages:
+        parts: list[AgentMessagePartPayload] = []
+        for part in message.parts:
+            if part.type == "tool_call":
+                call_id = (part.toolCallId or "").strip() or f"call_{uuid4().hex[:10]}"
+                pending.append(call_id)
+                parts.append(part.model_copy(update={"toolCallId": call_id}))
+                continue
+            if part.type == "tool_result":
+                call_id = (part.toolCallId or "").strip()
+                if call_id and call_id in pending:
+                    pending.remove(call_id)
+                elif pending:
+                    call_id = pending.pop(0)
+                else:
+                    continue
+                parts.append(part.model_copy(update={"toolCallId": call_id}))
+                continue
+            parts.append(part)
+        if parts or message.role == "user":
+            bound.append(message.model_copy(update={"parts": parts}))
+    return bound
+
+
 def run_agent_llm_turn(
     http: HTTPClient,
     resolved: ResolvedAgentLlm,
@@ -342,6 +375,7 @@ def run_agent_llm_turn(
 ) -> LlmTurnResult:
     if not resolved.api_key:
         raise HTTPError(400, missing_key_code(resolved))
+    messages = bind_agent_tool_call_ids(messages)
 
     if resolved.api_kind == "gemini":
         gemini_model = resolve_gemini_model(resolved.model)

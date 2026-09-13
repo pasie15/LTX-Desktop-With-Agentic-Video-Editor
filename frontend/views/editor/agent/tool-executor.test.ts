@@ -715,17 +715,41 @@ describe('generate tool executor', () => {
     assert.ok(host.getState().editorModel.assets.some(asset => asset.id === result.assetId))
   })
 
-  it('refuses generate while the slot is busy', async () => {
+    it('waits for a busy slot then generates', async () => {
+    let busy = true
+    const progress: string[] = []
     const host = createHost(makeState({ clips: [] }), {
-      generation: fakeJobs({ isBusy: () => true }),
+      generation: fakeJobs({ isBusy: () => busy }),
     })
+    host.onProgress = item => { progress.push(item.status) }
     const executor = new AgentToolExecutor(host)
-    const result = await executor.execute('generate_image', {
+    const pending = executor.execute('generate_image', {
       prompt: 'a red apple on a table',
       confirmed: true,
     })
+    setTimeout(() => { busy = false }, 25)
+    const result = await pending
+    assert.equal(result.ok, true)
+    assert.ok(host.getState().editorModel.assets.some(asset => asset.id === result.assetId))
+    assert.ok(progress.some(status => /Waiting for generation slot/i.test(status)))
+  })
+
+  it('cancels generate while waiting for the slot', async () => {
+    const controller = new AbortController()
+    const host = createHost(makeState({ clips: [] }), {
+      generation: fakeJobs({ isBusy: () => true }),
+    })
+    host.getAbortSignal = () => controller.signal
+    const executor = new AgentToolExecutor(host)
+    const pending = executor.execute('generate_image', {
+      prompt: 'a red apple on a table',
+      confirmed: true,
+    })
+    setTimeout(() => controller.abort(), 20)
+    const result = await pending
     assert.equal(result.ok, false)
-    assert.match(String(result.error), /busy/)
+    assert.match(String(result.error), /cancel/i)
+    assert.equal(host.getState().editorModel.assets.length, 2)
   })
 
   it('adds a confirmed still to assets only', async () => {
@@ -823,8 +847,33 @@ describe('assembly tool executor', () => {
     assert.equal(videos.length, 2)
     assert.equal(titles.length, 2)
     assert.equal(videos[0]?.startTime, 0)
-    assert.equal(videos[1]?.startTime, 4)
+    assert.equal(videos[1]?.startTime, 5)
     assert.ok(progress.some(status => status.includes('1/2 generating')))
+  })
+
+  it('waits for a busy slot then assembles every shot', async () => {
+    let busy = true
+    const progress: string[] = []
+    const host = createHost(makeState({ clips: [], playhead: 0 }), {
+      generation: fakeJobs({ isBusy: () => busy }),
+    })
+    host.onProgress = item => { progress.push(item.status) }
+    const executor = new AgentToolExecutor(host)
+    const pending = executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'paper boy on a bicycle, 1970s street', duration: 4 },
+        { id: 's2', prompt: 'newspaper lands on a porch', duration: 4 },
+      ],
+      skipStills: true,
+      confirmed: true,
+    })
+    setTimeout(() => { busy = false }, 25)
+    const result = await pending
+    assert.equal(result.ok, true)
+    assert.equal((result.placed as unknown[]).length, 2)
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 2)
+    assert.ok(progress.some(status => /Waiting for generation slot/i.test(status)))
+    assert.ok(!String(result.error ?? '').toLowerCase().includes('busy'))
   })
 
   it('requires confirmedMore when the assembly exceeds eight generate jobs', async () => {

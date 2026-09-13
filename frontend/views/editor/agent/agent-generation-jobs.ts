@@ -4,6 +4,7 @@ import { buildGenerateVideoImageInputs } from '../../../lib/build-generate-video
 import { canCancelLocalJob, withGenerationActive } from '../../../lib/generation-active'
 import { GENERATION_RECOVERY_KEY, type GenerationRecoveryContext } from '../../../hooks/use-generation'
 import type { VideoGenerationPipeline } from '../../../lib/video-generation-model-specs'
+import { GENERATION_SLOT_WAIT_STATUS, waitForGenerationSlot } from './agent-generation-slot.ts'
 import type { AgentGenerateJobResult, AgentGenerateSettings, AgentGenerationJobs, AgentPersistedVisualAsset } from './agent-generate-runtime.ts'
 
 type GenerateVideoRequest = ApiRequestBodyOf<'generateVideo'>
@@ -94,6 +95,29 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
     localStorage.removeItem(GENERATION_RECOVERY_KEY)
   }
 
+  const isSlotOccupied = async () => {
+    if (inFlight) return true
+    const localBusy = input.isBusy()
+    try {
+      const progress = await Promise.race([
+        ApiClient.getGenerationProgress(),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 2000)),
+      ])
+      if (!progress || !progress.ok) return localBusy
+      return progress.data.status === 'running'
+    } catch {
+      return localBusy
+    }
+  }
+
+  const waitForSlot: NonNullable<AgentGenerationJobs['waitForSlot']> = async ({ signal, onWaiting }) => {
+    return waitForGenerationSlot({
+      isOccupied: isSlotOccupied,
+      signal,
+      onWaiting,
+    })
+  }
+
   const pollUntilSettled = async (
     onProgress?: (progress: { percent: number; status: string }) => void,
   ) => {
@@ -118,7 +142,14 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
   }
 
   const runImage: AgentGenerationJobs['runImage'] = async ({ prompt, settings, signal, onProgress }) => {
-    if (input.isBusy() || inFlight) return { status: 'error', error: 'Generation slot is busy. Wait or stop the current job.' }
+    const waited = await waitForSlot({
+      signal,
+      onWaiting: () => onProgress?.({ percent: 0, status: GENERATION_SLOT_WAIT_STATUS }),
+    })
+    if (!waited.ok) {
+      if ('cancelled' in waited) return { status: 'cancelled' }
+      return { status: 'error', error: waited.error }
+    }
     inFlight = true
     cancelRequested = false
     const abort = () => { cancel() }
@@ -167,7 +198,14 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
   }
 
   const runVideo: AgentGenerationJobs['runVideo'] = async ({ prompt, imagePath, settings, signal, onProgress }) => {
-    if (input.isBusy() || inFlight) return { status: 'error', error: 'Generation slot is busy. Wait or stop the current job.' }
+    const waited = await waitForSlot({
+      signal,
+      onWaiting: () => onProgress?.({ percent: 0, status: GENERATION_SLOT_WAIT_STATUS }),
+    })
+    if (!waited.ok) {
+      if ('cancelled' in waited) return { status: 'cancelled' }
+      return { status: 'error', error: waited.error }
+    }
     inFlight = true
     cancelRequested = false
     const abort = () => { cancel() }
@@ -226,8 +264,10 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
     isBusy: () => input.isBusy() || inFlight,
     runImage,
     runVideo,
+    waitForSlot,
     enhancePrompt: async (prompt, mediaType) => {
-      if (input.isBusy() || inFlight) return { ok: false, error: 'Generation slot is busy. Wait or stop the current job.' }
+      const waited = await waitForSlot({})
+      if (!waited.ok) return { ok: false, error: 'cancelled' in waited ? 'Generation cancelled' : waited.error }
       const result = await withGenerationActive(() => ApiClient.enhancePrompt({
         prompt,
         mediaType,

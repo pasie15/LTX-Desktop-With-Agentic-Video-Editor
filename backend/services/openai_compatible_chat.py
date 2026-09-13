@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, cast
-from uuid import uuid4
 
 from api_types import AgentMessagePayload, AgentToolDeclarationPayload
 from _routes._errors import HTTPError
@@ -65,7 +64,9 @@ def openai_messages_from_agent(
                 if part.type == "text" and part.text:
                     text_chunks.append(part.text)
                 elif part.type == "tool_call" and part.toolName:
-                    call_id = (part.toolCallId or "").strip() or f"call_{uuid4().hex[:10]}"
+                    call_id = (part.toolCallId or "").strip()
+                    if not call_id:
+                        continue
                     tool_calls.append(
                         {
                             "id": call_id,
@@ -90,11 +91,14 @@ def openai_messages_from_agent(
             for part in message.parts:
                 if part.type != "tool_result":
                     continue
+                call_id = (part.toolCallId or "").strip()
+                if not call_id:
+                    continue
                 payload = part.result if part.result is not None else {"ok": True}
                 converted.append(
                     {
                         "role": "tool",
-                        "tool_call_id": (part.toolCallId or part.toolName or "").strip() or f"call_{uuid4().hex[:10]}",
+                        "tool_call_id": call_id,
                         "content": json.dumps(payload, ensure_ascii=False),
                     }
                 )

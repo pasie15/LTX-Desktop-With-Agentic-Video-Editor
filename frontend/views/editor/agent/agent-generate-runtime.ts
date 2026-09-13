@@ -9,6 +9,12 @@ import {
   validateUnknownKeys,
 } from './agent-tool-utils.ts'
 import {
+  GENERATION_SLOT_WAIT_STATUS,
+  slotWaitError,
+  waitForGenerationSlot,
+  type GenerationSlotWaitResult,
+} from './agent-generation-slot.ts'
+import {
   GENERATE_TOOL_ALLOWED_KEYS,
   type AgentGenerateToolName,
 } from './tool-definitions.ts'
@@ -50,6 +56,10 @@ export interface AgentPersistedVisualAsset {
 
 export interface AgentGenerationJobs {
   isBusy: () => boolean
+  waitForSlot?: (input: {
+    signal?: AbortSignal
+    onWaiting?: () => void
+  }) => Promise<GenerationSlotWaitResult>
   runImage: (input: {
     prompt: string
     settings: AgentGenerateSettings
@@ -105,6 +115,30 @@ export interface AgentGenerateProposal {
 
 function errorResult(message: string): Record<string, unknown> {
   return toolErrorResult(message)
+}
+
+export async function waitForHostGenerationSlot(
+  host: AgentGenerateActionHost,
+  toolName: string,
+): Promise<Record<string, unknown> | null> {
+  const jobs = host.generation
+  if (!jobs) return errorResult('Generation is not available')
+  const signal = host.getAbortSignal?.() ?? undefined
+  const onWaiting = () => {
+    host.onProgress?.({
+      toolName,
+      percent: 0,
+      status: GENERATION_SLOT_WAIT_STATUS,
+    })
+  }
+  const result = jobs.waitForSlot
+    ? await jobs.waitForSlot({ signal, onWaiting })
+    : await waitForGenerationSlot({
+      isOccupied: () => jobs.isBusy(),
+      signal,
+      onWaiting,
+    })
+  return slotWaitError(result)
 }
 
 function needsConfirmResult(proposal: AgentGenerateProposal, message: string): Record<string, unknown> {
@@ -349,14 +383,18 @@ export async function executeGenerateTool(
   if (name === 'enhance_prompt') {
     const prompt = asString(args.prompt)
     if (!prompt) return errorResult('Missing prompt')
-    if (jobs.isBusy()) return errorResult('Generation slot is busy. Wait or stop the current job.')
+    const waited = await waitForHostGenerationSlot(host, name)
+    if (waited) return waited
     const mediaType = asString(args.mediaType) === 'image' ? 'image' : 'video'
     const enhanced = await jobs.enhancePrompt(prompt, mediaType)
     if (!enhanced.ok) return errorResult(enhanced.error)
     return { ok: true, prompt: enhanced.prompt, mediaType }
   }
 
-  if (jobs.isBusy()) return errorResult('Generation slot is busy. Wait or stop the current job.')
+  if (asBoolean(args.confirmed)) {
+    const waited = await waitForHostGenerationSlot(host, name)
+    if (waited) return waited
+  }
 
   switch (name) {
     case 'generate_image':
