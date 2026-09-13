@@ -8,9 +8,11 @@ from api_types import AgentMessagePayload, AgentToolDeclarationPayload
 from _routes._errors import HTTPError
 from services.agent_llm import (
     AGENT_LLM_CATALOG,
+    bind_agent_tool_call_ids,
     resolve_agent_llm,
     merge_agent_llm_providers,
 )
+from services.codex_responses_client import responses_input_from_agent
 from services.anthropic_messages_client import (
     anthropic_messages_from_agent,
     anthropic_messages_url,
@@ -334,3 +336,47 @@ def test_parse_anthropic_tool_use() -> None:
     assert result.text == "Need a duration."
     assert result.function_calls[0].name == "ask_user"
     assert result.function_calls[0].call_id == "toolu_1"
+
+
+def test_ui_aliases_and_bind_keep_codex_call_ids_paired() -> None:
+    messages = bind_agent_tool_call_ids(
+        [
+            AgentMessagePayload.model_validate({"role": "user", "parts": [{"type": "text", "text": "Make a short film."}]}),
+            AgentMessagePayload.model_validate(
+                {
+                    "role": "assistant",
+                    "parts": [{"type": "tool_call", "id": "call_timeline_1", "name": "get_timeline", "arguments": {}}],
+                }
+            ),
+            AgentMessagePayload.model_validate(
+                {
+                    "role": "tool",
+                    "parts": [{"type": "tool_result", "id": "call_timeline_1", "name": "get_timeline", "result": {"clipCount": 0}}],
+                }
+            ),
+        ]
+    )
+    items = responses_input_from_agent(messages)
+    calls = [item for item in items if item.get("type") == "function_call"]
+    outputs = [item for item in items if item.get("type") == "function_call_output"]
+    assert len(calls) == 1
+    assert len(outputs) == 1
+    assert calls[0]["call_id"] == "call_timeline_1"
+    assert outputs[0]["call_id"] == "call_timeline_1"
+
+
+def test_bind_drops_orphan_tool_results() -> None:
+    messages = bind_agent_tool_call_ids(
+        [
+            AgentMessagePayload.model_validate(
+                {
+                    "role": "tool",
+                    "parts": [{"type": "tool_result", "id": "call_missing", "name": "get_timeline", "result": {"ok": False}}],
+                }
+            )
+        ]
+    )
+    assert messages == []
+    assert responses_input_from_agent(
+        [AgentMessagePayload.model_validate({"role": "user", "parts": [{"type": "text", "text": "Hi"}]} )]
+    )[0]["type"] == "message"

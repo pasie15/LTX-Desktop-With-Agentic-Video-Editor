@@ -1229,6 +1229,26 @@ class AgentMessagePartPayload(BaseModel):
     arguments: dict[str, JsonValue] | None = None
     result: dict[str, JsonValue] | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_ui_aliases(cls, value: object) -> object:
+        # Renderer chat parts use `id` / `name`. Codex and OpenAI reject a
+        # function_call_output whose call_id does not match a function_call.
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        if not str(data.get("toolCallId") or "").strip():
+            alias = data.get("id")
+            if isinstance(alias, str) and alias.strip():
+                data["toolCallId"] = alias.strip()
+        if not str(data.get("toolName") or "").strip():
+            alias = data.get("name")
+            if isinstance(alias, str) and alias.strip():
+                data["toolName"] = alias.strip()
+        data.pop("id", None)
+        data.pop("name", None)
+        return data
+
 
 class AgentMessagePayload(BaseModel):
     model_config = ConfigDict(strict=True)

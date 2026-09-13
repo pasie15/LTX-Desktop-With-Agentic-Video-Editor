@@ -7,7 +7,7 @@ import {
 } from './agent-starters.ts'
 
 describe('agent starter chips', () => {
-  it('includes the six LTX starter prompts', () => {
+  it('includes the LTX starter prompts', () => {
     assert.deepEqual(
       AGENT_STARTER_PROMPTS.map(starter => starter.label),
       [
@@ -15,6 +15,7 @@ describe('agent starter chips', () => {
         'Fill the selected gap',
         'Generate B-roll for this timeline',
         'Assemble this script on the timeline',
+        'Make a short film about …',
         'Add titles / subtitles',
         'Organize assets into bins',
       ],

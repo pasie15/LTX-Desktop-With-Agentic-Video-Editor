@@ -502,7 +502,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Propose a script or B-roll shot list, confirm once, then sequentially generate and/or place shots end-to-end. Pass a script or shots[]. Use assetId on a shot to place an existing user asset instead of generating. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
+    description: 'Default path for a short film, music video, commercial, montage, B-roll, or pasted script. Propose a 4–8 shot list, confirm once, then sequentially generate still-then-video on local LTX and place shots end-to-end. Pass a script or shots[]. Use assetId on a shot to place an existing user asset instead of generating. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
     parameters: {
       type: 'object',
       properties: {

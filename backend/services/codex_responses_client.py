@@ -60,10 +60,13 @@ def responses_input_from_agent(messages: list[AgentMessagePayload]) -> list[JSON
                         }
                     )
                 elif part.type == "tool_call" and part.toolName:
+                    call_id = (part.toolCallId or "").strip()
+                    if not call_id:
+                        continue
                     items.append(
                         {
                             "type": "function_call",
-                            "call_id": (part.toolCallId or "").strip() or f"call_{uuid4().hex[:10]}",
+                            "call_id": call_id,
                             "name": part.toolName,
                             "arguments": json.dumps(part.arguments or {}, ensure_ascii=False),
                         }
@@ -74,11 +77,14 @@ def responses_input_from_agent(messages: list[AgentMessagePayload]) -> list[JSON
             for part in message.parts:
                 if part.type != "tool_result":
                     continue
+                call_id = (part.toolCallId or "").strip()
+                if not call_id:
+                    continue
                 payload = part.result if part.result is not None else {"ok": True}
                 items.append(
                     {
                         "type": "function_call_output",
-                        "call_id": (part.toolCallId or part.toolName or "").strip() or f"call_{uuid4().hex[:10]}",
+                        "call_id": call_id,
                         "output": json.dumps(payload, ensure_ascii=False),
                     }
                 )

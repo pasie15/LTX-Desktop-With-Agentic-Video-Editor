@@ -33,6 +33,28 @@ export interface AgentLoopResult {
   errorMessage?: string
 }
 
+export function toAgentTurnApiParts(parts: AgentPart[]) {
+  return parts.map(part => {
+    if (part.type === 'tool_call') {
+      return {
+        type: 'tool_call' as const,
+        toolCallId: part.id,
+        toolName: part.name,
+        arguments: part.arguments,
+      }
+    }
+    if (part.type === 'tool_result') {
+      return {
+        type: 'tool_result' as const,
+        toolCallId: part.id,
+        toolName: part.name,
+        result: part.result,
+      }
+    }
+    return part
+  })
+}
+
 function toTurnMessages(messages: AgentChatMessage[]): AgentTurnRequest['messages'] {
   return messages.map(message => ({
     role: message.role,
