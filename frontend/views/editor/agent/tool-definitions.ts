@@ -418,7 +418,7 @@ export const EDIT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'generate_image',
-    description: 'Generate a still with Z-Image and add it to the project. Requires confirmed=true after the user accepts the proposal.',
+    description: 'Generate a still with Z-Image and add it to the project. Requires confirmed=true after the user accepts the proposal. Waits for the GPU slot instead of returning busy.',
     parameters: {
       type: 'object',
       required: ['prompt'],
@@ -435,7 +435,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
   {
     name: 'generate_video',
-    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a start still via imageAssetId (image-to-video).',
+    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a start still via imageAssetId (image-to-video). Waits for the GPU slot instead of returning busy.',
     parameters: {
       type: 'object',
       required: ['prompt'],
@@ -502,7 +502,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, commercial, montage, B-roll, or pasted script. Propose a 4–8 shot list, confirm once, then sequentially generate still-then-video on local LTX and place shots end-to-end. Pass a script or shots[]. Use assetId on a shot to place an existing user asset instead of generating. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
+    description: 'Default path for a short film, music video, commercial, montage, B-roll, or pasted script. Propose a 4–8 shot list, confirm once, then wait for the GPU slot if needed and sequentially generate still-then-video on local LTX until every shot is placed. Do not stop with a busy error. Pass a script or shots[]. Use assetId on a shot to place an existing user asset instead of generating. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
     parameters: {
       type: 'object',
       properties: {
