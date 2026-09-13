@@ -155,6 +155,7 @@ class SettingsHandler(StateHandlerBase):
         base_url = req.baseUrl.strip()
         include_id = req.model.strip()
         auth_mode = "api_key"
+        oauth_account_id = ""
 
         if provider_id:
             provider = next(
@@ -168,6 +169,7 @@ class SettingsHandler(StateHandlerBase):
             if provider_has_oauth(provider):
                 api_key = api_key or provider.oauth_access_token
                 auth_mode = "oauth"
+                oauth_account_id = provider.oauth_account_id
             else:
                 api_key = api_key or provider.api_key
             base_url = base_url or provider.base_url
@@ -191,6 +193,7 @@ class SettingsHandler(StateHandlerBase):
             base_url=base_url,
             include_id=include_id,
             auth_mode=cast(AgentLlmAuthMode, auth_mode),
+            oauth_account_id=oauth_account_id,
         )
 
     def _trim_prompt_cache(self) -> None:

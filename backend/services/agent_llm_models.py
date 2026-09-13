@@ -13,78 +13,143 @@ from services.interfaces import HTTPClient, HttpTransportError, JSONValue
 from state.app_settings import AgentLlmAuthMode, AgentLlmProviderKind
 
 _ANTHROPIC_VERSION = "2023-06-01"
+PUBLIC_FETCH_KINDS: frozenset[AgentLlmProviderKind] = frozenset({"openrouter"})
 
 CATALOG_MODELS: dict[AgentLlmProviderKind, tuple[tuple[str, str], ...]] = {
     "gemini": (
-        ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+        ("gemini-3.8-flash", "Gemini 3.8 Flash"),
+        ("gemini-3.7-flash", "Gemini 3.7 Flash"),
+        ("gemini-3.6-flash", "Gemini 3.6 Flash"),
         ("gemini-3.5-flash", "Gemini 3.5 Flash"),
+        ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+        ("gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
         ("gemini-3-pro-preview", "Gemini 3 Pro"),
-        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
         ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
         ("gemini-2.0-flash", "Gemini 2.0 Flash"),
     ),
     "openai": (
+        ("gpt-6-astra", "GPT-6 Astra"),
+        ("gpt-5.6-sol", "GPT-5.6 Sol"),
+        ("gpt-5.6-terra", "GPT-5.6 Terra"),
+        ("gpt-5.6-luna", "GPT-5.6 Luna"),
+        ("gpt-5.5", "GPT-5.5"),
         ("gpt-5.4", "GPT-5.4"),
         ("gpt-5.3", "GPT-5.3"),
         ("gpt-5.2", "GPT-5.2"),
         ("gpt-5.1", "GPT-5.1"),
         ("gpt-5", "GPT-5"),
+        ("gpt-5-mini", "GPT-5 mini"),
+        ("gpt-5-nano", "GPT-5 nano"),
         ("gpt-4.1", "GPT-4.1"),
+        ("gpt-4.1-mini", "GPT-4.1 mini"),
         ("gpt-4o", "GPT-4o"),
         ("gpt-4o-mini", "GPT-4o mini"),
         ("o3", "o3"),
         ("o4-mini", "o4-mini"),
+        ("o1", "o1"),
     ),
     "anthropic": (
+        ("claude-fable-5-1", "Claude Fable 5.1"),
+        ("claude-opus-5", "Claude Opus 5"),
+        ("claude-sonnet-5", "Claude Sonnet 5"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5"),
+        ("claude-opus-4-8", "Claude Opus 4.8"),
+        ("claude-opus-4-7", "Claude Opus 4.7"),
         ("claude-opus-4-6", "Claude Opus 4.6"),
         ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
         ("claude-opus-4-5", "Claude Opus 4.5"),
         ("claude-sonnet-4-5", "Claude Sonnet 4.5"),
-        ("claude-haiku-4-5", "Claude Haiku 4.5"),
+        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5 (20251001)"),
         ("claude-opus-4-1", "Claude Opus 4.1"),
         ("claude-sonnet-4", "Claude Sonnet 4"),
     ),
     "openrouter": (
-        ("openai/gpt-5", "OpenAI: GPT-5"),
+        ("openai/gpt-6-astra", "OpenAI: GPT-6 Astra"),
+        ("openai/gpt-5.6-sol", "OpenAI: GPT-5.6 Sol"),
+        ("openai/gpt-5.6-terra", "OpenAI: GPT-5.6 Terra"),
+        ("anthropic/claude-fable-5.1", "Anthropic: Claude Fable 5.1"),
+        ("anthropic/claude-opus-5", "Anthropic: Claude Opus 5"),
+        ("anthropic/claude-sonnet-5", "Anthropic: Claude Sonnet 5"),
+        ("google/gemini-3.8-flash", "Google: Gemini 3.8 Flash"),
+        ("x-ai/grok-4.6", "xAI: Grok 4.6"),
+        ("moonshotai/kimi-k3", "Moonshot: Kimi K3"),
+        ("minimax/minimax-m3", "MiniMax: M3"),
+        ("deepseek/deepseek-v4-pro", "DeepSeek: V4 Pro"),
+        ("deepseek/deepseek-chat", "DeepSeek: Chat"),
+        ("openai/gpt-4o", "OpenAI: GPT-4o"),
         ("anthropic/claude-sonnet-4.5", "Anthropic: Claude Sonnet 4.5"),
         ("google/gemini-2.5-pro", "Google: Gemini 2.5 Pro"),
-        ("openai/gpt-4o", "OpenAI: GPT-4o"),
-        ("anthropic/claude-sonnet-4", "Anthropic: Claude Sonnet 4"),
     ),
     "zai": (
+        ("glm-5", "GLM-5"),
+        ("glm-4.7", "GLM-4.7"),
         ("glm-4.6", "GLM-4.6"),
         ("glm-4.5", "GLM-4.5"),
         ("glm-4.5-air", "GLM-4.5 Air"),
+        ("glm-4-flash", "GLM-4 Flash"),
     ),
     "minimax": (
+        ("MiniMax-M3", "MiniMax M3"),
+        ("MiniMax-M2.7", "MiniMax M2.7"),
+        ("MiniMax-M2.7-highspeed", "MiniMax M2.7 Highspeed"),
         ("MiniMax-M2.5", "MiniMax M2.5"),
+        ("MiniMax-M2.5-highspeed", "MiniMax M2.5 Highspeed"),
+        ("MiniMax-M2.1", "MiniMax M2.1"),
+        ("MiniMax-M2.1-highspeed", "MiniMax M2.1 Highspeed"),
         ("MiniMax-M2", "MiniMax M2"),
-        ("MiniMax-M1", "MiniMax M1"),
     ),
     "moonshot": (
+        ("kimi-k3", "Kimi K3"),
         ("kimi-k2.5", "Kimi K2.5"),
         ("kimi-k2-0905-preview", "Kimi K2 0905"),
         ("kimi-k2-turbo-preview", "Kimi K2 Turbo"),
         ("moonshot-v1-128k", "Moonshot v1 128k"),
+        ("moonshot-v1-32k", "Moonshot v1 32k"),
+        ("moonshot-v1-8k", "Moonshot v1 8k"),
     ),
     "xai": (
+        ("grok-4.6", "Grok 4.6"),
+        ("grok-4.5", "Grok 4.5"),
         ("grok-4", "Grok 4"),
         ("grok-3", "Grok 3"),
         ("grok-3-mini", "Grok 3 Mini"),
+        ("grok-3-fast", "Grok 3 Fast"),
         ("grok-2", "Grok 2"),
+        ("grok-2-vision-1212", "Grok 2 Vision"),
     ),
     "groq": (
-        ("llama-3.3-70b-versatile", "Llama 3.3 70B"),
         ("openai/gpt-oss-120b", "GPT-OSS 120B"),
-        ("meta-llama/llama-4-maverick-17b-128e-instruct", "Llama 4 Maverick"),
+        ("openai/gpt-oss-20b", "GPT-OSS 20B"),
+        ("qwen/qwen3.8-27b", "Qwen 3.8 27B"),
+        ("qwen/qwen3.6-27b", "Qwen 3.6 27B"),
         ("qwen/qwen3-32b", "Qwen 3 32B"),
+        ("moonshotai/kimi-k2-instruct-0905", "Kimi K2 Instruct"),
+        ("meta-llama/llama-4-maverick-17b-128e-instruct", "Llama 4 Maverick"),
+        ("meta-llama/llama-4-scout-17b-16e-instruct", "Llama 4 Scout"),
+        ("llama-3.3-70b-versatile", "Llama 3.3 70B"),
+        ("llama-3.1-8b-instant", "Llama 3.1 8B Instant"),
+        ("groq/compound", "Groq Compound"),
     ),
     "deepseek": (
+        ("deepseek-v4-pro", "DeepSeek V4 Pro"),
+        ("deepseek-v4-flash", "DeepSeek V4 Flash"),
         ("deepseek-chat", "DeepSeek Chat"),
         ("deepseek-reasoner", "DeepSeek Reasoner"),
     ),
-    "custom_openai": (),
-    "custom_anthropic": (),
+    "custom_openai": (
+        ("gpt-5.6-sol", "GPT-5.6 Sol"),
+        ("gpt-4o", "GPT-4o"),
+        ("claude-sonnet-5", "Claude Sonnet 5"),
+        ("gemini-3.8-flash", "Gemini 3.8 Flash"),
+    ),
+    "custom_anthropic": (
+        ("claude-fable-5-1", "Claude Fable 5.1"),
+        ("claude-opus-5", "Claude Opus 5"),
+        ("claude-sonnet-5", "Claude Sonnet 5"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5"),
+        ("MiniMax-M3", "MiniMax M3"),
+    ),
 }
 
 
@@ -142,6 +207,7 @@ def list_agent_llm_models(
     base_url: str,
     include_id: str,
     auth_mode: AgentLlmAuthMode = "api_key",
+    oauth_account_id: str = "",
 ) -> AgentLlmModelsResponse:
     entry = catalog_entry(kind)
     use_oauth = auth_mode == "oauth"
@@ -156,8 +222,11 @@ def list_agent_llm_models(
     fetched: list[AgentLlmModelOptionPayload] = []
     error = ""
     source: Literal["provider", "catalog"] = "catalog"
+    should_fetch = bool(api_key.strip()) or kind in PUBLIC_FETCH_KINDS or (
+        kind.startswith("custom") and bool(resolved_base)
+    )
 
-    if api_key.strip():
+    if should_fetch:
         try:
             fetched = _fetch_provider_models(
                 http,
@@ -167,6 +236,7 @@ def list_agent_llm_models(
                 base_url=resolved_base,
                 include_id=resolved,
                 use_oauth=use_oauth,
+                oauth_account_id=oauth_account_id,
             )
             if fetched:
                 source = "provider"
@@ -195,6 +265,7 @@ def _fetch_provider_models(
     base_url: str,
     include_id: str,
     use_oauth: bool,
+    oauth_account_id: str = "",
 ) -> list[AgentLlmModelOptionPayload]:
     if api_kind == "gemini":
         return [
@@ -223,7 +294,7 @@ def _fetch_provider_models(
             fetched = _list_openai_or_anthropic_models(
                 http,
                 url=url,
-                headers=_openai_headers(kind, api_key),
+                headers=_openai_headers(kind, api_key, use_oauth=use_oauth, account_id=oauth_account_id),
                 kind=kind,
             )
         except HTTPError as exc:
@@ -241,6 +312,7 @@ def _openai_model_urls(kind: AgentLlmProviderKind, base_url: str) -> list[str]:
     if base_url.strip() and "chatgpt.com" not in base_url:
         urls.append(openai_models_url(base_url))
     if kind == "openai":
+        urls.append("https://chatgpt.com/backend-api/codex/models")
         urls.append("https://api.openai.com/v1/models")
     unique: list[str] = []
     seen: set[str] = set()
@@ -251,7 +323,13 @@ def _openai_model_urls(kind: AgentLlmProviderKind, base_url: str) -> list[str]:
     return unique
 
 
-def _openai_headers(kind: AgentLlmProviderKind, api_key: str) -> dict[str, str]:
+def _openai_headers(
+    kind: AgentLlmProviderKind,
+    api_key: str,
+    *,
+    use_oauth: bool = False,
+    account_id: str = "",
+) -> dict[str, str]:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -259,6 +337,11 @@ def _openai_headers(kind: AgentLlmProviderKind, api_key: str) -> dict[str, str]:
     if kind == "openrouter":
         headers["HTTP-Referer"] = "https://ltx.studio"
         headers["X-Title"] = "LTX Desktop"
+    if kind == "openai" and use_oauth:
+        headers["originator"] = "ltx_desktop"
+        headers["openai-beta"] = "responses=experimental"
+        if account_id.strip():
+            headers["chatgpt-account-id"] = account_id.strip()
     return headers
 
 
@@ -369,9 +452,14 @@ def _created_sort_value(record: dict[str, JSONValue]) -> int:
 
 def _keep_model(kind: AgentLlmProviderKind, model_id: str) -> bool:
     lowered = model_id.lower()
+    skip_markers = ("whisper", "tts", "dall-e", "dalle", "embedding", "embed", "moderation", "realtime")
+    if any(marker in lowered for marker in skip_markers):
+        return False
     if kind == "openai":
         prefixes = ("gpt", "o1", "o3", "o4", "chatgpt", "codex")
         return lowered.startswith(prefixes) or "/gpt" in lowered
     if kind == "anthropic":
-        return "claude" in lowered
+        return "claude" in lowered or "minimax" in lowered
+    if kind == "groq":
+        return not any(marker in lowered for marker in ("orpheus", "prompt-guard", "safeguard"))
     return True

@@ -11,9 +11,11 @@ from tests.fakes.services import FakeResponse
 def test_catalog_lists_latest_first() -> None:
     openai = [model.id for model in catalog_model_options("openai")]
     anthropic = [model.id for model in catalog_model_options("anthropic")]
-    assert openai[0] == "gpt-5.4"
+    assert openai[0] == "gpt-6-astra"
+    assert "gpt-5.6-sol" in openai
     assert "gpt-4o" in openai
-    assert anthropic[0] == "claude-opus-4-6"
+    assert anthropic[0] == "claude-fable-5-1"
+    assert "claude-sonnet-5" in anthropic
     assert "claude-sonnet-4-5" in anthropic
 
 
@@ -34,8 +36,8 @@ def test_catalog_without_key(client) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["source"] == "catalog"
-    assert body["models"][0]["id"] == "gpt-5.4"
-    assert body["resolvedModel"] == "gpt-4o"
+    assert body["models"][0]["id"] == "gpt-6-astra"
+    assert body["resolvedModel"] == "gpt-5.6-sol"
 
 
 def test_openai_fetch_uses_key_and_sorts_newest_first(client, test_state) -> None:
@@ -114,7 +116,53 @@ def test_provider_error_falls_back_to_catalog(client, test_state) -> None:
     body = response.json()
     assert body["source"] == "catalog"
     assert body["error"]
-    assert body["models"][0]["id"] == "llama-3.3-70b-versatile"
+    assert body["models"][0]["id"] == "openai/gpt-oss-120b"
+
+
+def test_openai_oauth_sends_account_header(client, test_state) -> None:
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(
+            id="prov_oai",
+            kind="openai",
+            oauth_access_token="oauth-access",
+            oauth_account_id="acct_9",
+            auth_mode="oauth",
+            model="gpt-4o",
+        )
+    ]
+    test_state.http.queue(
+        "get",
+        FakeResponse(status_code=404, text="nope"),
+        FakeResponse(json_payload={"data": [{"id": "gpt-5.4", "created": 200}, {"id": "gpt-4o", "created": 100}]}),
+    )
+    response = client.post("/api/agent/llm/models", json={"providerId": "prov_oai"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "provider"
+    assert body["models"][0]["id"] == "gpt-5.4"
+    assert test_state.http.calls[0].url == "https://chatgpt.com/backend-api/codex/models"
+    assert test_state.http.calls[1].url == "https://api.openai.com/v1/models"
+    assert test_state.http.calls[1].headers["chatgpt-account-id"] == "acct_9"
+
+
+def test_openrouter_fetches_public_catalog_without_key(client, test_state) -> None:
+    test_state.http.queue(
+        "get",
+        FakeResponse(
+            json_payload={
+                "data": [
+                    {"id": "openai/gpt-6-astra", "name": "GPT-6 Astra", "created": 300},
+                    {"id": "anthropic/claude-sonnet-5", "name": "Claude Sonnet 5", "created": 200},
+                ]
+            }
+        ),
+    )
+    response = client.post("/api/agent/llm/models", json={"kind": "openrouter"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "provider"
+    assert body["models"][0]["id"] == "openai/gpt-6-astra"
+    assert test_state.http.calls[0].url == "https://openrouter.ai/api/v1/models"
 
 
 def test_unknown_provider_id(client) -> None:

@@ -36,9 +36,18 @@ describe('agent LLM catalog', () => {
 describe('catalogModels', () => {
   it('lists latest models first and keeps the rest', () => {
     const openai = catalogModels('openai').map(model => model.id)
-    assert.equal(openai[0], 'gpt-5.4')
+    assert.equal(openai[0], 'gpt-6-astra')
+    assert.ok(openai.includes('gpt-5.6-sol'))
     assert.ok(openai.includes('gpt-4o'))
-    assert.equal(catalogModels('anthropic')[0]?.id, 'claude-opus-4-6')
+    assert.equal(catalogModels('anthropic')[0]?.id, 'claude-fable-5-1')
+    assert.ok(catalogModels('gemini').some(model => model.id === 'gemini-3.8-flash'))
+    assert.ok(catalogModels('minimax')[0]?.id === 'MiniMax-M3')
+    assert.ok(catalogModels('xai')[0]?.id === 'grok-4.6')
+    assert.ok(catalogModels('moonshot')[0]?.id === 'kimi-k3')
+    assert.ok(catalogModels('deepseek')[0]?.id === 'deepseek-v4-pro')
+    assert.ok(catalogModels('groq').length >= 8)
+    assert.ok(catalogModels('openrouter').length >= 10)
+    assert.ok(catalogModels('custom_openai').length > 0)
   })
 })
 

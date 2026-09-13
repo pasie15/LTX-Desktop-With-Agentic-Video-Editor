@@ -48,7 +48,8 @@ export function useAgentLlmModels(query: AgentLlmModelsQuery) {
         setLoading(false)
         return
       }
-      setModels(mergeAgentLlmModelOptions(result.data.models, query.kind, result.data.resolvedModel || model))
+      const incoming = result.data.source === 'provider' ? result.data.models : []
+      setModels(mergeAgentLlmModelOptions(incoming, query.kind, result.data.resolvedModel || model))
       setSource(result.data.source)
       setError(result.data.error)
       setLoading(false)
