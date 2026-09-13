@@ -5,6 +5,7 @@ import { useEditorApply } from '../editor-store'
 import { addVisualAssetToProject } from '../../../lib/asset-copy'
 import { defaultImportLocalMediaCopyFns } from '../import-local-media-defaults'
 import { importLocalMediaPath } from '../import-local-media'
+import { detectApproveAllIntent } from './agent-approvals'
 import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
 import { createAgentGenerationJobs } from './agent-generation-jobs'
@@ -77,6 +78,7 @@ export function useAgentChat(params: UseAgentChatParams) {
   projectIdRef.current = projectId
   const apiFlagsRef = useRef({ shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi })
   apiFlagsRef.current = { shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi }
+  const approveAllRef = useRef(false)
   const executorHostRef = useRef({
     getState: getEditorState,
     applyWithHistory,
@@ -84,6 +86,17 @@ export function useAgentChat(params: UseAgentChatParams) {
     getSelectedGap,
     getAbortSignal: () => abortRef.current?.signal ?? null,
     onProgress: (progress: AgentGenerationProgress) => setGenerationProgress(progress),
+    getApproveAll: () => approveAllRef.current,
+    readAssetPreview: async (asset: Asset) => {
+      const filePath = asset.smallThumbnailPath || asset.bigThumbnailPath || asset.path
+      if (!filePath || !window.electronAPI?.readLocalFile) return null
+      try {
+        const file = await window.electronAPI.readLocalFile({ filePath })
+        return { mimeType: file.mimeType, data: file.data, name: asset.prompt || asset.id }
+      } catch {
+        return null
+      }
+    },
   })
   executorHostRef.current.getState = getEditorState
   executorHostRef.current.applyWithHistory = applyWithHistory
@@ -119,6 +132,8 @@ export function useAgentChat(params: UseAgentChatParams) {
       projectId,
       getAbortSignal: () => executorHostRef.current.getAbortSignal(),
       onProgress: progress => executorHostRef.current.onProgress(progress),
+      getApproveAll: () => executorHostRef.current.getApproveAll(),
+      readAssetPreview: asset => executorHostRef.current.readAssetPreview(asset),
     })
   }
   executorRef.current.host.generation = generationJobsRef.current
@@ -135,8 +150,11 @@ export function useAgentChat(params: UseAgentChatParams) {
   executorRef.current.host.projectId = projectId
   executorRef.current.host.getAbortSignal = () => executorHostRef.current.getAbortSignal()
   executorRef.current.host.onProgress = progress => executorHostRef.current.onProgress(progress)
+  executorRef.current.host.getApproveAll = () => executorHostRef.current.getApproveAll()
+  executorRef.current.host.readAssetPreview = asset => executorHostRef.current.readAssetPreview(asset)
 
   const activeSession = sessions.find(session => session.id === activeSessionId) ?? null
+  approveAllRef.current = activeSession?.approveAll === true
 
   const persistSession = useCallback((session: AgentChatSession) => {
     if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current)
@@ -280,6 +298,7 @@ export function useAgentChat(params: UseAgentChatParams) {
           currentModelLabel,
           selectedGapOverride: getSelectedGap?.() ?? null,
           refs: executorRef.current?.host.refs?.list() ?? [],
+          approveAll: seed.approveAll === true,
         }) as unknown as Record<string, unknown>,
         availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,
@@ -315,6 +334,12 @@ export function useAgentChat(params: UseAgentChatParams) {
     if (!content && attached.length === 0) return
     if (!hasAgentLlmKey || !activeSession) return
 
+    const autonomy = detectApproveAllIntent(content)
+    const sessionWithAutonomy: AgentChatSession = autonomy == null
+      ? activeSession
+      : { ...activeSession, approveAll: autonomy }
+    if (autonomy != null) approveAllRef.current = autonomy
+
     const mentionParts = await mentionPartsForMessage(
       attached,
       assets,
@@ -332,8 +357,8 @@ export function useAgentChat(params: UseAgentChatParams) {
       ],
     }
     const seed: AgentChatSession = {
-      ...activeSession,
-      messages: [...activeSession.messages, userMessage],
+      ...sessionWithAutonomy,
+      messages: [...sessionWithAutonomy.messages, userMessage],
       updatedAt: Date.now(),
     }
     replaceSession(seed)
@@ -354,6 +379,28 @@ export function useAgentChat(params: UseAgentChatParams) {
     void runLoop(seed)
   }, [activeSession, replaceSession, runLoop])
 
+  const setApproveAll = useCallback((value: boolean) => {
+    approveAllRef.current = value
+    if (!activeSession) return
+    const next = { ...activeSession, approveAll: value, updatedAt: Date.now() }
+    replaceSession(next)
+    if (value && askUser) {
+      executorRef.current?.rememberAssemblyAcceptance({ review: 'Approve' })
+      const seed: AgentChatSession = {
+        ...next,
+        messages: [...next.messages, {
+          id: createAgentMessageId(),
+          role: 'user',
+          createdAt: Date.now(),
+          parts: [{ type: 'text', text: 'Approve all — continue without asking each step.' }],
+        }],
+      }
+      replaceSession(seed)
+      setAskUser(null)
+      void runLoop(seed)
+    }
+  }, [activeSession, askUser, replaceSession, runLoop])
+
   return {
     sessions,
     activeSession,
@@ -373,5 +420,7 @@ export function useAgentChat(params: UseAgentChatParams) {
     sendText,
     stop,
     answerAskUser,
+    approveAll: activeSession?.approveAll === true,
+    setApproveAll,
   }
 }

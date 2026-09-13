@@ -26,13 +26,22 @@ export interface AgentAskUserShot {
   assetId?: string
 }
 
+export interface AgentAskUserPreview {
+  mimeType: string
+  data: string
+  name?: string
+}
+
 export interface AgentAskUserQuestion {
   id: string
   prompt: string
-  kind: 'choice' | 'text' | 'shot_list'
+  kind: 'choice' | 'text' | 'shot_list' | 'approval'
   options?: string[]
   allowMultiple?: boolean
   shots?: AgentAskUserShot[]
+  preview?: AgentAskUserPreview
+  assetId?: string
+  checkpoint?: string
 }
 
 export interface AgentToolCall {
@@ -84,6 +93,7 @@ export interface AgentChatSession {
   title: string
   updatedAt: number
   messages: AgentChatMessage[]
+  approveAll?: boolean
 }
 
 export interface AgentChatSessionSummary {
@@ -152,6 +162,7 @@ export interface AgentProjectSnapshot {
     role: string
     assetId: string
   }>
+  approveAll: boolean
 }
 
 export interface AgentGenerationProgress {

@@ -1,5 +1,10 @@
 import type { Asset, AssetTake, GenerationParams } from '../../../types/project-model.ts'
 import type { EditorState, TimelineGapSelection } from '../editor-state.ts'
+import {
+  checkpointFromGenerate,
+  nextStepForCheckpoint,
+  type AgentReviewPreview,
+} from './agent-approvals.ts'
 import { AGENT_DEFAULT_REF_STRENGTH } from './agent-mix.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
@@ -103,6 +108,8 @@ export interface AgentGenerateActionHost {
   getAbortSignal?: () => AbortSignal | null
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
   refs?: AgentRefStore
+  getApproveAll?: () => boolean
+  readAssetPreview?: (asset: Asset) => Promise<AgentReviewPreview | null>
 }
 
 export interface AgentGenerateProposal {
@@ -152,6 +159,29 @@ function needsConfirmResult(proposal: AgentGenerateProposal, message: string): R
     needsConfirm: true,
     proposal,
     error: message,
+  }
+}
+
+function isConfirmed(host: AgentGenerateActionHost, args: Record<string, unknown>): boolean {
+  return asBoolean(args.confirmed) || host.getApproveAll?.() === true
+}
+
+async function reviewPayload(
+  host: AgentGenerateActionHost,
+  asset: Asset,
+  args: Record<string, unknown>,
+  media: 'image' | 'video',
+  extras: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  if (host.getApproveAll?.() || asBoolean(args.skipReview)) return extras
+  const checkpoint = checkpointFromGenerate(args, media)
+  const preview = host.readAssetPreview ? await host.readAssetPreview(asset) : null
+  return {
+    ...extras,
+    needsReview: true,
+    checkpoint,
+    nextStep: nextStepForCheckpoint(checkpoint),
+    ...(preview ? { preview } : {}),
   }
 }
 
@@ -396,7 +426,7 @@ export async function executeGenerateTool(
     return { ok: true, prompt: enhanced.prompt, mediaType }
   }
 
-  if (asBoolean(args.confirmed)) {
+  if (isConfirmed(host, args)) {
     const waited = await waitForHostGenerationSlot(host, name)
     if (waited) return waited
   }
@@ -430,7 +460,7 @@ async function generateStill(
     resolution: settings.imageResolution,
     destination,
   }
-  if (!asBoolean(args.confirmed)) {
+  if (!isConfirmed(host, args)) {
     return needsConfirmResult(
       proposal,
       'Generation needs confirmation. Use ask_user with prompt, resolution, and destination, then retry with confirmed=true.',
@@ -471,7 +501,9 @@ async function generateStill(
     settings,
     generationParamsFor('text-to-image', prompt, settings),
   )
-  return placeAsset(host, asset, destination, args, gap)
+  const placed = placeAsset(host, asset, destination, args, gap)
+  if (placed.ok === false) return placed
+  return reviewPayload(host, asset, args, 'image', placed)
 }
 
 async function generateVideo(
@@ -508,7 +540,7 @@ async function generateVideo(
     destination,
     ...(imageAssetId ? { imageAssetId } : {}),
   }
-  if (!asBoolean(args.confirmed)) {
+  if (!isConfirmed(host, args)) {
     return needsConfirmResult(
       proposal,
       'Generation needs confirmation. Use ask_user with prompt, model, duration, resolution, audio, and destination, then retry with confirmed=true.',
@@ -546,7 +578,9 @@ async function generateVideo(
       inputImageUrl: imagePath ?? undefined,
     }),
   )
-  return placeAsset(host, asset, destination, args, gap)
+  const placed = placeAsset(host, asset, destination, args, gap)
+  if (placed.ok === false) return placed
+  return reviewPayload(host, asset, args, 'video', placed)
 }
 
 async function fillGap(
@@ -560,7 +594,7 @@ async function fillGap(
   if (!gap) return errorResult('No selected gap. Select a gap or pass trackIndex, start, and end.')
   const duration = asNumber(args.duration) ?? Math.max(AGENT_DEFAULT_PREVIEW_DURATION_S, gap.endTime - gap.startTime)
   const settings = settingsFromArgs(args, defaultSettings({ duration }))
-  if (!asBoolean(args.confirmed)) {
+  if (!isConfirmed(host, args)) {
     return needsConfirmResult({
       tool: 'fill_gap',
       prompt,
@@ -615,7 +649,7 @@ async function regenerateClip(
     clipId: clipId ?? undefined,
     assetId,
   }
-  if (!asBoolean(args.confirmed)) {
+  if (!asBoolean(args.confirmed) && host.getApproveAll?.() !== true) {
     return needsConfirmResult(
       proposal,
       'Regenerate needs confirmation. Use ask_user, then retry with confirmed=true.',

@@ -1,7 +1,7 @@
 import type { Asset, AssetTake, Timeline, TimelineClip } from '../../../types/project-model.ts'
 import { createAssetBinId } from '../../../types/project-model.ts'
 import type { EditorState, EditorUndoSnapshot, TimelineGapSelection } from '../editor-state.ts'
-import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
+import type { AgentGenerateActionHost, AgentGenerationJobs } from './agent-generate-runtime.ts'
 import { executeImportTool, type AgentImportJobs } from './agent-import-runtime.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import { executeRefTool } from './agent-refs-runtime.ts'
@@ -19,6 +19,7 @@ import {
   executeAssemblyTool,
   rememberAssemblyAcceptance,
   type AgentAssemblyMemory,
+  type AgentAssemblyProgress,
 } from './agent-assembly-runtime.ts'
 import type { AgentAssemblyProposal } from './agent-assembly.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
@@ -74,6 +75,8 @@ export interface AgentToolExecutorHost {
   projectId?: string
   getAbortSignal?: () => AbortSignal | null
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
+  getApproveAll?: () => boolean
+  readAssetPreview?: AgentGenerateActionHost['readAssetPreview']
 }
 
 interface AssistantUndoEntry {
@@ -204,6 +207,8 @@ export class AgentToolExecutor {
   private assistantUndo: AssistantUndoEntry[] = []
   private lastAssemblyProposal: AgentAssemblyProposal | null = null
   private lastAssemblyConfirmedMore = false
+  private lastAssemblyProgress: AgentAssemblyProgress | null = null
+  private lastAssemblyReviewDecision: 'approve' | 'reject' | 'revise' | null = null
 
   constructor(host: AgentToolExecutorHost) {
     this.host = host
@@ -219,6 +224,10 @@ export class AgentToolExecutor {
       setProposal: proposal => { this.lastAssemblyProposal = proposal },
       getConfirmedMore: () => this.lastAssemblyConfirmedMore,
       setConfirmedMore: value => { this.lastAssemblyConfirmedMore = value },
+      getProgress: () => this.lastAssemblyProgress,
+      setProgress: progress => { this.lastAssemblyProgress = progress },
+      getReviewDecision: () => this.lastAssemblyReviewDecision,
+      setReviewDecision: value => { this.lastAssemblyReviewDecision = value },
     }
   }
 
