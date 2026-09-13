@@ -10,7 +10,7 @@ import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
 import { createAgentGenerationJobs } from './agent-generation-jobs'
 import { answersToUserMessage, runAgentLoop } from './agent-loop'
-import { mentionPartsForMessage } from './agent-mentions'
+import { mentionPartsForMessage, mentionsFromMessages, preferredAssemblyMediaFromMentions } from './agent-mentions'
 import { getAgentChatStorage, loadAgentSessions } from './agent-persistence'
 import { buildAgentSnapshot } from './agent-snapshot'
 import { AGENT_TOOL_DEFINITIONS } from './tool-definitions'
@@ -79,6 +79,8 @@ export function useAgentChat(params: UseAgentChatParams) {
   const apiFlagsRef = useRef({ shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi })
   apiFlagsRef.current = { shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi }
   const approveAllRef = useRef(false)
+  const activeSessionIdRef = useRef(activeSessionId)
+  activeSessionIdRef.current = activeSessionId
   const executorHostRef = useRef({
     getState: getEditorState,
     applyWithHistory,
@@ -87,6 +89,13 @@ export function useAgentChat(params: UseAgentChatParams) {
     getAbortSignal: () => abortRef.current?.signal ?? null,
     onProgress: (progress: AgentGenerationProgress) => setGenerationProgress(progress),
     getApproveAll: () => approveAllRef.current,
+    getPreferredAssemblyMedia: () => {
+      const session = sessionsRef.current.find(item => item.id === activeSessionIdRef.current) ?? null
+      return preferredAssemblyMediaFromMentions(
+        mentionsFromMessages(session?.messages ?? []),
+        executorHostRef.current.getState().editorModel.assets,
+      )
+    },
     readAssetPreview: async (asset: Asset) => {
       const filePath = asset.smallThumbnailPath || asset.bigThumbnailPath || asset.path
       if (!filePath || !window.electronAPI?.readLocalFile) return null
@@ -134,6 +143,7 @@ export function useAgentChat(params: UseAgentChatParams) {
       onProgress: progress => executorHostRef.current.onProgress(progress),
       getApproveAll: () => executorHostRef.current.getApproveAll(),
       readAssetPreview: asset => executorHostRef.current.readAssetPreview(asset),
+      getPreferredAssemblyMedia: () => executorHostRef.current.getPreferredAssemblyMedia?.() ?? {},
     })
   }
   executorRef.current.host.generation = generationJobsRef.current
@@ -152,6 +162,9 @@ export function useAgentChat(params: UseAgentChatParams) {
   executorRef.current.host.onProgress = progress => executorHostRef.current.onProgress(progress)
   executorRef.current.host.getApproveAll = () => executorHostRef.current.getApproveAll()
   executorRef.current.host.readAssetPreview = asset => executorHostRef.current.readAssetPreview(asset)
+  executorRef.current.host.getPreferredAssemblyMedia = () => (
+    executorHostRef.current.getPreferredAssemblyMedia?.() ?? {}
+  )
 
   const activeSession = sessions.find(session => session.id === activeSessionId) ?? null
   approveAllRef.current = activeSession?.approveAll === true

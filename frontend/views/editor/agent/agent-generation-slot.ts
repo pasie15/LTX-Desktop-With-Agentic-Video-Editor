@@ -1,5 +1,15 @@
 export const GENERATION_SLOT_WAIT_STATUS = 'Waiting for generation slot…'
 
+export function slotOccupiedFromProgress(input: {
+  inFlight: boolean
+  locallyActive?: boolean
+  progress: { ok: boolean; data?: { status?: string } } | null
+}): boolean {
+  if (input.inFlight || input.locallyActive) return true
+  if (!input.progress || !input.progress.ok) return false
+  return input.progress.data?.status === 'running'
+}
+
 export type GenerationSlotWaitResult =
   | { ok: true }
   | { ok: false; cancelled: true }

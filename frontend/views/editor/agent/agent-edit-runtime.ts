@@ -21,7 +21,7 @@ import {
   type AgentAssemblyMemory,
   type AgentAssemblyProgress,
 } from './agent-assembly-runtime.ts'
-import type { AgentAssemblyProposal } from './agent-assembly.ts'
+import type { AgentAssemblyPreferredMedia, AgentAssemblyProposal } from './agent-assembly.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
 import { analyzeCut, applyNarrationSync, cutReportAsToolResult } from './agent-cut.ts'
 import { normalizeEditPlan, type AgentEditPlan } from './agent-plan.ts'
@@ -107,6 +107,7 @@ export interface AgentToolExecutorHost {
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
   getApproveAll?: () => boolean
   readAssetPreview?: AgentGenerateActionHost['readAssetPreview']
+  getPreferredAssemblyMedia?: () => AgentAssemblyPreferredMedia
 }
 
 interface AssistantUndoEntry {

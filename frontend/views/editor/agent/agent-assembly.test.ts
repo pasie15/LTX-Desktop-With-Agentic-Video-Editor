@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   assemblyConfirmQuestions,
+  bindAssemblyUserMedia,
   buildAssemblyProposal,
   countAssemblyGenerateJobs,
+  inferAssemblyMediaFromAssets,
   isAssemblyAcceptChoice,
   isAssemblyProceedChoice,
   MAX_ASSEMBLY_GENERATE_JOBS,
@@ -64,6 +66,28 @@ describe('assembly job cap', () => {
       { id: 'a', prompt: 'one', duration: 4 },
       { id: 'b', prompt: 'two', duration: 4 },
     ], true), 2)
+  })
+
+  it('binds a single project still and song onto shots that omit them', () => {
+    assert.deepEqual(inferAssemblyMediaFromAssets([
+      { id: 'ken', type: 'image' },
+      { id: 'river', type: 'audio' },
+    ]), { imageAssetId: 'ken', musicAssetId: 'river' })
+    const proposal = bindAssemblyUserMedia(
+      buildAssemblyProposal({
+        kind: 'music_video',
+        shots: Array.from({ length: 8 }, (_, index) => ({
+          id: `s${index + 1}`,
+          prompt: `shot ${index + 1}`,
+          duration: 5,
+        })),
+      }),
+      { imageAssetId: 'ken', musicAssetId: 'river' },
+    )
+    assert.equal(proposal.musicAssetId, 'river')
+    assert.equal(proposal.jobCount, 8)
+    assert.equal(proposal.exceedsJobCap, false)
+    assert.ok(proposal.shots.every(shot => shot.imageAssetId === 'ken' && shot.skipStill === true))
   })
 
   it('flags more than eight generate jobs on the confirm card', () => {

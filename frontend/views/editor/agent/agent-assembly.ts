@@ -44,6 +44,57 @@ const SLUG_PREFIX = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.|SCENE\b|#\s+)/i
 const NUMBERED_LINE = /^\d+[\.\)]\s+/
 const DURATION_SUFFIX = /\s*[\[(](\d+(?:\.\d+)?)s[\])]\s*$/i
 
+export interface AgentAssemblyPreferredMedia {
+  imageAssetId?: string
+  musicAssetId?: string
+}
+
+export function inferAssemblyMediaFromAssets(
+  assets: ReadonlyArray<{
+    id: string
+    type: string
+    prompt?: string
+    generationParams?: unknown
+  }>,
+): AgentAssemblyPreferredMedia {
+  const images = assets.filter(asset => (
+    asset.type === 'image' && !asset.generationParams
+  ))
+  const audios = assets.filter(asset => asset.type === 'audio' && !asset.generationParams)
+  return {
+    ...(images.length === 1 && images[0] ? { imageAssetId: images[0].id } : {}),
+    ...(audios.length === 1 && audios[0] ? { musicAssetId: audios[0].id } : {}),
+  }
+}
+
+export function bindAssemblyUserMedia(
+  proposal: AgentAssemblyProposal,
+  media: AgentAssemblyPreferredMedia,
+): AgentAssemblyProposal {
+  const musicAssetId = proposal.musicAssetId ?? media.musicAssetId
+  const subjectId = media.imageAssetId
+  const shots = proposal.shots.map(shot => {
+    if (shot.assetId || shot.imageAssetId || shot.refId || !subjectId) return shot
+    return { ...shot, imageAssetId: subjectId, skipStill: true }
+  })
+  const next = buildAssemblyProposal({
+    kind: proposal.kind,
+    destination: proposal.destination,
+    trackIndex: proposal.trackIndex,
+    startTime: proposal.startTime,
+    model: proposal.model,
+    resolution: proposal.resolution,
+    audio: proposal.audio,
+    skipStills: proposal.skipStills,
+    shots,
+    voiceover: proposal.voiceover,
+    voiceoverAssetId: proposal.voiceoverAssetId,
+    musicAssetId,
+    openingTitle: proposal.openingTitle,
+  })
+  return next
+}
+
 export function countAssemblyGenerateJobs(
   shots: readonly AgentAssemblyShot[],
   skipStills: boolean,

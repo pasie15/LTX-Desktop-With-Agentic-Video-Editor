@@ -9,10 +9,13 @@ import {
 } from './agent-approvals.ts'
 import {
   assemblyConfirmQuestions,
+  bindAssemblyUserMedia,
   buildAssemblyProposal,
+  inferAssemblyMediaFromAssets,
   isAssemblyProceedChoice,
   MAX_ASSEMBLY_GENERATE_JOBS,
   normalizeAssemblyShots,
+  type AgentAssemblyPreferredMedia,
   type AgentAssemblyProposal,
   type AgentAssemblyShot,
 } from './agent-assembly.ts'
@@ -51,6 +54,7 @@ export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentS
     setClipSpeed?: (state: EditorState, clipId: string, speed: number) => EditorState
   }
   refs?: AgentRefStore
+  getPreferredAssemblyMedia?: () => AgentAssemblyPreferredMedia
 }
 
 export interface AgentAssemblyProgress {
@@ -206,7 +210,11 @@ export async function executeAssemblyTool(
 
   const resolved = resolveProposal(args, memory)
   if (!resolved.ok) return resolved.error
-  let proposal = resolved.proposal
+  const shouldBindUserMedia = args.shots !== undefined || args.script !== undefined || !memory.getProgress()
+  let proposal = shouldBindUserMedia
+    ? bindUserMediaIntoProposal(host, resolved.proposal)
+    : resolved.proposal
+  memory.setProposal(proposal)
   if (proposal.shots.length === 0) return errorResult('Shot list is empty')
   if (!memory.getPlan?.()) {
     memory.setPlan?.(planFromAssembly({
@@ -312,6 +320,10 @@ export async function executeAssemblyTool(
     memory.setProposal(proposal)
   }
 
+  if (!existing) {
+    placeAssemblyMusic(host, proposal, cursor)
+  }
+
   for (let index = startIndex; index < proposal.shots.length; index += 1) {
     const shot = proposal.shots[index]!
     if (host.getAbortSignal?.()?.aborted) {
@@ -328,16 +340,28 @@ export async function executeAssemblyTool(
 
     const total = proposal.shots.length
     const resumeStage = index === startIndex ? existing?.stage ?? 'still' : 'still'
-    host.onProgress?.({
-      toolName: 'assemble_shots',
+    const attachedStillId = resolveShotStillId(host, shot)
+    reportAssemblyProgress(host, {
       percent: Math.round((index / total) * 100),
       status: shot.assetId
         ? `${index + 1}/${total} placing…`
         : `${index + 1}/${total} generating…`,
     })
 
-    if (stepByStep && resumeStage === 'still' && !shot.assetId && !proposal.skipStills && !shot.skipStill) {
-      const stillResult = await generateShotStill(host, shot, lastStillId)
+    if (
+      stepByStep
+      && resumeStage === 'still'
+      && !shot.assetId
+      && !proposal.skipStills
+      && !shot.skipStill
+      && !attachedStillId
+    ) {
+      const stillResult = await withAssemblyProgress(
+        host,
+        `${index + 1}/${total} still`,
+        Math.round((index / total) * 100),
+        () => generateShotStill(host, shot, lastStillId),
+      )
       if (stillResult.status !== 'ready') {
         checklist[index] = {
           ...checklist[index]!,
@@ -378,14 +402,19 @@ export async function executeAssemblyTool(
       })
     }
 
-    const result = await generateAndPlaceShot(
+    const result = await withAssemblyProgress(
       host,
-      proposal,
-      shot,
-      cursor,
-      index === 0,
-      lastStillId,
-      resumeStage === 'video' ? lastStillId ?? resolveShotStillId(host, shot) : undefined,
+      `${index + 1}/${total} ${resumeStage === 'video' ? 'video' : 'shot'}`,
+      Math.round((index / total) * 100),
+      () => generateAndPlaceShot(
+        host,
+        proposal,
+        shot,
+        cursor,
+        index === 0,
+        lastStillId,
+        resumeStage === 'video' ? lastStillId ?? attachedStillId : attachedStillId,
+      ),
     )
     checklist[index] = result
     if (result.status === 'placed' && result.stillAssetId) lastStillId = result.stillAssetId
@@ -456,6 +485,83 @@ export async function executeAssemblyTool(
   }
 }
 
+function bindUserMediaIntoProposal(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+): AgentAssemblyProposal {
+  const usedShotAssetIds = new Set(
+    proposal.shots.flatMap(shot => [shot.assetId, shot.imageAssetId].filter((id): id is string => Boolean(id))),
+  )
+  const inferred = inferAssemblyMediaFromAssets(
+    host.getState().editorModel.assets.filter(asset => (
+      asset.id !== proposal.voiceoverAssetId && !usedShotAssetIds.has(asset.id)
+    )),
+  )
+  const preferred = host.getPreferredAssemblyMedia?.() ?? {}
+  const musicAssetId = preferred.musicAssetId ?? inferred.musicAssetId
+  return bindAssemblyUserMedia(proposal, {
+    imageAssetId: preferred.imageAssetId ?? inferred.imageAssetId,
+    ...(musicAssetId && musicAssetId !== proposal.voiceoverAssetId && !usedShotAssetIds.has(musicAssetId)
+      ? { musicAssetId }
+      : {}),
+  })
+}
+
+function reportAssemblyProgress(
+  host: AgentAssemblyActionHost,
+  progress: { percent: number; status: string },
+): void {
+  host.onProgress?.({
+    toolName: 'assemble_shots',
+    percent: progress.percent,
+    status: progress.status,
+  })
+}
+
+async function withAssemblyProgress<T>(
+  host: AgentAssemblyActionHost,
+  label: string,
+  percent: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = host.onProgress
+  host.onProgress = item => {
+    previous?.({
+      toolName: 'assemble_shots',
+      percent: item.percent || percent,
+      status: item.toolName === 'assemble_shots' ? item.status : `${label} — ${item.status}`,
+    })
+  }
+  try {
+    return await run()
+  } finally {
+    host.onProgress = previous
+  }
+}
+
+function musicAlreadyPlaced(host: AgentAssemblyActionHost, assetId: string): boolean {
+  const timeline = host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+    ?? host.getState().editorModel.timelines[0]
+  return Boolean(timeline?.clips.some(clip => clip.assetId === assetId))
+}
+
+function placeAssemblyMusic(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+  startTime: number,
+): void {
+  if (!proposal.musicAssetId || musicAlreadyPlaced(host, proposal.musicAssetId)) return
+  const music = host.getState().editorModel.assets.find(item => item.id === proposal.musicAssetId)
+  if (!music || music.type !== 'audio') return
+  const timeline = host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+    ?? host.getState().editorModel.timelines[0]
+  placeAudioAsset(host, music, {
+    trackIndex: firstUnlockedTrackIndex(timeline?.tracks, 'audio', AGENT_MUSIC_TRACK_INDEX),
+    startTime,
+    volume: AGENT_MUSIC_MIX_LEVEL,
+  })
+}
+
 function resolveShotStillId(
   host: AgentAssemblyActionHost,
   shot: AgentAssemblyShot,
@@ -520,7 +626,7 @@ function placeAssemblyMix(
     extras.voiceoverAssetId = voiceoverAsset.id
   }
 
-  if (proposal.musicAssetId) {
+  if (proposal.musicAssetId && !musicAlreadyPlaced(host, proposal.musicAssetId)) {
     const music = host.getState().editorModel.assets.find(item => item.id === proposal.musicAssetId)
     if (music && music.type === 'audio') {
       const placedMusic = placeAudioAsset(host, music, {
@@ -614,8 +720,9 @@ async function generateAndPlaceShot(
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
   const attachedStillId = resolveShotStillId(host, shot)
   let imageAssetId = approvedStillId
-    ?? (shot.skipStill || proposal.skipStills ? attachedStillId : undefined)
-  const wantStill = !proposal.skipStills && !shot.skipStill && !approvedStillId
+    ?? attachedStillId
+    ?? (shot.skipStill || proposal.skipStills ? previousStillId : undefined)
+  const wantStill = !proposal.skipStills && !shot.skipStill && !approvedStillId && !attachedStillId
   const referenceAssetId = attachedStillId ?? previousStillId
 
   if (wantStill) {
