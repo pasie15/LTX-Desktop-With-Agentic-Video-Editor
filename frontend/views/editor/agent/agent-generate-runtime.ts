@@ -1,5 +1,7 @@
 import type { Asset, AssetTake, GenerationParams } from '../../../types/project-model.ts'
 import type { EditorState, TimelineGapSelection } from '../editor-state.ts'
+import { AGENT_DEFAULT_REF_STRENGTH } from './agent-mix.ts'
+import type { AgentRefStore } from './agent-refs.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import {
   asBoolean,
@@ -63,6 +65,8 @@ export interface AgentGenerationJobs {
   runImage: (input: {
     prompt: string
     settings: AgentGenerateSettings
+    imagePath?: string | null
+    strength?: number
     signal?: AbortSignal
     onProgress?: (progress: { percent: number; status: string }) => void
   }) => Promise<AgentGenerateJobResult>
@@ -98,6 +102,7 @@ export interface AgentGenerateActionHost {
   getSelectedGap?: () => TimelineGapSelection | null
   getAbortSignal?: () => AbortSignal | null
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
+  refs?: AgentRefStore
 }
 
 export interface AgentGenerateProposal {
@@ -440,10 +445,20 @@ async function generateStill(
       return errorResult('Track is locked')
     }
   }
+  const referenceAssetId = asString(args.referenceAssetId)
+    ?? (asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null)
+  let referencePath: string | null = null
+  if (referenceAssetId) {
+    const still = assetById(host.getState(), referenceAssetId)
+    if (!still) return errorResult(`Asset not found: ${referenceAssetId}`)
+    if (still.type !== 'image') return errorResult('referenceAssetId must be an image asset')
+    referencePath = still.path
+  }
   host.onProgress?.({ toolName: 'generate_image', percent: 0, status: 'Generating image...' })
   const job = await jobs.runImage({
     prompt,
     settings,
+    ...(referencePath ? { imagePath: referencePath, strength: AGENT_DEFAULT_REF_STRENGTH } : {}),
     signal: host.getAbortSignal?.() ?? undefined,
     onProgress: progress => host.onProgress?.({ toolName: 'generate_image', ...progress }),
   })
@@ -475,6 +490,7 @@ async function generateVideo(
     : AGENT_DEFAULT_PREVIEW_DURATION_S
   const settings = settingsFromArgs(args, defaultSettings({ duration: defaultDuration }))
   const imageAssetId = asString(args.imageAssetId)
+    ?? (asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null)
   let imagePath: string | null = null
   if (imageAssetId) {
     const still = assetById(state, imageAssetId)

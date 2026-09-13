@@ -1351,3 +1351,15 @@ class AgentLlmModelsResponse(BaseModel):
     resolvedModel: str = ""
     source: Literal["provider", "catalog"] = "catalog"
     error: str = ""
+
+
+class ElevenLabsSpeechRequest(BaseModel):
+    text: str
+    voiceId: str = ""
+    modelId: str = ""
+
+
+class ElevenLabsSpeechResponse(BaseModel):
+    path: str
+    voiceId: str
+    modelId: str

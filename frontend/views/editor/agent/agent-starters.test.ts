@@ -17,6 +17,7 @@ describe('agent starter chips', () => {
         'Assemble this script on the timeline',
         'Make a short film about …',
         'Add titles / subtitles',
+        'Add voiceover and music',
         'Organize assets into bins',
       ],
     )

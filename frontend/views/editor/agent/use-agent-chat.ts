@@ -279,6 +279,7 @@ export function useAgentChat(params: UseAgentChatParams) {
           generationCanCancel,
           currentModelLabel,
           selectedGapOverride: getSelectedGap?.() ?? null,
+          refs: executorRef.current?.host.refs?.list() ?? [],
         }) as unknown as Record<string, unknown>,
         availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,

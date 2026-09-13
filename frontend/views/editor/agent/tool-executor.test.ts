@@ -5,6 +5,7 @@ import { DEFAULT_LAYOUT } from '../editor-layout.ts'
 import type { EditorState, EditorUndoSnapshot } from '../editor-state.ts'
 import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
 import type { AgentImportJobs } from './agent-import-runtime.ts'
+import { createMemoryRefStore } from './agent-refs.ts'
 import { AgentToolExecutor, type AgentEditorActions, type AgentToolExecutorHost } from './agent-edit-runtime.ts'
 import { listGenerationModels, validateUnknownKeys } from './agent-tool-utils.ts'
 
@@ -32,7 +33,19 @@ function audioAsset(id: string, duration = 12): Asset {
   }
 }
 
-function clip(partial: Pick<TimelineClip, 'id' | 'startTime' | 'duration' | 'trackIndex'> & { assetId?: string }): TimelineClip {
+function imageAsset(id: string): Asset {
+  return {
+    id,
+    type: 'image',
+    path: `/tmp/${id}.png`,
+    prompt: id,
+    resolution: '1080p',
+    duration: 5,
+    createdAt: 1,
+  }
+}
+
+function clip(partial: Pick<TimelineClip, 'id' | 'startTime' | 'duration' | 'trackIndex'> & { assetId?: string; type?: TimelineClip['type'] }): TimelineClip {
   return {
     assetId: partial.assetId ?? 'asset-1',
     type: 'video',
@@ -184,6 +197,7 @@ function fakeActions(): AgentEditorActions {
           startTime: (params.startTime ?? 0) + index,
           duration: asset.duration ?? 4,
           trackIndex: params.trackIndex ?? 0,
+          type: asset.type === 'audio' ? 'audio' : asset.type === 'image' ? 'image' : 'video',
         })),
       ],
     })),
@@ -395,6 +409,12 @@ function fakeActions(): AgentEditorActions {
         ],
       }))
     },
+    setClipAudioLevel: (state, clipId, volume) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (
+        item.id === clipId ? { ...item, volume: Math.max(0, Math.min(1, volume)), muted: false } : item
+      )),
+    })),
     applyGeneratedTake: (state, assetId, take) => ({
       ...state,
       editorModel: {
@@ -469,6 +489,8 @@ function createHost(
   extras?: {
     generation?: AgentGenerationJobs
     importMedia?: AgentImportJobs
+    speech?: AgentToolExecutorHost['speech']
+    refs?: AgentToolExecutorHost['refs']
     selectedGap?: { trackIndex: number; startTime: number; endTime: number } | null
   },
 ): AgentToolExecutorHost & { box: { state: EditorState } } {
@@ -485,6 +507,8 @@ function createHost(
     actions: fakeActions(),
     generation: extras?.generation,
     importMedia: extras?.importMedia,
+    speech: extras?.speech,
+    refs: extras?.refs,
     getSelectedGap: extras?.selectedGap !== undefined ? () => extras.selectedGap ?? null : undefined,
   }
 }
@@ -998,6 +1022,85 @@ describe('import tool executor', () => {
     assert.equal(result.ok, false)
     assert.match(String(result.error), /Unsupported/)
     assert.equal(host.getState().editorModel.assets.length, 2)
+  })
+})
+
+describe('refs speech and mix', () => {
+  it('registers a still and resolves it on assemble', async () => {
+    const refs = createMemoryRefStore()
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [imageAsset('hero-still'), audioAsset('theme', 12)],
+    }), {
+      generation: fakeJobs(),
+      refs,
+    })
+    const executor = new AgentToolExecutor(host)
+    const registered = await executor.execute('register_ref', {
+      name: 'Paper boy',
+      assetId: 'hero-still',
+      role: 'character',
+    })
+    assert.equal(registered.ok, true)
+    const listed = await executor.execute('list_refs', {})
+    assert.equal((listed.refs as unknown[]).length, 1)
+
+    let imageCalls = 0
+    host.generation = fakeJobs({
+      runImage: async input => {
+        imageCalls += 1
+        assert.equal(input.imagePath, '/tmp/hero-still.png')
+        return { status: 'complete', path: '/tmp/still-from-ref.png' }
+      },
+    })
+    const result = await executor.execute('assemble_shots', {
+      shots: [{ id: 's1', prompt: 'the paper boy on a stoop', duration: 4, refId: (registered.ref as { id: string }).id }],
+      skipStills: false,
+      confirmed: true,
+      openingTitle: 'Before Sunrise',
+      musicAssetId: 'theme',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(imageCalls, 1)
+    const clips = activeClips(host.getState())
+    assert.ok(clips.some(item => item.type === 'text'))
+    const music = clips.find(item => item.assetId === 'theme')
+    assert.ok(music)
+    assert.equal(music.trackIndex, 4)
+    assert.equal(music.volume, 0.25)
+  })
+
+  it('generates speech onto A1', async () => {
+    const host = createHost(makeState({ clips: [], playhead: 0 }), {
+      importMedia: fakeImport(),
+      speech: {
+        synthesize: async () => ({ path: '/tmp/vo.mp3' }),
+      },
+    })
+    const executor = new AgentToolExecutor(host)
+    const blocked = await executor.execute('generate_speech', { text: 'The paper boy waits.' })
+    assert.equal(blocked.ok, false)
+    const result = await executor.execute('generate_speech', {
+      text: 'The paper boy waits.',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.placed, true)
+    const clips = activeClips(host.getState())
+    assert.equal(clips[0]?.trackIndex, 3)
+    assert.equal(clips[0]?.type, 'audio')
+  })
+
+  it('sets clip volume for a basic mix', async () => {
+    const host = createHost(makeState({
+      clips: [clip({ id: 'music-1', startTime: 0, duration: 8, trackIndex: 4, assetId: 'theme', type: 'audio' })],
+      assets: [audioAsset('theme', 8)],
+    }))
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('set_clip_volume', { clipId: 'music-1', volume: 0.25 })
+    assert.equal(result.ok, true)
+    assert.equal(activeClips(host.getState()).find(item => item.id === 'music-1')?.volume, 0.25)
   })
 })
 

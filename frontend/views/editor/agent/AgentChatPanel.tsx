@@ -9,12 +9,14 @@ import {
   selectActiveTimelineOutPoint,
   selectAssets,
   selectSelectedClipIds,
+  selectSelectedClips,
   selectSelectedGap,
 } from '../editor-selectors'
 import { useEditorActions, useEditorGetState, useEditorStore } from '../editor-store'
 import type { TimelineGapSelection } from '../editor-state'
 import { AGENT_STARTER_PROMPTS, resolveStarterComposerText, shouldAutoSendStarter, type AgentStarterPrompt } from './agent-starters'
 import { AgentAskUserCards } from './AgentAskUserCards'
+import { AgentRefsStrip } from './AgentRefsStrip'
 import { AgentMentionPopover, buildMentionOptions } from './AgentMentionPopover'
 import { AgentMessageList } from './AgentMessageList'
 import { AgentTabBar } from './AgentTabBar'
@@ -55,6 +57,11 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
   const storeSelectedGap = useEditorStore(selectSelectedGap)
   const assets = useEditorStore(selectAssets)
   const selectedClipIds = useEditorStore(selectSelectedClipIds)
+  const selectedClips = useEditorStore(selectSelectedClips)
+  const selectedImageAssetId = selectedClips
+    .map(clip => clip.assetId)
+    .map(id => id ? assets.find(asset => asset.id === id) : undefined)
+    .find(asset => asset?.type === 'image')?.id
   const inPoint = useEditorStore(selectActiveTimelineInPoint)
   const outPoint = useEditorStore(selectActiveTimelineOutPoint)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -219,6 +226,15 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
             onOpenSession={chat.openSession}
             onCloseTab={chat.closeTab}
             onDeleteSession={chat.deleteSession}
+          />
+        )}
+
+        {hasAgentLlmKey && (
+          <AgentRefsStrip
+            projectId={props.projectId}
+            assets={assets}
+            selectedAssetId={selectedImageAssetId}
+            onAttachMention={attachMention}
           />
         )}
 

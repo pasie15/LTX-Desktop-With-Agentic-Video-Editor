@@ -369,21 +369,37 @@ function AppContent() {
 
   const showGlobalControls = currentView !== 'home' && connected && setupState !== 'loading' && !setupState.needsSetup
   const shouldBlockUntilSettingsLoaded = forceApiGenerations && !isLoaded
-  const shouldShowForcedFirstRunUpsell = isForcedFirstRun && isLoaded && !settings.hasLtxApiKey
-  const shouldShowGlobalForcedUpsell = forceApiGenerations && setupState !== 'loading' && !setupState.needsSetup && isLoaded && !settings.hasLtxApiKey
+  const shouldShowForcedFirstRunUpsell =
+    isForcedFirstRun && runtimePolicyLoaded && isLoaded && !settings.hasLtxApiKey
+  const shouldShowGlobalForcedUpsell =
+    runtimePolicyLoaded &&
+    forceApiGenerations &&
+    setupState !== 'loading' &&
+    !setupState.needsSetup &&
+    isLoaded &&
+    !settings.hasLtxApiKey
   const shouldBlockForLtxKey = shouldShowForcedFirstRunUpsell || shouldShowGlobalForcedUpsell
+  const forcedApiOnlyGatewayDescription =
+    'This app is configured for API-only generation. Add your API key to continue.'
 
   useEffect(() => {
-    if (shouldBlockForLtxKey && apiGatewayRequest === null) {
-      setApiGatewayRequest({
-        requiredKeys: ['ltx'],
-        title: 'Connect API Keys',
-        description: 'This app is configured for API-only generation. Add your API key to continue.',
-        blocking: true,
-        includeOptionalMissing: true,
-      })
+    if (!runtimePolicyLoaded || !isLoaded) return
+    if (shouldBlockForLtxKey) {
+      if (apiGatewayRequest === null) {
+        setApiGatewayRequest({
+          requiredKeys: ['ltx'],
+          title: 'Connect API Keys',
+          description: forcedApiOnlyGatewayDescription,
+          blocking: true,
+          includeOptionalMissing: true,
+        })
+      }
+      return
     }
-  }, [shouldBlockForLtxKey, apiGatewayRequest])
+    if (apiGatewayRequest?.blocking && apiGatewayRequest.description === forcedApiOnlyGatewayDescription) {
+      setApiGatewayRequest(null)
+    }
+  }, [shouldBlockForLtxKey, apiGatewayRequest, runtimePolicyLoaded, isLoaded])
 
   const shouldShowGateway = apiGatewayRequest !== null
 

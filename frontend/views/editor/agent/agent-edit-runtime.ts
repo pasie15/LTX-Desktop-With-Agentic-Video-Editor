@@ -3,6 +3,9 @@ import { createAssetBinId } from '../../../types/project-model.ts'
 import type { EditorState, EditorUndoSnapshot, TimelineGapSelection } from '../editor-state.ts'
 import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
 import { executeImportTool, type AgentImportJobs } from './agent-import-runtime.ts'
+import type { AgentRefStore } from './agent-refs.ts'
+import { executeRefTool } from './agent-refs-runtime.ts'
+import { executeSpeechTool, type AgentSpeechJobs } from './agent-speech-runtime.ts'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice.ts'
 import {
   asBoolean,
@@ -19,7 +22,15 @@ import {
 } from './agent-assembly-runtime.ts'
 import type { AgentAssemblyProposal } from './agent-assembly.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
-import { EDIT_TOOL_ALLOWED_KEYS, isAssemblyToolName, isGenerateToolName, isImportToolName, type AgentEditToolName } from './tool-definitions.ts'
+import {
+  EDIT_TOOL_ALLOWED_KEYS,
+  isAssemblyToolName,
+  isGenerateToolName,
+  isImportToolName,
+  isRefToolName,
+  isSpeechToolName,
+  type AgentEditToolName,
+} from './tool-definitions.ts'
 
 export const DELETE_MANY_THRESHOLD = 2
 
@@ -46,6 +57,7 @@ export interface AgentEditorActions {
     createAudio: boolean
   }) => EditorState
   applyGeneratedTake: (state: EditorState, assetId: string, take: AssetTake, clipId?: string) => EditorState
+  setClipAudioLevel: (state: EditorState, clipId: string, volume: number) => EditorState
   undo: (state: EditorState) => EditorState
 }
 
@@ -56,6 +68,8 @@ export interface AgentToolExecutorHost {
   actions: AgentEditorActions
   generation?: AgentGenerationJobs
   importMedia?: AgentImportJobs
+  speech?: AgentSpeechJobs
+  refs?: AgentRefStore
   getSelectedGap?: () => TimelineGapSelection | null
   projectId?: string
   getAbortSignal?: () => AbortSignal | null
@@ -239,6 +253,20 @@ export class AgentToolExecutor {
       }
       return result
     }
+    if (isSpeechToolName(name)) {
+      const before = undoSnapshot(this.host.getState())
+      const result = await executeSpeechTool(this.host, name, args)
+      if (result.ok !== false) {
+        const after = undoSnapshot(this.host.getState())
+        if (!sameUndoSnapshot(before, after)) {
+          this.assistantUndo.push({ name, after })
+        }
+      }
+      return result
+    }
+    if (isRefToolName(name)) {
+      return executeRefTool(this.host, name, args)
+    }
     if (isAssemblyToolName(name)) {
       const before = undoSnapshot(this.host.getState())
       const result = await executeAssemblyTool(this.host, name, args, this.assemblyMemory())
@@ -300,6 +328,8 @@ export class AgentToolExecutor {
         return this.addText(args)
       case 'add_subtitle':
         return this.addSubtitle(args)
+      case 'set_clip_volume':
+        return this.setClipVolume(args)
       case 'select_clips':
         return this.selectClips(args)
       case 'set_playhead':
@@ -528,6 +558,21 @@ export class AgentToolExecutor {
         track: created.trackIndex,
       },
     })
+  }
+
+  private setClipVolume(args: Record<string, unknown>): Record<string, unknown> {
+    const state = this.host.getState()
+    const id = asString(args.clipId) ?? asString(args.id)
+    if (!id) return errorResult('Missing clipId')
+    const clip = clipById(state, id)
+    if (!clip) return errorResult('Clip not found')
+    if (trackLocked(state, clip.trackIndex)) return errorResult('Track is locked')
+    const volume = asNumber(args.volume)
+    if (volume == null) return errorResult('Missing volume')
+    const next = this.mutate(prev => this.host.actions.setClipAudioLevel(prev, id, volume))
+    const updated = clipById(next, id)
+    if (!updated) return errorResult('Clip not found')
+    return timelineSlice(next, { clip: clipSlice(updated) })
   }
 
   private selectClips(args: Record<string, unknown>): Record<string, unknown> {

@@ -3,6 +3,7 @@
 from handlers.agent_handler import AgentHandler
 from handlers.agent_llm_oauth_handler import AgentLlmOAuthHandler
 from handlers.download_handler import DownloadHandler
+from handlers.elevenlabs_handler import ElevenLabsHandler
 from handlers.hf_auth_handler import HuggingFaceAuthHandler
 from handlers.generation_handler import GenerationHandler
 from handlers.health_handler import HealthHandler
@@ -26,6 +27,7 @@ __all__ = [
     "SettingsHandler",
     "ModelsHandler",
     "DownloadHandler",
+    "ElevenLabsHandler",
     "TextHandler",
     "PipelinesHandler",
     "GenerationHandler",

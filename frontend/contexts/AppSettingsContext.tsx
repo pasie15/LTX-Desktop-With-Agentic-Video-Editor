@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { resetBackendCredentials } from '../lib/backend'
+import { backendFetch, resetBackendCredentials } from '../lib/backend'
 import { ApiClient, type ApiSuccessOf } from '../lib/api-client'
 import type { AgentLlmProviderPublic } from '../lib/agent-llm'
 
@@ -9,6 +9,7 @@ export interface AppSettings {
   hasLtxApiKey: boolean
   userPrefersLtxApiVideoGenerations: boolean
   hasFalApiKey: boolean
+  hasElevenLabsApiKey: boolean
   userPrefersFalApiImageGenerations: boolean
   hasGeminiApiKey: boolean
   geminiModel: string
@@ -38,6 +39,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   hasLtxApiKey: false,
   userPrefersLtxApiVideoGenerations: false,
   hasFalApiKey: false,
+  hasElevenLabsApiKey: false,
   userPrefersFalApiImageGenerations: false,
   hasGeminiApiKey: false,
   geminiModel: '',
@@ -65,6 +67,7 @@ interface AppSettingsContextValue {
   refreshSettings: () => Promise<void>
   saveLtxApiKey: (value: string) => Promise<void>
   saveFalApiKey: (value: string) => Promise<void>
+  saveElevenLabsApiKey: (value: string) => Promise<void>
   saveGeminiApiKey: (value: string) => Promise<void>
   forceApiGenerations: boolean
   shouldVideoGenerateWithLtxApi: boolean
@@ -98,6 +101,7 @@ function normalizeAppSettings(data: Partial<AppSettings>): AppSettings {
     hasLtxApiKey: data.hasLtxApiKey ?? DEFAULT_APP_SETTINGS.hasLtxApiKey,
     userPrefersLtxApiVideoGenerations: data.userPrefersLtxApiVideoGenerations ?? DEFAULT_APP_SETTINGS.userPrefersLtxApiVideoGenerations,
     hasFalApiKey: data.hasFalApiKey ?? DEFAULT_APP_SETTINGS.hasFalApiKey,
+    hasElevenLabsApiKey: data.hasElevenLabsApiKey ?? DEFAULT_APP_SETTINGS.hasElevenLabsApiKey,
     userPrefersFalApiImageGenerations: data.userPrefersFalApiImageGenerations ?? DEFAULT_APP_SETTINGS.userPrefersFalApiImageGenerations,
     hasGeminiApiKey: data.hasGeminiApiKey ?? DEFAULT_APP_SETTINGS.hasGeminiApiKey,
     geminiModel: data.geminiModel ?? DEFAULT_APP_SETTINGS.geminiModel,
@@ -231,7 +235,11 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!result.ok) {
       throw new Error(result.error.message)
     }
-    setSettings(normalizeAppSettings(result.data))
+    const extra = result.data as typeof result.data & { hasElevenLabsApiKey?: boolean }
+    setSettings(normalizeAppSettings({
+      ...result.data,
+      hasElevenLabsApiKey: extra.hasElevenLabsApiKey,
+    }))
     setIsLoaded(true)
   }, [])
 
@@ -266,6 +274,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       const {
         hasLtxApiKey: _a,
         hasFalApiKey: _b,
+        hasElevenLabsApiKey: _eleven,
         hasGeminiApiKey: _c,
         hasAgentLlmKey: _e,
         modelsDir: _d,
@@ -312,6 +321,18 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     await refreshSettings()
   }, [refreshSettings])
 
+  const saveElevenLabsApiKey = useCallback(async (value: string) => {
+    const response = await backendFetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ elevenlabsApiKey: value }),
+    })
+    if (!response.ok) {
+      throw new Error('Failed to save ElevenLabs API key')
+    }
+    await refreshSettings()
+  }, [refreshSettings])
+
   const shouldVideoGenerateWithLtxApi =
     forceApiGenerations || (settings.userPrefersLtxApiVideoGenerations && settings.hasLtxApiKey)
   const shouldImageGenerateWithFalApi =
@@ -326,6 +347,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       refreshSettings,
       saveLtxApiKey,
       saveFalApiKey,
+      saveElevenLabsApiKey,
       saveGeminiApiKey,
       forceApiGenerations,
       shouldVideoGenerateWithLtxApi,
@@ -334,7 +356,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       modelsVersion,
       notifyModelsChanged,
     }),
-    [cudaAvailable, forceApiGenerations, isLoaded, modelsVersion, notifyModelsChanged, refreshSettings, runtimePolicyLoaded, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, settings, shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi, updateSettings],
+    [cudaAvailable, forceApiGenerations, isLoaded, modelsVersion, notifyModelsChanged, refreshSettings, runtimePolicyLoaded, saveElevenLabsApiKey, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, settings, shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi, updateSettings],
   )
 
   return <AppSettingsContext.Provider value={contextValue}>{children}</AppSettingsContext.Provider>

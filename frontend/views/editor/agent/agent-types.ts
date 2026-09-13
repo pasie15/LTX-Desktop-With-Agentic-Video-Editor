@@ -146,6 +146,12 @@ export interface AgentProjectSnapshot {
     canCancel: boolean
     currentModelLabel: string
   }
+  refs: Array<{
+    id: string
+    name: string
+    role: string
+    assetId: string
+  }>
 }
 
 export interface AgentGenerationProgress {

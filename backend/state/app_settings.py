@@ -36,6 +36,8 @@ def _to_camel_case(field_name: str) -> str:
         "prompt_enhancer_enabled_t2v": "promptEnhancerEnabledT2V",
         "prompt_enhancer_enabled_i2v": "promptEnhancerEnabledI2V",
         "has_oauth": "hasOAuth",
+        "has_elevenlabs_api_key": "hasElevenLabsApiKey",
+        "elevenlabs_api_key": "elevenlabsApiKey",
     }
     if field_name in special_aliases:
         return special_aliases[field_name]
@@ -121,6 +123,7 @@ class AppSettings(SettingsBaseModel):
     user_prefers_ltx_api_video_generations: bool = False
     fal_api_key: str = ""
     user_prefers_fal_api_image_generations: bool = False
+    elevenlabs_api_key: str = ""
     use_local_text_encoder: bool = False
     prompt_cache_size: int = 100
     prompt_enhancer_enabled_t2v: bool = True
@@ -208,6 +211,7 @@ class SettingsResponse(SettingsBaseModel):
     has_ltx_api_key: bool = False
     user_prefers_ltx_api_video_generations: bool = False
     has_fal_api_key: bool = False
+    has_elevenlabs_api_key: bool = False
     user_prefers_fal_api_image_generations: bool = False
     use_local_text_encoder: bool = False
     prompt_cache_size: int = 100
@@ -268,10 +272,12 @@ def to_settings_response(settings: AppSettings) -> SettingsResponse:
     data = settings.model_dump(by_alias=False)
     ltx_key = data.pop("ltx_api_key", "")
     fal_key = data.pop("fal_api_key", "")
+    elevenlabs_key = data.pop("elevenlabs_api_key", "")
     gemini_key = data.pop("gemini_api_key", "")
     providers = data.pop("agent_llm_providers", [])
     data["has_ltx_api_key"] = bool(ltx_key)
     data["has_fal_api_key"] = bool(fal_key)
+    data["has_elevenlabs_api_key"] = bool(elevenlabs_key)
     data["has_gemini_api_key"] = bool(gemini_key)
     data["has_agent_llm_key"] = has_usable_agent_llm_key(settings)
     data["use_conv_vae"] = resolved_use_conv_vae(settings)

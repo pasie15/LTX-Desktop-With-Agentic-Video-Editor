@@ -478,6 +478,37 @@ export function registerFileHandlers(): void {
     }
   })
 
+  function refsFilePath(projectId: string): string {
+    if (!projectId.trim() || projectId.includes('..') || /[\\/]/.test(projectId)) {
+      throw new Error('Invalid project id')
+    }
+    const filePath = path.join(getProjectAssetsPath(), projectId, 'refs.json')
+    return validatePath(filePath, getAllowedRoots())
+  }
+
+  handle('readProjectRefs', ({ projectId }) => {
+    try {
+      const filePath = refsFilePath(projectId)
+      if (!fs.existsSync(filePath)) {
+        return { success: true as const, data: '[]' }
+      }
+      return { success: true as const, data: fs.readFileSync(filePath, 'utf-8') }
+    } catch (error) {
+      return { success: false as const, error: String(error) }
+    }
+  })
+
+  handle('writeProjectRefs', ({ projectId, data }) => {
+    try {
+      const filePath = refsFilePath(projectId)
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, data, 'utf-8')
+      return { success: true as const, path: filePath }
+    } catch (error) {
+      return { success: false as const, error: String(error) }
+    }
+  })
+
   handle('deleteProjectChatSession', ({ projectId, sessionId }) => {
     try {
       const filePath = chatFilePath(projectId, sessionId)

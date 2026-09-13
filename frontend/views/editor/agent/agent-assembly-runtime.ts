@@ -1,3 +1,4 @@
+import type { Asset } from '../../../types/project-model.ts'
 import type { EditorState } from '../editor-state.ts'
 import {
   assemblyConfirmQuestions,
@@ -14,17 +15,33 @@ import {
   type AgentGenerateActionHost,
   type AgentGenerateDestination,
 } from './agent-generate-runtime.ts'
+import {
+  AGENT_MUSIC_MIX_LEVEL,
+  AGENT_MUSIC_TRACK_INDEX,
+  AGENT_TITLE_TRACK_INDEX,
+  AGENT_VOICEOVER_MIX_LEVEL,
+  AGENT_VOICEOVER_TRACK_INDEX,
+  firstUnlockedTrackIndex,
+} from './agent-mix.ts'
+import type { AgentRefStore } from './agent-refs.ts'
+import {
+  importSpeechAsset,
+  placeAudioAsset,
+  type AgentSpeechActionHost,
+} from './agent-speech-runtime.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
 import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-definitions.ts'
 
-export interface AgentAssemblyActionHost extends AgentGenerateActionHost {
-  actions: AgentGenerateActionHost['actions'] & {
+export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentSpeechActionHost {
+  actions: AgentGenerateActionHost['actions'] & AgentSpeechActionHost['actions'] & {
     addTextClip: (state: EditorState, params: {
       style?: { text?: string }
       startTime?: number
       trackIndex?: number
+      duration?: number
     }) => EditorState
   }
+  refs?: AgentRefStore
 }
 
 export interface AgentAssemblyMemory {
@@ -39,6 +56,7 @@ export interface AgentAssemblyShotResult {
   title?: string
   status: 'placed' | 'failed' | 'cancelled' | 'pending'
   assetId?: string
+  stillAssetId?: string
   clipId?: string
   start?: number
   duration?: number
@@ -104,6 +122,11 @@ function resolveProposal(
       audio: args.audio,
       skipStills: args.skipStills,
       shots: fromArgs,
+      voiceover: args.voiceover,
+      voiceoverAssetId: args.voiceoverAssetId,
+      musicAssetId: args.musicAssetId,
+      openingTitle: args.openingTitle,
+      title: args.title,
     })
     memory.setProposal(proposal)
     return { ok: true, proposal }
@@ -135,6 +158,10 @@ export function rememberAssemblyAcceptance(
         resolution: current?.resolution,
         audio: current?.audio,
         skipStills: current?.skipStills,
+        voiceover: current?.voiceover,
+        voiceoverAssetId: current?.voiceoverAssetId,
+        musicAssetId: current?.musicAssetId,
+        openingTitle: current?.openingTitle,
       }))
     }
   }
@@ -192,6 +219,28 @@ export async function executeAssemblyTool(
 
   let cursor = resolveStart(state, proposal, proposal.destination)
   const placed: AgentAssemblyShotResult[] = []
+  let lastStillId: string | undefined
+  let voiceoverAsset: Asset | undefined
+
+  if (proposal.voiceover && !proposal.voiceoverAssetId) {
+    if (!host.speech) {
+      return errorResult('ElevenLabs speech is not available. Add an ElevenLabs API key in Settings.')
+    }
+    host.onProgress?.({
+      toolName: 'assemble_shots',
+      percent: 0,
+      status: 'Generating voiceover…',
+    })
+    const synthesized = await host.speech.synthesize({ text: proposal.voiceover })
+    if ('error' in synthesized) return errorResult(synthesized.error)
+    const imported = await importSpeechAsset(host, synthesized.path, proposal.voiceover.slice(0, 48) || 'Voiceover')
+    if (!imported.ok) return imported.error
+    voiceoverAsset = imported.asset
+  } else if (proposal.voiceoverAssetId) {
+    voiceoverAsset = host.getState().editorModel.assets.find(item => item.id === proposal.voiceoverAssetId)
+    if (!voiceoverAsset) return errorResult(`Asset not found: ${proposal.voiceoverAssetId}`)
+    if (voiceoverAsset.type !== 'audio') return errorResult('voiceoverAssetId must be an audio asset')
+  }
 
   for (const [index, shot] of proposal.shots.entries()) {
     if (host.getAbortSignal?.()?.aborted) {
@@ -215,8 +264,9 @@ export async function executeAssemblyTool(
         : `${index + 1}/${total} generating…`,
     })
 
-    const result = await generateAndPlaceShot(host, proposal, shot, cursor, index === 0)
+    const result = await generateAndPlaceShot(host, proposal, shot, cursor, index === 0, lastStillId)
     checklist[index] = result
+    if (result.status === 'placed' && result.stillAssetId) lastStillId = result.stillAssetId
     if (result.status !== 'placed') {
       return {
         ok: false,
@@ -232,6 +282,8 @@ export async function executeAssemblyTool(
     }
   }
 
+  const mix = placeAssemblyMix(host, proposal, placed, voiceoverAsset)
+
   host.onProgress?.({
     toolName: 'assemble_shots',
     percent: 100,
@@ -245,7 +297,91 @@ export async function executeAssemblyTool(
     jobCount: proposal.jobCount,
     placed,
     checklist,
+    ...mix,
   }
+}
+
+function resolveShotStillId(
+  host: AgentAssemblyActionHost,
+  shot: AgentAssemblyShot,
+): string | undefined {
+  if (shot.imageAssetId) return shot.imageAssetId
+  if (shot.refId) return host.refs?.resolveImageAssetId(shot.refId) ?? undefined
+  return undefined
+}
+
+function addTitleClip(
+  host: AgentAssemblyActionHost,
+  text: string,
+  startTime: number,
+  trackIndex: number,
+): string | undefined {
+  const beforeIds = new Set(
+    (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+      ?? host.getState().editorModel.timelines[0])?.clips.map(item => item.id) ?? [],
+  )
+  host.applyWithHistory(prev => host.actions.addTextClip(prev, {
+    style: { text },
+    startTime,
+    trackIndex,
+  }))
+  return (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+    ?? host.getState().editorModel.timelines[0])?.clips.find(item => !beforeIds.has(item.id))?.id
+}
+
+function placeAssemblyMix(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+  placed: AgentAssemblyShotResult[],
+  voiceoverAsset?: Asset,
+): Record<string, unknown> {
+  const pictureStart = placed.reduce((min, shot) => (
+    shot.start != null ? Math.min(min, shot.start) : min
+  ), Number.POSITIVE_INFINITY)
+  const pictureEnd = placed.reduce((max, shot) => (
+    shot.start != null && shot.duration != null ? Math.max(max, shot.start + shot.duration) : max
+  ), 0)
+  const start = Number.isFinite(pictureStart) ? pictureStart : 0
+  const timeline = host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+    ?? host.getState().editorModel.timelines[0]
+  const extras: Record<string, unknown> = {}
+
+  if (proposal.openingTitle) {
+    extras.openingTitleClipId = addTitleClip(
+      host,
+      proposal.openingTitle,
+      start,
+      firstUnlockedTrackIndex(timeline?.tracks, 'video', AGENT_TITLE_TRACK_INDEX),
+    )
+  }
+
+  if (voiceoverAsset) {
+    const placedVo = placeAudioAsset(host, voiceoverAsset, {
+      trackIndex: firstUnlockedTrackIndex(timeline?.tracks, 'audio', AGENT_VOICEOVER_TRACK_INDEX),
+      startTime: start,
+      volume: AGENT_VOICEOVER_MIX_LEVEL,
+    })
+    extras.voiceoverClipId = placedVo.clipId
+    extras.voiceoverAssetId = voiceoverAsset.id
+  }
+
+  if (proposal.musicAssetId) {
+    const music = host.getState().editorModel.assets.find(item => item.id === proposal.musicAssetId)
+    if (music && music.type === 'audio') {
+      const placedMusic = placeAudioAsset(host, music, {
+        trackIndex: firstUnlockedTrackIndex(timeline?.tracks, 'audio', AGENT_MUSIC_TRACK_INDEX),
+        startTime: start,
+        volume: AGENT_MUSIC_MIX_LEVEL,
+      })
+      extras.musicClipId = placedMusic.clipId
+      extras.musicAssetId = music.id
+      extras.musicVolume = AGENT_MUSIC_MIX_LEVEL
+    }
+  }
+
+  extras.pictureStart = start
+  extras.pictureEnd = pictureEnd
+  return extras
 }
 
 async function generateAndPlaceShot(
@@ -254,20 +390,24 @@ async function generateAndPlaceShot(
   shot: AgentAssemblyShot,
   startTime: number,
   isFirst: boolean,
+  previousStillId?: string,
 ): Promise<AgentAssemblyShotResult> {
   if (shot.assetId) {
     return placeExistingShot(host, proposal, shot, startTime)
   }
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
-  let imageAssetId = shot.imageAssetId
-  const wantStill = !proposal.skipStills && !shot.skipStill && !imageAssetId
+  const attachedStillId = resolveShotStillId(host, shot)
+  let imageAssetId = shot.skipStill || proposal.skipStills ? attachedStillId : undefined
+  const wantStill = !proposal.skipStills && !shot.skipStill
+  const referenceAssetId = attachedStillId ?? previousStillId
 
   if (wantStill) {
     const still = await executeGenerateTool(host, 'generate_image', {
       prompt: shot.prompt,
       destination: 'assets',
       confirmed: true,
+      ...(referenceAssetId ? { referenceAssetId } : {}),
     })
     if (still.ok === false) {
       return {
@@ -315,18 +455,17 @@ async function generateAndPlaceShot(
   let titleClipId: string | undefined
 
   if (shot.title) {
-    const beforeIds = new Set(
-      (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
-        ?? host.getState().editorModel.timelines[0])?.clips.map(item => item.id) ?? [],
+    titleClipId = addTitleClip(
+      host,
+      shot.title,
+      placedStart,
+      firstUnlockedTrackIndex(
+        (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+          ?? host.getState().editorModel.timelines[0])?.tracks,
+        'video',
+        AGENT_TITLE_TRACK_INDEX,
+      ),
     )
-    host.applyWithHistory(prev => host.actions.addTextClip(prev, {
-      style: { text: shot.title },
-      startTime: placedStart,
-      trackIndex: proposal.trackIndex,
-    }))
-    const created = (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
-      ?? host.getState().editorModel.timelines[0])?.clips.find(item => !beforeIds.has(item.id))
-    titleClipId = created?.id
   }
 
   return {
@@ -334,6 +473,7 @@ async function generateAndPlaceShot(
     ...(shot.title ? { title: shot.title } : {}),
     status: 'placed',
     assetId: typeof video.assetId === 'string' ? video.assetId : undefined,
+    stillAssetId: imageAssetId,
     clipId,
     start: placedStart,
     duration: placedDuration,
@@ -377,17 +517,17 @@ function placeExistingShot(
   let titleClipId: string | undefined
 
   if (shot.title) {
-    const titleBefore = new Set(
-      (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
-        ?? host.getState().editorModel.timelines[0])?.clips.map(item => item.id) ?? [],
+    titleClipId = addTitleClip(
+      host,
+      shot.title,
+      placedStart,
+      firstUnlockedTrackIndex(
+        (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
+          ?? host.getState().editorModel.timelines[0])?.tracks,
+        'video',
+        AGENT_TITLE_TRACK_INDEX,
+      ),
     )
-    host.applyWithHistory(prev => host.actions.addTextClip(prev, {
-      style: { text: shot.title },
-      startTime: placedStart,
-      trackIndex: proposal.trackIndex,
-    }))
-    titleClipId = (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
-      ?? host.getState().editorModel.timelines[0])?.clips.find(item => !titleBefore.has(item.id))?.id
   }
 
   return {
