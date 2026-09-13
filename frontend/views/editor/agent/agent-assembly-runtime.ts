@@ -1,5 +1,7 @@
 import type { Asset } from '../../../types/project-model.ts'
 import type { EditorState } from '../editor-state.ts'
+import { applyNarrationSync, scaleShotsToCoverDuration } from './agent-cut.ts'
+import { planFromAssembly, type AgentEditPlan } from './agent-plan.ts'
 import {
   parseReviewPreview,
   reviewDecisionFromAnswers,
@@ -45,6 +47,8 @@ export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentS
       trackIndex?: number
       duration?: number
     }) => EditorState
+    resizeClip: (state: EditorState, params: { clipId: string; edge: 'start' | 'end'; deltaTime: number }) => EditorState
+    setClipSpeed?: (state: EditorState, clipId: string, speed: number) => EditorState
   }
   refs?: AgentRefStore
 }
@@ -68,6 +72,8 @@ export interface AgentAssemblyMemory {
   setProgress: (progress: AgentAssemblyProgress | null) => void
   getReviewDecision: () => 'approve' | 'reject' | 'revise' | null
   setReviewDecision: (value: 'approve' | 'reject' | 'revise' | null) => void
+  getPlan?: () => AgentEditPlan | null
+  setPlan?: (plan: AgentEditPlan) => void
 }
 
 export interface AgentAssemblyShotResult {
@@ -200,8 +206,18 @@ export async function executeAssemblyTool(
 
   const resolved = resolveProposal(args, memory)
   if (!resolved.ok) return resolved.error
-  const proposal = resolved.proposal
+  let proposal = resolved.proposal
   if (proposal.shots.length === 0) return errorResult('Shot list is empty')
+  if (!memory.getPlan?.()) {
+    memory.setPlan?.(planFromAssembly({
+      goal: typeof args.script === 'string' ? args.script.slice(0, 160) : `Assemble ${proposal.kind}`,
+      shots: proposal.shots,
+      voiceover: proposal.voiceover,
+      voiceoverAssetId: proposal.voiceoverAssetId,
+      musicAssetId: proposal.musicAssetId,
+      openingTitle: proposal.openingTitle,
+    }))
+  }
 
   const confirmed = asBoolean(args.confirmed) || host.getApproveAll?.() === true
   if (!confirmed) {
@@ -288,6 +304,12 @@ export async function executeAssemblyTool(
     }
   } else if (existing.voiceoverAssetId) {
     voiceoverAsset = host.getState().editorModel.assets.find(item => item.id === existing.voiceoverAssetId)
+  }
+
+  if (!existing && voiceoverAsset?.duration && voiceoverAsset.duration > 0) {
+    const scaled = scaleShotsToCoverDuration(proposal.shots, voiceoverAsset.duration)
+    proposal = { ...proposal, shots: scaled }
+    memory.setProposal(proposal)
   }
 
   for (let index = startIndex; index < proposal.shots.length; index += 1) {
@@ -405,6 +427,9 @@ export async function executeAssemblyTool(
   }
 
   const mix = placeAssemblyMix(host, proposal, placed, voiceoverAsset)
+  const timing = voiceoverAsset
+    ? applyNarrationSync(host)
+    : null
 
   host.onProgress?.({
     toolName: 'assemble_shots',
@@ -421,6 +446,13 @@ export async function executeAssemblyTool(
     placed,
     checklist,
     ...mix,
+    ...(timing ? {
+      cut: timing.cut,
+      synced: timing.synced,
+      syncActions: timing.actions,
+      needsGenerate: timing.needsGenerate,
+      shortfall: timing.shortfall,
+    } : {}),
   }
 }
 

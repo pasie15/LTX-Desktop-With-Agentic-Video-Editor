@@ -169,7 +169,12 @@ export async function executeSpeechTool(
   if (!imported.ok) return imported.error
 
   if (destination === 'assets') {
-    return { ok: true, assetId: imported.asset.id, placed: false }
+    return {
+      ok: true,
+      assetId: imported.asset.id,
+      placed: false,
+      duration: imported.asset.duration ?? 0,
+    }
   }
 
   const state = host.getState()

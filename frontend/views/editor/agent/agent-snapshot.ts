@@ -10,7 +10,9 @@ import {
   selectSelectedGap,
   selectTimelines,
 } from '../editor-selectors'
+import { analyzeCut } from './agent-cut'
 import { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
+import type { AgentEditPlan } from './agent-plan'
 import type { AgentRef } from './agent-refs'
 import type { AgentProjectSnapshot } from './agent-types'
 
@@ -62,6 +64,7 @@ export interface BuildAgentSnapshotInput {
   selectedGapOverride?: TimelineGapSelection | null
   refs?: AgentRef[]
   approveAll?: boolean
+  plan?: AgentEditPlan | null
 }
 
 export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProjectSnapshot {
@@ -127,5 +130,24 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
       assetId: ref.assetId,
     })),
     approveAll: input.approveAll === true,
+    plan: input.plan
+      ? {
+          goal: input.plan.goal,
+          shots: input.plan.shots,
+          voStrategy: input.plan.voStrategy,
+          timing: input.plan.timing,
+          checks: input.plan.checks,
+        }
+      : null,
+    cut: (() => {
+      const cut = analyzeCut(state)
+      return {
+        ok: cut.ok,
+        pictureDuration: cut.pictureDuration,
+        voiceoverDuration: cut.voiceoverDuration,
+        delta: cut.delta,
+        mismatches: cut.mismatches.map(item => ({ kind: item.kind, delta: item.delta })),
+      }
+    })(),
   }
 }

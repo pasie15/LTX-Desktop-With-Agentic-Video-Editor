@@ -448,6 +448,204 @@ function fakeActions(): AgentEditorActions {
         },
       }
     },
+    setClipSpeed: (state, clipId, speed) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (item.id === clipId ? { ...item, speed } : item)),
+    })),
+    slipClip: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (
+        item.id === params.clipId
+          ? { ...item, trimStart: Math.max(0, item.trimStart + params.deltaTime), trimEnd: Math.max(0, item.trimEnd - params.deltaTime) }
+          : item
+      )),
+    })),
+    slideClip: (state, params) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (
+        item.id === params.clipId ? { ...item, startTime: Math.max(0, item.startTime + params.deltaTime) } : item
+      )),
+    })),
+    duplicateClips: (state, clipIds) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: [
+        ...timeline.clips,
+        ...timeline.clips.filter(item => clipIds.includes(item.id)).map(item => ({
+          ...item,
+          id: `${item.id}-copy`,
+          startTime: item.startTime + item.duration,
+        })),
+      ],
+    })),
+    addTrack: (state, kind) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      tracks: [
+        ...timeline.tracks,
+        { id: `track-${kind}-${timeline.tracks.length + 1}`, name: kind === 'audio' ? 'A3' : 'V4', muted: false, locked: false, kind },
+      ],
+    })),
+    deleteTrack: (state, trackId) => replaceActiveTimeline(state, timeline => {
+      const trackIndex = timeline.tracks.findIndex(track => track.id === trackId)
+      if (trackIndex < 0) return timeline
+      return {
+        ...timeline,
+        tracks: timeline.tracks.filter(track => track.id !== trackId),
+        clips: timeline.clips.filter(item => item.trackIndex !== trackIndex),
+      }
+    }),
+    renameTrack: (state, trackId, name) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      tracks: timeline.tracks.map(track => (track.id === trackId ? { ...track, name } : track)),
+    })),
+    toggleTrackLock: (state, trackId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      tracks: timeline.tracks.map(track => (track.id === trackId ? { ...track, locked: !track.locked } : track)),
+    })),
+    toggleTrackMute: (state, trackId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      tracks: timeline.tracks.map(track => (track.id === trackId ? { ...track, muted: !track.muted } : track)),
+    })),
+    setClipOpacity: (state, clipId, opacity) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (item.id === clipId ? { ...item, opacity } : item)),
+    })),
+    toggleClipMute: (state, clipId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (item.id === clipId ? { ...item, muted: !item.muted } : item)),
+    })),
+    toggleClipReverse: (state, clipId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (item.id === clipId ? { ...item, reversed: !item.reversed } : item)),
+    })),
+    addCrossDissolve: (state, leftClipId, rightClipId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => {
+        if (item.id === leftClipId) return { ...item, transitionOut: { type: 'dissolve', duration: 0.5 } }
+        if (item.id === rightClipId) return { ...item, transitionIn: { type: 'dissolve', duration: 0.5 } }
+        return item
+      }),
+    })),
+    removeCrossDissolve: (state, leftClipId, rightClipId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => {
+        if (item.id === leftClipId) return { ...item, transitionOut: { type: 'none', duration: 0.5 } }
+        if (item.id === rightClipId) return { ...item, transitionIn: { type: 'none', duration: 0.5 } }
+        return item
+      }),
+    })),
+    switchActiveTimeline: (state, timelineId) => ({
+      ...state,
+      editorModel: { ...state.editorModel, activeTimelineId: timelineId },
+    }),
+    renameTimeline: (state, timelineId, name) => ({
+      ...state,
+      editorModel: {
+        ...state.editorModel,
+        timelines: state.editorModel.timelines.map(timeline => (
+          timeline.id === timelineId ? { ...timeline, name } : timeline
+        )),
+      },
+    }),
+    deleteTimeline: (state, timelineId) => {
+      const timelines = state.editorModel.timelines.filter(timeline => timeline.id !== timelineId)
+      return {
+        ...state,
+        editorModel: {
+          ...state.editorModel,
+          timelines,
+          activeTimelineId: state.editorModel.activeTimelineId === timelineId
+            ? timelines[0]?.id ?? null
+            : state.editorModel.activeTimelineId,
+        },
+      }
+    },
+    duplicateTimeline: (state, timelineId) => {
+      const source = state.editorModel.timelines.find(timeline => timeline.id === timelineId)
+      if (!source) return state
+      const copy = { ...source, id: `${source.id}-copy`, name: `${source.name} Copy` }
+      return {
+        ...state,
+        editorModel: {
+          ...state.editorModel,
+          timelines: [...state.editorModel.timelines, copy],
+          activeTimelineId: copy.id,
+        },
+      }
+    },
+    setTimelineInPoint: (state, time) => ({
+      ...state,
+      session: {
+        ...state.session,
+        transport: {
+          ...state.session.transport,
+          timelineInOutMap: {
+            ...state.session.transport.timelineInOutMap,
+            [state.editorModel.activeTimelineId ?? 'tl1']: {
+              inPoint: time ?? null,
+              outPoint: state.session.transport.timelineInOutMap[state.editorModel.activeTimelineId ?? 'tl1']?.outPoint ?? null,
+            },
+          },
+        },
+      },
+    }),
+    setTimelineOutPoint: (state, time) => ({
+      ...state,
+      session: {
+        ...state.session,
+        transport: {
+          ...state.session.transport,
+          timelineInOutMap: {
+            ...state.session.transport.timelineInOutMap,
+            [state.editorModel.activeTimelineId ?? 'tl1']: {
+              inPoint: state.session.transport.timelineInOutMap[state.editorModel.activeTimelineId ?? 'tl1']?.inPoint ?? null,
+              outPoint: time ?? null,
+            },
+          },
+        },
+      },
+    }),
+    clearTimelineMarks: (state) => ({
+      ...state,
+      session: {
+        ...state.session,
+        transport: {
+          ...state.session.transport,
+          timelineInOutMap: {
+            ...state.session.transport.timelineInOutMap,
+            [state.editorModel.activeTimelineId ?? 'tl1']: { inPoint: null, outPoint: null },
+          },
+        },
+      },
+    }),
+    updateSubtitle: (state, subtitleId, patch) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      subtitles: timeline.subtitles.map(subtitle => (
+        subtitle.id === subtitleId ? { ...subtitle, ...patch } : subtitle
+      )),
+    })),
+    deleteSubtitle: (state, subtitleId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      subtitles: timeline.subtitles.filter(subtitle => subtitle.id !== subtitleId),
+    })),
+    addAdjustmentLayer: (state, params = {}) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: [
+        ...timeline.clips,
+        clip({
+          id: `adj-${timeline.clips.length + 1}`,
+          startTime: params.startTime ?? 0,
+          duration: params.duration ?? 10,
+          trackIndex: params.trackIndex ?? 0,
+          type: 'adjustment',
+        }),
+      ],
+    })),
+    unlinkClipGroup: (state, clipId) => replaceActiveTimeline(state, timeline => ({
+      ...timeline,
+      clips: timeline.clips.map(item => (
+        item.id === clipId ? { ...item, linkedClipIds: [] } : item
+      )),
+    })),
   }
 }
 
@@ -1097,6 +1295,7 @@ describe('refs speech and mix', () => {
     const clips = activeClips(host.getState())
     assert.equal(clips[0]?.trackIndex, 3)
     assert.equal(clips[0]?.type, 'audio')
+    assert.equal(result.duration, 8)
   })
 
   it('sets clip volume for a basic mix', async () => {
@@ -1156,6 +1355,98 @@ describe('refs speech and mix', () => {
     assert.equal(done.ok, true)
     assert.equal(done.needsReview, undefined)
     assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 2)
+  })
+})
+
+describe('plan cut and nle tools', () => {
+  it('stores an internal plan and does not mutate the timeline', async () => {
+    const host = createHost(makeState())
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('plan_edit', {
+      goal: 'Short film about a paper boy',
+      shots: [{ id: 's1', prompt: 'stoop at dawn', duration: 5, title: 'STOOP' }],
+      voStrategy: 'ElevenLabs narration',
+      timing: 'VO drives picture',
+      checks: ['check_cut'],
+    })
+    assert.equal(result.ok, true)
+    assert.equal((result.plan as { goal: string }).goal, 'Short film about a paper boy')
+    assert.equal(executor.getLastPlan()?.timing, 'VO drives picture')
+    assert.equal(activeClips(host.getState()).length, 1)
+  })
+
+  it('check_cut flags a 10s VO on 4s of picture', async () => {
+    const host = createHost(makeState({
+      clips: [
+        clip({ id: 'pic', startTime: 0, duration: 4, trackIndex: 0, type: 'video' }),
+        clip({ id: 'vo', startTime: 0, duration: 10, trackIndex: 3, type: 'audio', assetId: 'vo' }),
+      ],
+      assets: [videoAsset('asset-1', 4), audioAsset('vo', 10)],
+    }))
+    const executor = new AgentToolExecutor(host)
+    const cut = await executor.execute('check_cut', {})
+    assert.equal(cut.ok, false)
+    assert.equal(cut.pictureDuration, 4)
+    assert.equal(cut.voiceoverDuration, 10)
+    assert.ok((cut.mismatches as Array<{ kind: string }>).some(item => item.kind === 'picture_short'))
+  })
+
+  it('sync_narration extends picture to match voiceover', async () => {
+    const host = createHost(makeState({
+      clips: [
+        clip({ id: 'pic', startTime: 0, duration: 4, trackIndex: 0, type: 'video' }),
+        clip({ id: 'vo', startTime: 0, duration: 10, trackIndex: 3, type: 'audio', assetId: 'vo' }),
+      ],
+      assets: [videoAsset('asset-1', 4), audioAsset('vo', 10)],
+    }))
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('sync_narration', {})
+    assert.equal(result.ok, true)
+    assert.equal(result.synced, true)
+    assert.equal(result.pictureDuration, 10)
+    assert.equal(result.voiceoverDuration, 10)
+    assert.equal(activeClips(host.getState()).find(item => item.id === 'pic')?.duration, 10)
+  })
+
+  it('exposes speed slip and add_track', async () => {
+    const host = createHost(makeState({ selectedClipIds: ['c1'] }))
+    const executor = new AgentToolExecutor(host)
+    const sped = await executor.execute('set_clip_speed', { clipId: 'c1', speed: 0.8 })
+    assert.equal(sped.ok, true)
+    assert.equal(activeClips(host.getState()).find(item => item.id === 'c1')?.speed, 0.8)
+    const slipped = await executor.execute('slip_clip', { clipId: 'c1', deltaTime: 0.2 })
+    assert.equal(slipped.ok, true)
+    const track = await executor.execute('add_track', { kind: 'audio' })
+    assert.equal(track.ok, true)
+    const tracks = host.getState().editorModel.timelines[0]?.tracks ?? []
+    assert.ok(tracks.some(item => item.name === 'A3'))
+  })
+
+  it('assembles a short picture under a long VO then syncs the cut', async () => {
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [videoAsset('hero', 4), audioAsset('vo', 10)],
+    }), { generation: fakeJobs(), approveAll: true })
+    const executor = new AgentToolExecutor(host)
+    await executor.execute('plan_edit', {
+      goal: 'Fit the 10s narration',
+      voStrategy: 'Existing VO asset vo',
+      timing: 'VO drives picture',
+      checks: ['check_cut'],
+    })
+    const result = await executor.execute('assemble_shots', {
+      shots: [{ id: 's1', prompt: 'hero clip', duration: 4, assetId: 'hero' }],
+      voiceoverAssetId: 'vo',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    const picture = activeClips(host.getState()).filter(item => item.type === 'video')
+    const vo = activeClips(host.getState()).find(item => item.assetId === 'vo')
+    assert.ok(vo)
+    assert.ok((picture[0]?.duration ?? 0) >= 9.6)
+    const cut = await executor.execute('check_cut', {})
+    assert.equal(cut.ok, true)
   })
 })
 

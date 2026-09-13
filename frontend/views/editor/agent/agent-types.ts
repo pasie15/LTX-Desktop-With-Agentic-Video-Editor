@@ -1,4 +1,4 @@
-export const MAX_AGENT_MODEL_TURNS = 16
+export const MAX_AGENT_MODEL_TURNS = 24
 export const AGENT_TIMELINE_WINDOW_S = 30
 export const AGENT_ADD_MENTION_EVENT = 'agent-add-mention'
 
@@ -163,6 +163,20 @@ export interface AgentProjectSnapshot {
     assetId: string
   }>
   approveAll: boolean
+  plan?: {
+    goal: string
+    shots: Array<{ id?: string; prompt?: string; duration?: number; title?: string }>
+    voStrategy: string
+    timing: string
+    checks: string[]
+  } | null
+  cut?: {
+    ok: boolean
+    pictureDuration: number
+    voiceoverDuration: number
+    delta: number
+    mismatches: Array<{ kind: string; delta: number }>
+  }
 }
 
 export interface AgentGenerationProgress {
