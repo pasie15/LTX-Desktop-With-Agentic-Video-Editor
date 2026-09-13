@@ -96,13 +96,17 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
   }
 
   const isSlotOccupied = async () => {
-    if (inFlight || input.isBusy()) return true
+    if (inFlight) return true
+    const localBusy = input.isBusy()
     try {
-      const progress = await ApiClient.getGenerationProgress()
-      if (!progress.ok) return true
+      const progress = await Promise.race([
+        ApiClient.getGenerationProgress(),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 2000)),
+      ])
+      if (!progress || !progress.ok) return localBusy
       return progress.data.status === 'running'
     } catch {
-      return true
+      return localBusy
     }
   }
 

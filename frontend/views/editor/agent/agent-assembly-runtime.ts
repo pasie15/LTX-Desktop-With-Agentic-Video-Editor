@@ -283,7 +283,7 @@ async function generateAndPlaceShot(
   const video = await executeGenerateTool(host, 'generate_video', {
     prompt: shot.prompt,
     model: proposal.model,
-    duration: shot.duration,
+    duration: Math.max(shot.duration, 5),
     resolution: proposal.resolution,
     audio: proposal.audio,
     ...(imageAssetId ? { imageAssetId } : {}),

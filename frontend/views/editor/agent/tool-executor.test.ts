@@ -847,7 +847,7 @@ describe('assembly tool executor', () => {
     assert.equal(videos.length, 2)
     assert.equal(titles.length, 2)
     assert.equal(videos[0]?.startTime, 0)
-    assert.equal(videos[1]?.startTime, 4)
+    assert.equal(videos[1]?.startTime, 5)
     assert.ok(progress.some(status => status.includes('1/2 generating')))
   })
 

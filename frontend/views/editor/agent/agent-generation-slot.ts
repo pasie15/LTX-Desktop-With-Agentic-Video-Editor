@@ -12,14 +12,11 @@ export async function waitForGenerationSlot(input: {
   onWaiting?: () => void
 }): Promise<GenerationSlotWaitResult> {
   const intervalMs = input.intervalMs ?? 250
-  let announced = false
+  input.onWaiting?.()
 
   while (await input.isOccupied()) {
     if (input.signal?.aborted) return { ok: false, cancelled: true }
-    if (!announced) {
-      announced = true
-      input.onWaiting?.()
-    }
+    input.onWaiting?.()
     await sleep(intervalMs, input.signal)
   }
 

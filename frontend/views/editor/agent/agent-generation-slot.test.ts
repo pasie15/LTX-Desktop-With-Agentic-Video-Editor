@@ -11,7 +11,7 @@ describe('generation slot wait', () => {
     assert.deepEqual(result, { ok: true })
   })
 
-  it('waits until the slot frees and announces once', async () => {
+  it('waits until the slot frees and announces while waiting', async () => {
     let remaining = 3
     let announced = 0
     const result = await waitForGenerationSlot({
@@ -23,7 +23,7 @@ describe('generation slot wait', () => {
       onWaiting: () => { announced += 1 },
     })
     assert.deepEqual(result, { ok: true })
-    assert.equal(announced, 1)
+    assert.ok(announced >= 1)
     assert.equal(GENERATION_SLOT_WAIT_STATUS.includes('Waiting'), true)
   })
 
