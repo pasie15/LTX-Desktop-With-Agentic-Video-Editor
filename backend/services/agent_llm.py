@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import uuid4
 
-from api_types import AgentMessagePayload, AgentToolDeclarationPayload
+from api_types import AgentMessagePartPayload, AgentMessagePayload, AgentToolDeclarationPayload
 from _routes._errors import HTTPError
 from services.anthropic_messages_client import (
     anthropic_messages_from_agent,
@@ -64,7 +64,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="openai",
         label="OpenAI (ChatGPT)",
         api_kind="openai",
-        default_model="gpt-4o",
+        default_model="gpt-5.6-sol",
         default_base_url="https://api.openai.com/v1",
         key_url="https://platform.openai.com/api-keys",
         supports_oauth=True,
@@ -75,7 +75,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="anthropic",
         label="Anthropic",
         api_kind="anthropic",
-        default_model="claude-sonnet-4-5",
+        default_model="claude-sonnet-5",
         default_base_url="https://api.anthropic.com",
         key_url="https://console.anthropic.com/settings/keys",
         supports_oauth=True,
@@ -84,7 +84,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="openrouter",
         label="OpenRouter",
         api_kind="openai",
-        default_model="openai/gpt-4o",
+        default_model="openai/gpt-5.6-sol",
         default_base_url="https://openrouter.ai/api/v1",
         key_url="https://openrouter.ai/keys",
     ),
@@ -100,7 +100,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="minimax",
         label="MiniMax",
         api_kind="openai",
-        default_model="MiniMax-M2",
+        default_model="MiniMax-M3",
         default_base_url="https://api.minimax.io/v1",
         key_url="https://platform.minimax.io/user-center/basic-information/interface-key",
         supports_oauth=True,
@@ -111,7 +111,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="moonshot",
         label="Moonshot / Kimi",
         api_kind="openai",
-        default_model="kimi-k2-0905-preview",
+        default_model="kimi-k3",
         default_base_url="https://api.moonshot.ai/v1",
         key_url="https://platform.moonshot.ai/console/api-keys",
         supports_oauth=True,
@@ -121,7 +121,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="xai",
         label="xAI (Grok)",
         api_kind="openai",
-        default_model="grok-4",
+        default_model="grok-4.6",
         default_base_url="https://api.x.ai/v1",
         key_url="https://console.x.ai/team/default/api-keys",
         supports_oauth=True,
@@ -138,7 +138,7 @@ AGENT_LLM_CATALOG: tuple[AgentLlmCatalogEntry, ...] = (
         kind="deepseek",
         label="DeepSeek",
         api_kind="openai",
-        default_model="deepseek-chat",
+        default_model="deepseek-v4-flash",
         default_base_url="https://api.deepseek.com",
         key_url="https://platform.deepseek.com/api_keys",
     ),
@@ -298,6 +298,38 @@ def missing_key_code(resolved: ResolvedAgentLlm) -> str:
     if resolved.kind == "gemini":
         return "GEMINI_API_KEY_MISSING"
     return "AGENT_LLM_KEY_MISSING"
+
+
+def require_resolved_agent_llm(settings: AppSettings, model_override: str | None = None) -> ResolvedAgentLlm:
+    resolved = resolve_agent_llm(settings, model_override)
+    if not resolved.api_key:
+        raise HTTPError(400, missing_key_code(resolved))
+    return resolved
+
+
+def complete_agent_llm_text(
+    http: HTTPClient,
+    resolved: ResolvedAgentLlm,
+    *,
+    system_instruction: str,
+    user_text: str,
+) -> str:
+    result = run_agent_llm_turn(
+        http,
+        resolved,
+        messages=[
+            AgentMessagePayload(
+                role="user",
+                parts=[AgentMessagePartPayload(type="text", text=user_text)],
+            )
+        ],
+        available_tools=[],
+        system_instruction=system_instruction,
+    )
+    text = (result.text or "").strip()
+    if not text:
+        raise HTTPError(502, "AGENT_LLM_EMPTY_RESPONSE")
+    return text
 
 
 def run_agent_llm_turn(

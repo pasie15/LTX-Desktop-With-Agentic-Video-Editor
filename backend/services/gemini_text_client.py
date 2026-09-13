@@ -33,7 +33,7 @@ _gemini_models_list_cache_lock = Lock()
 
 # models.list returns every generateContent endpoint, including branded aliases
 # (nano-banana-pro, lyria-*, deep-research-*) whose descriptions are often empty.
-# Enhance / gap suggestions are Gemini-API *chat* models (text-out, optional image input).
+# Gemini Agent-provider Enhance / gap suggestions are *chat* models (text-out, optional image input).
 # Hosted Gemma shares generateContent but returns empty text on this system prompt;
 # local Enhance already runs Gemma on-device.
 _TEXT_MODEL_ID_PREFIXES = ("gemini-",)

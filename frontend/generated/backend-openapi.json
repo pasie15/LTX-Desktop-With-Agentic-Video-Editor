@@ -95,6 +95,95 @@
         "title": "AgentAskUserQuestionPayload",
         "type": "object"
       },
+      "AgentLlmModelOptionPayload": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "title": "AgentLlmModelOptionPayload",
+        "type": "object"
+      },
+      "AgentLlmModelsRequest": {
+        "properties": {
+          "apiKey": {
+            "default": "",
+            "title": "Apikey",
+            "type": "string"
+          },
+          "baseUrl": {
+            "default": "",
+            "title": "Baseurl",
+            "type": "string"
+          },
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "providerId": {
+            "default": "",
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "title": "AgentLlmModelsRequest",
+        "type": "object"
+      },
+      "AgentLlmModelsResponse": {
+        "properties": {
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/AgentLlmModelOptionPayload"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "resolvedModel": {
+            "default": "",
+            "title": "Resolvedmodel",
+            "type": "string"
+          },
+          "source": {
+            "default": "catalog",
+            "enum": [
+              "provider",
+              "catalog"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "title": "AgentLlmModelsResponse",
+        "type": "object"
+      },
       "AgentLlmOAuthCancelRequest": {
         "properties": {
           "sessionId": {
@@ -4946,6 +5035,57 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/llm/models": {
+      "post": {
+        "operationId": "route_agent_llm_models_api_agent_llm_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLlmModelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLlmModelsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Agent Llm Models",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/llm/oauth/cancel": {
       "post": {
         "operationId": "route_agent_llm_oauth_cancel_api_agent_llm_oauth_cancel_post",

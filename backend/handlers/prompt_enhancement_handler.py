@@ -15,12 +15,15 @@ from handlers.generation_handler import GenerationHandler
 from handlers.pipelines_handler import PipelinesHandler
 from handlers.text_handler import TextHandler
 from server_utils.media_validation import normalize_optional_path, validate_image_file
+from services.agent_llm import complete_agent_llm_text, require_resolved_agent_llm
 from services.gemini_text_client import resolve_gemini_model
-from services.interfaces import PromptEnhancerPipeline
+from services.interfaces import HTTPClient, PromptEnhancerPipeline
 from services.lora_catalog import LoraCatalogProvider
 from services.prompt_enhancement import (
     build_audio_visual_caption_system_prompt,
     build_conditioning_system_prompt,
+    build_default_free_rewrite_system_prompt,
+    build_i2v_user_prompt_text,
     build_ic_lora_enhancement_system_prompt,
     build_image_edit_system_prompt,
     build_image_generation_system_prompt,
@@ -60,6 +63,7 @@ class PromptEnhancementHandler(StateHandlerBase):
         prompt_enhancer_pipeline_class: type[PromptEnhancerPipeline],
         gemini_pipeline: GeminiPromptEnhancerPipeline,
         config: RuntimeConfig,
+        http: HTTPClient,
     ) -> None:
         super().__init__(state, lock, config)
         self._generation = generation_handler
@@ -68,6 +72,7 @@ class PromptEnhancementHandler(StateHandlerBase):
         self._lora_catalog_provider = lora_catalog_provider
         self._prompt_enhancer_pipeline_class = prompt_enhancer_pipeline_class
         self._gemini_pipeline = gemini_pipeline
+        self._http = http
 
     def _random_seed(self) -> int:
         return random.randint(0, _MAX_ENHANCE_SEED)
@@ -87,8 +92,8 @@ class PromptEnhancementHandler(StateHandlerBase):
                 gemma_root = self._text_handler.resolve_prompt_enhancer_root_if_downloaded()
                 if gemma_root is None:
                     raise HTTPError(409, "LOCAL_TEXT_ENCODER_NOT_AVAILABLE")
-            elif not self.state.app_settings.gemini_api_key:
-                raise HTTPError(400, "GEMINI_API_KEY_MISSING")
+            else:
+                require_resolved_agent_llm(self.state.app_settings)
 
             generation_id = uuid.uuid4().hex[:8]
             self._generation.start_api_generation(generation_id)
@@ -261,28 +266,13 @@ class PromptEnhancementHandler(StateHandlerBase):
         seed = self._random_seed()
         first_path = image_path or (keyframes[0][0] if keyframes else None)
         if req.provider == "api":
-            resolved_model = resolve_gemini_model(self.state.app_settings.gemini_model)
-            logger.info("Enhancing prompt via Gemini API (%s)", resolved_model)
-            api_key = self.state.app_settings.gemini_api_key
-            if first_path is not None:
-                return self._gemini_pipeline.enhance_i2v(
-                    req.prompt,
-                    first_path,
-                    system_prompt=system_prompt,
-                    seed=seed,
-                    api_key=api_key,
-                    model=resolved_model,
-                    last_image_path=last_image_path,
-                    keyframes=keyframes,
-                    duration=req.duration,
-                    fps=req.fps,
-                )
-            return self._gemini_pipeline.enhance_t2v(
-                req.prompt,
-                system_prompt=system_prompt,
-                seed=seed,
-                api_key=api_key,
-                model=resolved_model,
+            return self._enhance_via_agent_llm(
+                req,
+                system_prompt,
+                seed,
+                first_path=first_path,
+                last_image_path=last_image_path,
+                keyframes=keyframes,
             )
 
         logger.info("Enhancing prompt via local Gemma")
@@ -300,6 +290,63 @@ class PromptEnhancementHandler(StateHandlerBase):
                 fps=req.fps,
             )
         return pipeline.enhance_t2v(req.prompt, system_prompt=system_prompt, seed=seed)
+
+    def _enhance_via_agent_llm(
+        self,
+        req: EnhancePromptRequest,
+        system_prompt: str | None,
+        seed: int,
+        *,
+        first_path: str | None,
+        last_image_path: str | None,
+        keyframes: list[KeyframeStill] | None,
+    ) -> str:
+        resolved = require_resolved_agent_llm(self.state.app_settings)
+        if resolved.api_kind == "gemini":
+            resolved_model = resolve_gemini_model(resolved.model)
+            logger.info("Enhancing prompt via Agent LLM Gemini (%s)", resolved_model)
+            if first_path is not None:
+                return self._gemini_pipeline.enhance_i2v(
+                    req.prompt,
+                    first_path,
+                    system_prompt=system_prompt,
+                    seed=seed,
+                    api_key=resolved.api_key,
+                    model=resolved_model,
+                    last_image_path=last_image_path,
+                    keyframes=keyframes,
+                    duration=req.duration,
+                    fps=req.fps,
+                )
+            return self._gemini_pipeline.enhance_t2v(
+                req.prompt,
+                system_prompt=system_prompt,
+                seed=seed,
+                api_key=resolved.api_key,
+                model=resolved_model,
+            )
+
+        logger.info("Enhancing prompt via Agent LLM (%s / %s)", resolved.kind, resolved.model)
+        resolved_system = system_prompt or build_default_free_rewrite_system_prompt()
+        user_text = req.prompt
+        if first_path is not None:
+            user_text = build_i2v_user_prompt_text(
+                req.prompt,
+                has_last=last_image_path is not None,
+                keyframe_count=len(keyframes) if keyframes else 0,
+                duration=req.duration,
+                fps=req.fps,
+            )
+            user_text += (
+                "\n\nReference stills are available in the editor. "
+                "Rewrite from this text context."
+            )
+        return complete_agent_llm_text(
+            self._http,
+            resolved,
+            system_instruction=resolved_system,
+            user_text=user_text,
+        )
 
     def _validated_keyframes(self, req: EnhancePromptRequest) -> list[KeyframeStill] | None:
         if req.mediaType == "image" or not req.keyframes:
@@ -325,14 +372,13 @@ class PromptEnhancementHandler(StateHandlerBase):
         seed = self._random_seed()
         try:
             if req.provider == "api":
-                resolved_model = resolve_gemini_model(self.state.app_settings.gemini_model)
-                logger.info("Enhancing prompt via Gemini API (%s)", resolved_model)
-                raw = self._gemini_pipeline.enhance_t2v(
-                    req.prompt,
-                    system_prompt=system_prompt,
-                    seed=seed,
-                    api_key=self.state.app_settings.gemini_api_key,
-                    model=resolved_model,
+                raw = self._enhance_via_agent_llm(
+                    req,
+                    system_prompt,
+                    seed,
+                    first_path=None,
+                    last_image_path=None,
+                    keyframes=None,
                 )
             else:
                 logger.info("Enhancing prompt via local Gemma")

@@ -172,7 +172,7 @@ Create an API key in the [fal dashboard](https://fal.ai/dashboard/keys).
 
 ### Gemini API key (optional)
 
-Used for AI prompt suggestions (timeline gap fill) and, as an alternative to the local text encoder, for the **Enhance** prompt button's "API" mode — the same catalog-aware prompt rewriting, without needing the Local Text Encoder downloaded. When enabled, prompt context and frames/reference images may be sent to Google Gemini.
+Used when Gemini is the selected Agent provider. Timeline gap-fill suggestions and the **Enhance (API)** prompt button use whichever Agent LLM is selected in Settings (API key or Connect), not Gemini only. Local Enhance still uses the on-device Gemma text encoder. When Gemini is selected, prompt context and frames/reference images may be sent to Google Gemini.
 
 ## Architecture
 

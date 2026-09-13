@@ -763,7 +763,7 @@ class TestApiProvider:
         r = client.post("/api/enhance-prompt", json={"prompt": "a cat", "provider": "api"})
         assert r.status_code == 200
         assert any(
-            record.getMessage() == f"Enhancing prompt via Gemini API ({DEFAULT_GEMINI_MODEL})"
+            record.getMessage() == f"Enhancing prompt via Agent LLM Gemini ({DEFAULT_GEMINI_MODEL})"
             for record in caplog.records
         )
 
@@ -966,6 +966,35 @@ class TestApiProvider:
     def test_missing_gemini_key_rejected(self, client):
         r = client.post("/api/enhance-prompt", json={"prompt": "x", "provider": "api"})
         assert_http_error(r, status_code=400, code="GEMINI_API_KEY_MISSING")
+
+    def test_api_enhance_uses_selected_openai_provider(self, client, test_state):
+        from state.app_settings import AgentLlmProviderSettings
+
+        test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+        test_state.state.app_settings.agent_llm_providers = [
+            AgentLlmProviderSettings(id="prov_oai", kind="openai", api_key="sk-test", model="gpt-5.6-sol"),
+        ]
+        test_state.http.queue(
+            "post",
+            FakeResponse(
+                json_payload={"choices": [{"message": {"content": "a vivid fox in snow"}}]}
+            ),
+        )
+        r = client.post("/api/enhance-prompt", json={"prompt": "a fox", "provider": "api"})
+        assert r.status_code == 200
+        assert r.json()["enhancedPrompt"] == "a vivid fox in snow"
+        assert test_state.http.calls[-1].url == "https://api.openai.com/v1/chat/completions"
+        assert test_state.http.calls[-1].headers["Authorization"] == "Bearer sk-test"
+
+    def test_missing_selected_agent_llm_key_rejected(self, client, test_state):
+        from state.app_settings import AgentLlmProviderSettings
+
+        test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+        test_state.state.app_settings.agent_llm_providers = [
+            AgentLlmProviderSettings(id="prov_oai", kind="openai", model="gpt-4o"),
+        ]
+        r = client.post("/api/enhance-prompt", json={"prompt": "x", "provider": "api"})
+        assert_http_error(r, status_code=400, code="AGENT_LLM_KEY_MISSING")
 
     def test_invalid_gemini_key_returns_distinct_code(self, client, test_state):
         test_state.state.app_settings.gemini_api_key = "key"

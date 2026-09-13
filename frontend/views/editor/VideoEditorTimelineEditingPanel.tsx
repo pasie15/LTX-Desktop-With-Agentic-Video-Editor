@@ -27,6 +27,7 @@ import { GapGenerationModal } from './GapGenerationModal'
 import { ClipContextMenu, type ClipContextMenuState } from './ClipContextMenu'
 import type { TimelineClip, Track, SubtitleClip, Asset, TextOverlayStyle } from '../../types/project-model'
 import { ApiClient } from '../../lib/api-client'
+import { isAgentLlmKeyError } from '../../lib/agent-llm'
 import { pathToFileUrl } from '../../lib/file-url'
 import {
   areVideoGenerationSettingsEquivalent,
@@ -799,9 +800,9 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
         signal: abortController.signal,
       })
       if (!result.ok) {
-        const isApiKeyError = result.status === 401 || result.status === 403
+        const isApiKeyError = isAgentLlmKeyError(result.error.code)
+          || result.status === 401 || result.status === 403
           || JSON.stringify(result.error).toLowerCase().includes('api_key')
-          || JSON.stringify(result.error).toLowerCase().includes('gemini')
           || JSON.stringify(result.error).toLowerCase().includes('no api key')
           || JSON.stringify(result.error).toLowerCase().includes('api key')
         if (isApiKeyError) {

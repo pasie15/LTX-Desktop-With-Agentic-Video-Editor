@@ -1060,8 +1060,8 @@ class EnhancePromptRequest(BaseModel):
     duration: int | None = Field(default=None, gt=0)
     fps: int | None = Field(default=None, gt=0)
     # "local" runs the on-device Gemma text encoder (default, matches every existing caller);
-    # "api" calls Gemini's hosted API instead — no local checkpoint required, gated on
-    # AppSettings.gemini_api_key being set.
+    # "api" calls the selected Agent LLM provider (API key or OAuth) — no local checkpoint
+    # required. Gemini stays available when it is the selected Agent provider.
     provider: Literal["local", "api"] = "local"
     # "video" (default, matches every existing caller) routes through the video-catalog LoRA/
     # IC-LoRA/conditioning-type selection below. "image" is Z-Image-Turbo generation/editing —
@@ -1308,3 +1308,26 @@ class AgentLlmOAuthDisconnectRequest(BaseModel):
 
 class AgentLlmOAuthOkResponse(BaseModel):
     status: Literal["ok"] = "ok"
+
+
+class AgentLlmModelsRequest(BaseModel):
+    providerId: str = ""
+    kind: str = ""
+    apiKey: str = ""
+    baseUrl: str = ""
+    model: str = ""
+
+
+class AgentLlmModelOptionPayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    id: str
+    displayName: str
+    description: str = ""
+
+
+class AgentLlmModelsResponse(BaseModel):
+    model_config = ConfigDict(strict=True)
+    models: list[AgentLlmModelOptionPayload]
+    resolvedModel: str = ""
+    source: Literal["provider", "catalog"] = "catalog"
+    error: str = ""

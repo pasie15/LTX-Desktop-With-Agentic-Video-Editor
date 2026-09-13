@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/agent/llm/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Agent Llm Models */
+        post: operations["route_agent_llm_models_api_agent_llm_models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/llm/oauth/cancel": {
         parameters: {
             query?: never;
@@ -855,6 +872,67 @@ export interface components {
             options?: string[] | null;
             /** Prompt */
             prompt: string;
+        };
+        /** AgentLlmModelOptionPayload */
+        AgentLlmModelOptionPayload: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Displayname */
+            displayName: string;
+            /** Id */
+            id: string;
+        };
+        /** AgentLlmModelsRequest */
+        AgentLlmModelsRequest: {
+            /**
+             * Apikey
+             * @default
+             */
+            apiKey: string;
+            /**
+             * Baseurl
+             * @default
+             */
+            baseUrl: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Providerid
+             * @default
+             */
+            providerId: string;
+        };
+        /** AgentLlmModelsResponse */
+        AgentLlmModelsResponse: {
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Models */
+            models: components["schemas"]["AgentLlmModelOptionPayload"][];
+            /**
+             * Resolvedmodel
+             * @default
+             */
+            resolvedModel: string;
+            /**
+             * Source
+             * @default catalog
+             * @enum {string}
+             */
+            source: "provider" | "catalog";
         };
         /** AgentLlmOAuthCancelRequest */
         AgentLlmOAuthCancelRequest: {
@@ -2666,6 +2744,48 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    route_agent_llm_models_api_agent_llm_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentLlmModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLlmModelsResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
     route_agent_llm_oauth_cancel_api_agent_llm_oauth_cancel_post: {
         parameters: {
             query?: never;

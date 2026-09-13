@@ -7,9 +7,20 @@ import logging
 from threading import RLock
 from typing import TYPE_CHECKING, cast
 
-from api_types import GeminiModelsResponsePayload, LTXLocalModelId
+from api_types import (
+    AgentLlmModelsRequest,
+    AgentLlmModelsResponse,
+    GeminiModelsResponsePayload,
+    LTXLocalModelId,
+)
 from _routes._errors import HTTPError
-from state.app_settings import AppSettings, UpdateSettingsRequest
+from state.app_settings import (
+    AgentLlmAuthMode,
+    AgentLlmProviderKind,
+    AppSettings,
+    UpdateSettingsRequest,
+    provider_has_oauth,
+)
 from handlers._settings_utils import (
     collect_changed_paths,
     deep_merge_dicts,
@@ -18,7 +29,8 @@ from handlers._settings_utils import (
     strip_none_values,
 )
 from handlers.base import StateHandlerBase, with_state_lock
-from services.agent_llm import merge_agent_llm_providers
+from services.agent_llm import catalog_entry, merge_agent_llm_providers
+from services.agent_llm_models import list_agent_llm_models
 from services.gemini_text_client import (
     is_text_to_text_gemini_model,
     list_gemini_generate_content_models,
@@ -134,6 +146,55 @@ class SettingsHandler(StateHandlerBase):
             include_id=resolved_model,
         )
         return GeminiModelsResponsePayload(models=models, resolvedModel=resolved_model)
+
+    def list_agent_llm_models(self, req: AgentLlmModelsRequest) -> AgentLlmModelsResponse:
+        settings = self.get_settings_snapshot()
+        kind = req.kind.strip()
+        provider_id = req.providerId.strip()
+        api_key = req.apiKey.strip()
+        base_url = req.baseUrl.strip()
+        include_id = req.model.strip()
+        auth_mode = "api_key"
+        oauth_account_id = ""
+
+        if provider_id:
+            provider = next(
+                (item for item in settings.agent_llm_providers if item.id == provider_id),
+                None,
+            )
+            if provider is None:
+                raise HTTPError(400, "AGENT_LLM_PROVIDER_INVALID")
+            kind = provider.kind
+            include_id = include_id or provider.model
+            if provider_has_oauth(provider):
+                api_key = api_key or provider.oauth_access_token
+                auth_mode = "oauth"
+                oauth_account_id = provider.oauth_account_id
+            else:
+                api_key = api_key or provider.api_key
+            base_url = base_url or provider.base_url
+            if kind == "gemini" and not api_key:
+                api_key = settings.gemini_api_key
+        elif not kind:
+            kind = "gemini"
+            include_id = include_id or settings.gemini_model
+        if kind == "gemini" and not api_key:
+            api_key = settings.gemini_api_key
+
+        try:
+            catalog_entry(cast(AgentLlmProviderKind, kind))
+        except KeyError as exc:
+            raise HTTPError(400, "AGENT_LLM_PROVIDER_INVALID") from exc
+
+        return list_agent_llm_models(
+            self._http,
+            kind=cast(AgentLlmProviderKind, kind),
+            api_key=api_key,
+            base_url=base_url,
+            include_id=include_id,
+            auth_mode=cast(AgentLlmAuthMode, auth_mode),
+            oauth_account_id=oauth_account_id,
+        )
 
     def _trim_prompt_cache(self) -> None:
         te = self.state.text_encoder

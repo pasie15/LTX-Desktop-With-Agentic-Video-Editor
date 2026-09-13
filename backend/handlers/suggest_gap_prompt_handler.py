@@ -1,4 +1,4 @@
-"""Gap prompt suggestion handler (Gemini-powered)."""
+"""Gap prompt suggestion handler (selected Agent LLM)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from api_types import (
 from _routes._errors import HTTPError
 from handlers.base import StateHandlerBase
 from server_utils.media_validation import image_mime_type, normalize_optional_path, validate_image_file
+from services.agent_llm import complete_agent_llm_text, require_resolved_agent_llm
 from services.gemini_text_client import (
     apply_gemini_thinking_config,
     call_gemini_generate_content,
@@ -65,9 +66,7 @@ class SuggestGapPromptHandler(StateHandlerBase):
         if not before_frame and not after_frame and not before_prompt and not after_prompt:
             raise HTTPError(400, "At least one neighboring frame or prompt is required")
 
-        gemini_api_key = self.state.app_settings.gemini_api_key
-        if not gemini_api_key:
-            raise HTTPError(400, "GEMINI_API_KEY_MISSING")
+        resolved = require_resolved_agent_llm(self.state.app_settings)
 
         is_image_gen = mode == "text-to-image"
         is_image_to_video = mode == "image-to-video"
@@ -110,6 +109,43 @@ class SuggestGapPromptHandler(StateHandlerBase):
             context_text += "A reference image is provided to guide the start of the shot.\n"
         context_text += "\nPlease suggest a detailed prompt for generating " + ("an image" if is_image_gen else "a video clip") + " to fill this gap."
 
+        try:
+            if resolved.api_kind == "gemini":
+                suggested_prompt = self._suggest_via_gemini(
+                    resolved.api_key,
+                    resolve_gemini_model(resolved.model),
+                    system_text,
+                    context_text,
+                    input_image,
+                    before_frame,
+                    after_frame,
+                )
+            else:
+                logger.info("Suggesting gap prompt via Agent LLM (%s / %s)", resolved.kind, resolved.model)
+                suggested_prompt = complete_agent_llm_text(
+                    self._http,
+                    resolved,
+                    system_instruction=system_text,
+                    user_text=context_text,
+                )
+        except HTTPError as exc:
+            logger.error("Agent LLM gap suggestion error: %s", exc.detail)
+            raise
+        except Exception as exc:
+            raise HTTPError(500, str(exc)) from exc
+
+        return SuggestGapPromptResponse(status="success", suggested_prompt=suggested_prompt)
+
+    def _suggest_via_gemini(
+        self,
+        api_key: str,
+        resolved_model: str,
+        system_text: str,
+        context_text: str,
+        input_image: tuple[str, str] | None,
+        before_frame: tuple[str, str] | None,
+        after_frame: tuple[str, str] | None,
+    ) -> str:
         user_parts: list[JSONValue] = [{"text": context_text}]
 
         if input_image:
@@ -126,26 +162,16 @@ class SuggestGapPromptHandler(StateHandlerBase):
             user_parts.append({"inlineData": {"mimeType": mime_type, "data": data}})
 
         contents: list[JSONValue] = [{"role": "user", "parts": user_parts}]
-
-        try:
-            resolved_model = resolve_gemini_model(self.state.app_settings.gemini_model)
-            logger.info("Suggesting gap prompt via Gemini API (%s)", resolved_model)
-            suggested_prompt = call_gemini_generate_content(
-                self._http,
-                api_key=gemini_api_key,
-                model=resolved_model,
-                contents=contents,
-                system_instruction=system_text,
-                generation_config=apply_gemini_thinking_config(
-                    resolved_model,
-                    {"temperature": 0.7, "maxOutputTokens": 512},
-                ),
-                timeout=30,
-            )
-        except HTTPError as exc:
-            logger.error("Gemini gap suggestion error: %s", exc.detail)
-            raise
-        except Exception as exc:
-            raise HTTPError(500, str(exc)) from exc
-
-        return SuggestGapPromptResponse(status="success", suggested_prompt=suggested_prompt)
+        logger.info("Suggesting gap prompt via Agent LLM Gemini (%s)", resolved_model)
+        return call_gemini_generate_content(
+            self._http,
+            api_key=api_key,
+            model=resolved_model,
+            contents=contents,
+            system_instruction=system_text,
+            generation_config=apply_gemini_thinking_config(
+                resolved_model,
+                {"temperature": 0.7, "maxOutputTokens": 512},
+            ),
+            timeout=30,
+        )

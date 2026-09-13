@@ -13,6 +13,8 @@ import {
 } from '../../lib/agent-llm'
 import { useAgentLlmOAuth } from '../../hooks/use-agent-llm-oauth'
 import type { AppSettings } from '../../contexts/AppSettingsContext'
+import { AgentLlmModelSelect } from './AgentLlmModelSelect'
+import { CopyCodeButton, CopyableCode } from './CopyCodeButton'
 
 interface AgentLlmSettingsSectionProps {
   settings: AppSettings
@@ -65,9 +67,11 @@ export function AgentLlmSettingsSection({
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
   const [pasteCode, setPasteCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [modelsEpoch, setModelsEpoch] = useState(0)
   const catalog = useMemo(() => catalogEntry(draft.kind), [draft.kind])
   const oauth = useAgentLlmOAuth(async () => {
     await onSaved()
+    setModelsEpoch(current => current + 1)
     setAdding(false)
     setDraft(emptyDraft())
     setPasteCode('')
@@ -119,6 +123,7 @@ export function AgentLlmSettingsSection({
       agentLlmProviderId: next.id,
       agentLlmProviders: [...toPublicPatch(settings.agentLlmProviders), next],
     })
+    setModelsEpoch(current => current + 1)
     setDraft(emptyDraft())
     setAdding(false)
   }
@@ -141,7 +146,7 @@ export function AgentLlmSettingsSection({
           ? { ...toPublicPatch([item])[0], apiKey: nextKey }
           : toPublicPatch([item])[0]
       )),
-    })
+    }).then(() => setModelsEpoch(current => current + 1))
     setKeyInputs(current => ({ ...current, [provider.id]: '' }))
   }
 
@@ -167,15 +172,16 @@ export function AgentLlmSettingsSection({
       {showBanner && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-          <span>Connect or add an API key for the selected Agent provider to use chat.</span>
+          <span>Connect or add an API key for the selected Agent provider to use chat, Enhance (API), and timeline gap suggestions.</span>
         </div>
       )}
 
       <p className="text-xs text-zinc-500 leading-relaxed">
-        The Video Editor Agent uses this provider for chat and tool calls. Gemini for Enhance and
-        gap suggestions stays above. OpenAI, Anthropic, MiniMax, xAI, and Moonshot/Kimi can
-        Connect via the provider&apos;s real login. API keys and custom endpoints remain a fallback.
-        Credentials stay in Settings — they are never written into a project.
+        The Video Editor Agent, Enhance (API), and timeline gap suggestions use this provider —
+        any connected account or API key, not Gemini only. Local Enhance still uses Gemma
+        on-device. OpenAI, Anthropic, MiniMax, xAI, and Moonshot/Kimi can Connect via the
+        provider&apos;s real login. API keys and custom endpoints remain a fallback. Credentials
+        stay in Settings — they are never written into a project.
       </p>
 
       <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
@@ -208,7 +214,7 @@ export function AgentLlmSettingsSection({
           {settings.hasAgentLlmKey ? (
             <>
               <Check className="h-3 w-3" />
-              Agent will use {selectedLabel}
+              Agent, Enhance (API), and gap suggestions will use {selectedLabel}
             </>
           ) : (
             <>
@@ -244,13 +250,13 @@ export function AgentLlmSettingsSection({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <input
-                    type="text"
+                  <AgentLlmModelSelect
+                    kind={provider.kind}
+                    providerId={provider.id}
                     value={provider.model}
-                    onChange={event => handleModelChange(provider, event.target.value)}
-                    placeholder={entry.defaultModel || 'Model id'}
-                    onKeyDown={event => event.stopPropagation()}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                    onChange={model => handleModelChange(provider, model)}
+                    disabled={busy}
+                    credentialsRevision={`${provider.hasApiKey ? 'k' : ''}${provider.hasOAuth ? 'o' : ''}:${modelsEpoch}`}
                   />
                   {provider.baseUrl ? (
                     <p className="text-[11px] text-zinc-500 break-all">{provider.baseUrl}</p>
@@ -286,14 +292,19 @@ export function AgentLlmSettingsSection({
                   ) : null}
                   {waiting && oauth.session?.flow === 'code' ? (
                     <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={pasteCode}
-                        onChange={event => setPasteCode(event.target.value)}
-                        placeholder="Paste the code from the browser"
-                        onKeyDown={event => event.stopPropagation()}
-                        className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
-                      />
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={pasteCode}
+                          onChange={event => setPasteCode(event.target.value)}
+                          placeholder="Paste the code from the browser"
+                          onKeyDown={event => event.stopPropagation()}
+                          className="w-full px-3 py-2 pr-9 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                        />
+                        <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                          <CopyCodeButton value={pasteCode} label="paste code" />
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => void oauth.completeCode(pasteCode)}
@@ -306,7 +317,8 @@ export function AgentLlmSettingsSection({
                   ) : null}
                   {waiting && oauth.session?.userCode ? (
                     <p className="text-[11px] text-zinc-400">
-                      Confirm this code in the browser: <span className="text-white">{oauth.session.userCode}</span>
+                      Confirm this code in the browser:{' '}
+                      <CopyableCode value={oauth.session.userCode} label="device code" />
                     </p>
                   ) : null}
                   <div className="flex gap-2">
@@ -381,14 +393,19 @@ export function AgentLlmSettingsSection({
                 </button>
                 {oauth.connecting && !connectTargetId && oauth.session?.flow === 'code' ? (
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={pasteCode}
-                      onChange={event => setPasteCode(event.target.value)}
-                      placeholder="Paste the code from the browser"
-                      onKeyDown={event => event.stopPropagation()}
-                      className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
-                    />
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={pasteCode}
+                        onChange={event => setPasteCode(event.target.value)}
+                        placeholder="Paste the code from the browser"
+                        onKeyDown={event => event.stopPropagation()}
+                        className="w-full px-3 py-2 pr-9 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                      />
+                      <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                        <CopyCodeButton value={pasteCode} label="paste code" />
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={async () => {
@@ -408,7 +425,8 @@ export function AgentLlmSettingsSection({
                 ) : null}
                 {oauth.connecting && !connectTargetId && oauth.session?.userCode ? (
                   <p className="text-[11px] text-zinc-400">
-                    Confirm this code in the browser: <span className="text-white">{oauth.session.userCode}</span>
+                    Confirm this code in the browser:{' '}
+                    <CopyableCode value={oauth.session.userCode} label="device code" />
                   </p>
                 ) : null}
                 <p className="text-[11px] text-zinc-500">Or paste an API key as a fallback.</p>
@@ -422,13 +440,13 @@ export function AgentLlmSettingsSection({
               onKeyDown={event => event.stopPropagation()}
               className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
             />
-            <input
-              type="text"
+            <AgentLlmModelSelect
+              kind={draft.kind}
+              apiKey={draft.apiKey}
+              baseUrl={draft.baseUrl}
               value={draft.model}
-              onChange={event => setDraft(current => ({ ...current, model: event.target.value }))}
-              placeholder={catalog.defaultModel || 'Model id'}
-              onKeyDown={event => event.stopPropagation()}
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+              onChange={model => setDraft(current => ({ ...current, model }))}
+              disabled={busy}
             />
             {(catalog.requiresBaseUrl || draft.kind.startsWith('custom_')) && (
               <input

@@ -7,29 +7,29 @@ export type EnhanceProvider = 'local' | 'api'
 interface UsePromptEnhancerProviderResult {
   // Local requires the Gemma text-encoder checkpoint to be downloaded AND local generation to
   // actually be usable this run (e.g. not memory-constrained into API-only mode); API requires a
-  // stored Gemini key to actually run, but the option stays selectable without one so Enhance
-  // can send the user to Settings instead of hiding the choice.
+  // stored Agent LLM credential to actually run, but the option stays selectable without one so
+  // Enhance can send the user to Settings instead of hiding the choice.
   hasLocalTextEncoder: boolean
-  hasGeminiApiKey: boolean
+  hasAgentLlmKey: boolean
   // The provider Enhance will actually use: the persisted preference when it's currently
   // choosable. API remains choosable without a key (clicking Enhance then opens Settings).
   // Local that's temporarily unavailable (e.g. memory-constrained run) falls back silently —
   // it does NOT overwrite the persisted preference, which only an explicit setProviderPreference
   // call changes.
   provider: EnhanceProvider
-  // Shown when local Enhance is available, so the user can still pick API (Gemini) before
+  // Shown when local Enhance is available, so the user can still pick API (Agent LLM) before
   // they've added a key. Hidden when local isn't an option — the button is already API-only.
   canToggleProvider: boolean
   setProviderPreference: (provider: EnhanceProvider) => void
 }
 
 // Single source of truth for which prompt-enhancer provider (local Gemma text encoder vs.
-// Gemini's hosted API) is available and which one Enhance should use. `enabled` gates the local
-// checkpoint lookup so it only fires once the enhancer could plausibly be shown for the current
-// mode.
+// the selected Agent LLM) is available and which one Enhance should use. `enabled` gates the
+// local checkpoint lookup so it only fires once the enhancer could plausibly be shown for the
+// current mode.
 export function usePromptEnhancerProvider(enabled: boolean): UsePromptEnhancerProviderResult {
   const {
-    settings: { hasGeminiApiKey, promptEnhancerProviderPreference },
+    settings: { hasAgentLlmKey, promptEnhancerProviderPreference },
     updateSettings,
     forceApiGenerations,
     modelsVersion,
@@ -60,7 +60,7 @@ export function usePromptEnhancerProvider(enabled: boolean): UsePromptEnhancerPr
   const canToggleProvider = hasLocalTextEncoder
 
   // Default to local when the user hasn't made an explicit choice, or when they asked for
-  // local and it's currently usable. API preference is honored even without a Gemini key so
+  // local and it's currently usable. API preference is honored even without an Agent LLM key so
   // the Enhance (API) option isn't silently replaced by local.
   const provider: EnhanceProvider =
     promptEnhancerProviderPreference === 'api' ? 'api'
@@ -74,7 +74,7 @@ export function usePromptEnhancerProvider(enabled: boolean): UsePromptEnhancerPr
 
   return {
     hasLocalTextEncoder,
-    hasGeminiApiKey,
+    hasAgentLlmKey,
     provider,
     canToggleProvider,
     setProviderPreference,

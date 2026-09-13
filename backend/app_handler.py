@@ -186,6 +186,7 @@ class AppHandler:
             prompt_enhancer_pipeline_class=prompt_enhancer_pipeline_class,
             gemini_pipeline=GeminiPromptEnhancerPipeline(http),
             config=config,
+            http=http,
         )
 
         self.video_generation = VideoGenerationHandler(

@@ -160,8 +160,9 @@ function GeminiModelSelect({
         ))}
       </select>
       <p className="text-xs text-zinc-500">
-        Gemini chat models only — used for Enhance (API) and timeline gap
-        suggestions. Local Enhance still uses Gemma on-device.
+        Used when Gemini is the selected Agent provider. Enhance (API) and
+        timeline gap suggestions use whichever Agent provider is selected below.
+        Local Enhance still uses Gemma on-device.
       </p>
       {selectedDescription ? (
         <p className="text-xs text-zinc-400 leading-relaxed">{selectedDescription}</p>
@@ -908,8 +909,8 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                       LTX {textEncoderRecommendation.ltx_version_label}&apos;s text encoder can only encode
                       prompts, so enhancing them on your computer needs a separate instruct model.
                       Gemma 3 already downloaded for 2.3 works; Gemma 4 E2B is the smaller optional
-                      upgrade. Without either, the Enhance button can still use Gemini if you have a
-                      key, and Generate uses the prompt as typed.
+                      upgrade. Without either, Enhance (API) can still use the selected Agent
+                      provider if you have a key or Connect, and Generate uses the prompt as typed.
                     </p>
 
                     <div className="mt-3 pt-3 border-t border-zinc-700/50">
@@ -1255,12 +1256,12 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                 {showGeminiKeyBanner && (
                   <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                     <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                    <span>Add a Gemini API key to use Enhance (API).</span>
+                    <span>Add a Gemini API key to use Gemini as the Agent provider.</span>
                   </div>
                 )}
 
                 <p className="text-xs text-zinc-500 leading-relaxed">
-                  Your Gemini API key is used for AI-powered prompt suggestions when filling timeline gaps, and for the Enhance (API) prompt enhancer. Agent can also use it when Gemini is the selected Agent provider.
+                  Used when Gemini is the selected Agent provider. Enhance (API) and timeline gap suggestions use the Agent LLM section below — any connected provider or API key, not Gemini only.
                 </p>
 
                 <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
