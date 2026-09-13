@@ -46,6 +46,8 @@ export interface CreateAgentToolExecutorInput {
   projectId?: string
   getAbortSignal?: () => AbortSignal | null
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
+  getApproveAll?: () => boolean
+  readAssetPreview?: AgentToolExecutorHost['readAssetPreview']
 }
 
 function errorResult(message: string): Record<string, unknown> {
@@ -84,6 +86,8 @@ export function createAgentToolExecutor(input: CreateAgentToolExecutorInput): Ag
     projectId: input.projectId,
     getAbortSignal: input.getAbortSignal,
     onProgress: input.onProgress,
+    getApproveAll: input.getApproveAll,
+    readAssetPreview: input.readAssetPreview,
   }
   return new AgentToolExecutor(host)
 }

@@ -25,6 +25,10 @@ export function AgentAskUserCards(props: {
         const value = choiceAnswers[question.id]
         if (value?.length) answers[question.id] = question.allowMultiple ? value : value[0]
       }
+      if (question.kind === 'approval' && (choiceAnswers[question.id] ?? []).includes('Revise')) {
+        const notes = textAnswers[question.id]?.trim()
+        if (notes) answers.revise = notes
+      }
       if (question.kind === 'shot_list' && question.shots?.length) {
         const edited = shotEdits[question.id]?.trim()
         answers.shots = edited || serializeAssemblyShots(question.shots)
@@ -39,6 +43,13 @@ export function AgentAskUserCards(props: {
       {props.questions.map(question => (
         <div key={question.id} className="flex flex-col gap-1.5">
           <p className="text-[12px] text-zinc-300 whitespace-pre-wrap">{question.prompt}</p>
+          {question.preview && (
+            <img
+              alt={question.preview.name || 'Generated still'}
+              src={`data:${question.preview.mimeType};base64,${question.preview.data}`}
+              className="max-h-36 rounded border border-zinc-800"
+            />
+          )}
           {question.kind === 'shot_list' && question.shots && question.shots.length > 0 && (
             <ol className="flex flex-col gap-1 pl-4 list-decimal text-[11px] text-zinc-400">
               {question.shots.map(shot => (
@@ -81,6 +92,9 @@ export function AgentAskUserCards(props: {
                       if (option === 'Edit' && question.kind === 'shot_list' && question.shots && !shotEdits[question.id]) {
                         setShotEdits(prev => ({ ...prev, [question.id]: serializeAssemblyShots(question.shots ?? []) }))
                       }
+                      if (question.kind === 'approval' && (option === 'Approve' || option === 'Reject')) {
+                        props.onSubmit({ [question.id]: option })
+                      }
                     }}
                     className={`px-2 py-0.5 rounded text-[11px] border ${
                       selected
@@ -93,6 +107,15 @@ export function AgentAskUserCards(props: {
                 )
               })}
             </div>
+          )}
+          {question.kind === 'approval' && (choiceAnswers[question.id] ?? []).includes('Revise') && (
+            <input
+              value={textAnswers[question.id] ?? ''}
+              onChange={event => setTextAnswers(prev => ({ ...prev, [question.id]: event.target.value }))}
+              disabled={props.disabled}
+              placeholder="What should change?"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[12px] text-zinc-100 outline-none focus:border-zinc-600"
+            />
           )}
           {question.kind === 'shot_list' && isEditChoice(choiceAnswers[question.id]) && (
             <textarea

@@ -1,3 +1,4 @@
+import { parseReviewPreview, reviewQuestionsFromResult } from './agent-approvals.ts'
 import { assemblyConfirmQuestionsFromResult } from './agent-assembly-runtime.ts'
 import { confirmQuestionsFromToolResult } from './agent-generate-runtime.ts'
 import {
@@ -168,8 +169,27 @@ export async function runAgentLoop(deps: AgentLoopDeps): Promise<AgentLoopResult
         const result = await deps.executeTool(call.name, call.arguments)
         messages = append(messages, toolResultMessage(call, result))
         deps.onMessages(messages)
-        if (result.needsConfirm === true) {
-          deps.onAskUser(assemblyConfirmQuestionsFromResult(result) ?? confirmQuestionsFromToolResult(result))
+        if (result.needsConfirm === true || result.needsReview === true) {
+          const preview = parseReviewPreview(result.preview)
+          if (preview) {
+            messages = append(messages, {
+              id: createAgentMessageId(),
+              role: 'assistant',
+              createdAt: Date.now(),
+              parts: [
+                { type: 'text', text: typeof result.shotTitle === 'string' && result.shotTitle
+                  ? `${String(result.checkpoint ?? 'Still')} for ${result.shotTitle}.`
+                  : 'Generated still — approve, reject, or revise.' },
+                { type: 'inline_image', mimeType: preview.mimeType, data: preview.data, name: preview.name },
+              ],
+            })
+            deps.onMessages(messages)
+          }
+          deps.onAskUser(
+            assemblyConfirmQuestionsFromResult(result)
+              ?? reviewQuestionsFromResult(result)
+              ?? confirmQuestionsFromToolResult(result),
+          )
           return { messages, stopReason: 'ask_user' }
         }
       }

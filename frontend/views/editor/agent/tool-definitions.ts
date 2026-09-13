@@ -134,8 +134,8 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
 }
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
-  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId'],
-  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
+  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'skipReview'],
+  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'skipReview'],
   fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
   regenerate_clip: ['clipId', 'assetId', 'confirmed'],
   enhance_prompt: ['prompt', 'mediaType'],
@@ -561,7 +561,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Picture on V1, optional titles on V2, voiceover on A1, music on A2. Propose a 4–8 shot list, confirm once, then generate still-then-video (reusing refs for continuity) and place VO/music with a basic mix. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId on shots for character/object consistency. First call without confirmed. After Accept, retry with confirmed=true.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Picture on V1, optional titles on V2, voiceover on A1, music on A2. Propose a 4–8 shot list, then generate still-then-video with a review pause after each still and placed shot unless approveAll is on. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId on shots for character/object consistency. First call without confirmed unless approveAll. After Accept, retry with confirmed=true. After each still review, retry again.',
     parameters: {
       type: 'object',
       properties: {

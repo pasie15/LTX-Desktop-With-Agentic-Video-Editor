@@ -492,6 +492,7 @@ function createHost(
     speech?: AgentToolExecutorHost['speech']
     refs?: AgentToolExecutorHost['refs']
     selectedGap?: { trackIndex: number; startTime: number; endTime: number } | null
+    approveAll?: boolean
   },
 ): AgentToolExecutorHost & { box: { state: EditorState } } {
   const box = { state: initial }
@@ -510,6 +511,7 @@ function createHost(
     speech: extras?.speech,
     refs: extras?.refs,
     getSelectedGap: extras?.selectedGap !== undefined ? () => extras.selectedGap ?? null : undefined,
+    getApproveAll: () => extras?.approveAll === true,
   }
 }
 
@@ -852,7 +854,7 @@ describe('assembly tool executor', () => {
 
   it('assembles confirmed shots sequentially and adds titles', async () => {
     const progress: string[] = []
-    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs() })
+    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs(), approveAll: true })
     host.onProgress = item => { progress.push(item.status) }
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('assemble_shots', {
@@ -880,6 +882,7 @@ describe('assembly tool executor', () => {
     const progress: string[] = []
     const host = createHost(makeState({ clips: [], playhead: 0 }), {
       generation: fakeJobs({ isBusy: () => busy }),
+      approveAll: true,
     })
     host.onProgress = item => { progress.push(item.status) }
     const executor = new AgentToolExecutor(host)
@@ -916,6 +919,7 @@ describe('assembly tool executor', () => {
     assert.equal(proposal.exceedsJobCap, true)
     assert.equal(activeClips(host.getState()).length, 0)
 
+    host.getApproveAll = () => true
     const ran = await executor.execute('assemble_shots', { shots, confirmed: true, confirmedMore: true })
     assert.equal(ran.ok, true)
     assert.equal((ran.placed as unknown[]).length, 5)
@@ -931,6 +935,7 @@ describe('assembly tool executor', () => {
           return { status: 'complete', path: `/tmp/cut-${videos}.mp4` }
         },
       }),
+      approveAll: true,
     })
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('assemble_shots', {
@@ -961,6 +966,7 @@ describe('assembly tool executor', () => {
           return { status: 'complete', path: '/tmp/cut.mp4' }
         },
       }),
+      approveAll: true,
     })
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('assemble_shots', {
@@ -979,7 +985,7 @@ describe('assembly tool executor', () => {
   })
 
   it('reuses the last proposed shot list after accept', async () => {
-    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs() })
+    const host = createHost(makeState({ clips: [], playhead: 0 }), { generation: fakeJobs(), approveAll: true })
     const executor = new AgentToolExecutor(host)
     await executor.execute('assemble_shots', {
       script: '1. Hands pour coffee [4s]\n2. Street in rain [4s]',
@@ -1035,6 +1041,7 @@ describe('refs speech and mix', () => {
     }), {
       generation: fakeJobs(),
       refs,
+      approveAll: true,
     })
     const executor = new AgentToolExecutor(host)
     const registered = await executor.execute('register_ref', {
@@ -1101,6 +1108,54 @@ describe('refs speech and mix', () => {
     const result = await executor.execute('set_clip_volume', { clipId: 'music-1', volume: 0.25 })
     assert.equal(result.ok, true)
     assert.equal(activeClips(host.getState()).find(item => item.id === 'music-1')?.volume, 0.25)
+  })
+
+  it('reviews a confirmed still when Approve all is off', async () => {
+    const host = createHost(makeState({ clips: [] }), { generation: fakeJobs(), approveAll: false })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'character sheet of the paper boy, turnaround',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.needsReview, true)
+    assert.equal(result.checkpoint, 'character_sheet')
+    assert.ok(host.getState().editorModel.assets.some(asset => asset.id === result.assetId))
+  })
+
+  it('pauses assemble after each still unless Approve all is on', async () => {
+    const host = createHost(makeState({ clips: [], playhead: 0 }), {
+      generation: fakeJobs(),
+      approveAll: false,
+    })
+    const executor = new AgentToolExecutor(host)
+    const first = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'paper boy on a stoop, morning light', duration: 5 },
+        { id: 's2', prompt: 'rides down the block', duration: 5 },
+      ],
+      confirmed: true,
+    })
+    assert.equal(first.ok, true)
+    assert.equal(first.needsReview, true)
+    assert.equal(first.checkpoint, 'still')
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const afterVideo = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(afterVideo.needsReview, true)
+    assert.equal(afterVideo.checkpoint, 'next_shot')
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const secondStill = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(secondStill.checkpoint, 'still')
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const done = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(done.ok, true)
+    assert.equal(done.needsReview, undefined)
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 2)
   })
 })
 

@@ -61,6 +61,7 @@ export interface BuildAgentSnapshotInput {
   currentModelLabel: string
   selectedGapOverride?: TimelineGapSelection | null
   refs?: AgentRef[]
+  approveAll?: boolean
 }
 
 export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProjectSnapshot {
@@ -125,5 +126,6 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
       role: ref.role,
       assetId: ref.assetId,
     })),
+    approveAll: input.approveAll === true,
   }
 }

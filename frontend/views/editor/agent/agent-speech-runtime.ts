@@ -39,6 +39,7 @@ export interface AgentSpeechActionHost {
   speech?: AgentSpeechJobs
   getAbortSignal?: () => AbortSignal | null
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
+  getApproveAll?: () => boolean
 }
 
 function errorResult(message: string): Record<string, unknown> {
@@ -155,7 +156,7 @@ export async function executeSpeechTool(
     ...(voiceId ? { voiceId } : {}),
     ...(modelId ? { modelId } : {}),
   }
-  if (!asBoolean(args.confirmed)) {
+  if (!asBoolean(args.confirmed) && host.getApproveAll?.() !== true) {
     return needsConfirmResult(proposal, 'Speech needs confirmation. Retry generate_speech with confirmed=true.')
   }
   if (!host.speech) return errorResult('ElevenLabs speech is not available. Add an ElevenLabs API key in Settings.')

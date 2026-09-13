@@ -17,9 +17,16 @@ describe('agent chat persistence', () => {
       title: "What's on the timeline?",
       updatedAt: 10,
       messages: [],
+      approveAll: true,
     }
     const parsed = parseChatSession(JSON.parse(serializeChatSession(session)))
     assert.deepEqual(parsed, session)
+    assert.equal(parseChatSession({
+      id: 'chat-2',
+      title: 'legacy',
+      updatedAt: 1,
+      messages: [],
+    })?.approveAll, undefined)
     assert.equal(parseChatSession({ id: '../x', title: 'no', updatedAt: 1, messages: [] }), null)
   })
 

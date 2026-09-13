@@ -1,6 +1,11 @@
 import type { Asset } from '../../../types/project-model.ts'
 import type { EditorState } from '../editor-state.ts'
 import {
+  parseReviewPreview,
+  reviewDecisionFromAnswers,
+  type AgentReviewPreview,
+} from './agent-approvals.ts'
+import {
   assemblyConfirmQuestions,
   buildAssemblyProposal,
   isAssemblyProceedChoice,
@@ -44,11 +49,25 @@ export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentS
   refs?: AgentRefStore
 }
 
+export interface AgentAssemblyProgress {
+  shotIndex: number
+  stage: 'still' | 'video'
+  lastStillId?: string
+  cursor: number
+  placed: AgentAssemblyShotResult[]
+  checklist: AgentAssemblyShotResult[]
+  voiceoverAssetId?: string
+}
+
 export interface AgentAssemblyMemory {
   getProposal: () => AgentAssemblyProposal | null
   setProposal: (proposal: AgentAssemblyProposal | null) => void
   getConfirmedMore: () => boolean
   setConfirmedMore: (value: boolean) => void
+  getProgress: () => AgentAssemblyProgress | null
+  setProgress: (progress: AgentAssemblyProgress | null) => void
+  getReviewDecision: () => 'approve' | 'reject' | 'revise' | null
+  setReviewDecision: (value: 'approve' | 'reject' | 'revise' | null) => void
 }
 
 export interface AgentAssemblyShotResult {
@@ -166,6 +185,7 @@ export function rememberAssemblyAcceptance(
     }
   }
   memory.setConfirmedMore(isAssemblyProceedChoice(answers.shot_list))
+  memory.setReviewDecision(reviewDecisionFromAnswers(answers))
 }
 
 export async function executeAssemblyTool(
@@ -183,7 +203,8 @@ export async function executeAssemblyTool(
   const proposal = resolved.proposal
   if (proposal.shots.length === 0) return errorResult('Shot list is empty')
 
-  if (!asBoolean(args.confirmed)) {
+  const confirmed = asBoolean(args.confirmed) || host.getApproveAll?.() === true
+  if (!confirmed) {
     return needsConfirmResult(
       proposal,
       proposal.exceedsJobCap
@@ -192,13 +213,34 @@ export async function executeAssemblyTool(
     )
   }
 
-  const confirmedMore = asBoolean(args.confirmedMore) || memory.getConfirmedMore()
+  const confirmedMore = asBoolean(args.confirmedMore) || memory.getConfirmedMore() || host.getApproveAll?.() === true
   if (proposal.exceedsJobCap && !confirmedMore) {
     return needsConfirmResult(
       proposal,
       `This assembly is ${proposal.jobCount} generate jobs. Confirm proceeding past ${MAX_ASSEMBLY_GENERATE_JOBS}, then retry with confirmed=true and confirmedMore=true.`,
     )
   }
+
+  const decision = memory.getReviewDecision()
+  if (decision === 'reject') {
+    memory.setReviewDecision(null)
+    memory.setProgress(null)
+    return errorResult('User rejected this step. Assembly stopped.')
+  }
+  if (decision === 'revise') {
+    memory.setReviewDecision(null)
+    const progress = memory.getProgress()
+    if (progress) {
+      memory.setProgress({ ...progress, stage: 'still' })
+    }
+    return {
+      ok: false,
+      error: 'User asked to revise this still or sheet. Follow their notes, then retry assemble_shots with confirmed=true.',
+      needsRevise: true,
+      progress,
+    }
+  }
+  memory.setReviewDecision(null)
 
   if (proposal.jobCount > 0) {
     if (!host.generation) return errorResult('Generation is not available')
@@ -211,38 +253,45 @@ export async function executeAssemblyTool(
     return errorResult('Track is locked')
   }
 
-  const checklist: AgentAssemblyShotResult[] = proposal.shots.map(shot => ({
+  const stepByStep = host.getApproveAll?.() !== true
+  const existing = memory.getProgress()
+  const checklist: AgentAssemblyShotResult[] = existing?.checklist ?? proposal.shots.map(shot => ({
     id: shot.id,
     ...(shot.title ? { title: shot.title } : {}),
-    status: 'pending',
+    status: 'pending' as const,
   }))
-
-  let cursor = resolveStart(state, proposal, proposal.destination)
-  const placed: AgentAssemblyShotResult[] = []
-  let lastStillId: string | undefined
+  let cursor = existing?.cursor ?? resolveStart(state, proposal, proposal.destination)
+  const placed: AgentAssemblyShotResult[] = existing?.placed.slice() ?? []
+  let lastStillId = existing?.lastStillId
   let voiceoverAsset: Asset | undefined
+  const startIndex = existing?.shotIndex ?? 0
 
-  if (proposal.voiceover && !proposal.voiceoverAssetId) {
-    if (!host.speech) {
-      return errorResult('ElevenLabs speech is not available. Add an ElevenLabs API key in Settings.')
+  if (!existing) {
+    if (proposal.voiceover && !proposal.voiceoverAssetId) {
+      if (!host.speech) {
+        return errorResult('ElevenLabs speech is not available. Add an ElevenLabs API key in Settings.')
+      }
+      host.onProgress?.({
+        toolName: 'assemble_shots',
+        percent: 0,
+        status: 'Generating voiceover…',
+      })
+      const synthesized = await host.speech.synthesize({ text: proposal.voiceover })
+      if ('error' in synthesized) return errorResult(synthesized.error)
+      const imported = await importSpeechAsset(host, synthesized.path, proposal.voiceover.slice(0, 48) || 'Voiceover')
+      if (!imported.ok) return imported.error
+      voiceoverAsset = imported.asset
+    } else if (proposal.voiceoverAssetId) {
+      voiceoverAsset = host.getState().editorModel.assets.find(item => item.id === proposal.voiceoverAssetId)
+      if (!voiceoverAsset) return errorResult(`Asset not found: ${proposal.voiceoverAssetId}`)
+      if (voiceoverAsset.type !== 'audio') return errorResult('voiceoverAssetId must be an audio asset')
     }
-    host.onProgress?.({
-      toolName: 'assemble_shots',
-      percent: 0,
-      status: 'Generating voiceover…',
-    })
-    const synthesized = await host.speech.synthesize({ text: proposal.voiceover })
-    if ('error' in synthesized) return errorResult(synthesized.error)
-    const imported = await importSpeechAsset(host, synthesized.path, proposal.voiceover.slice(0, 48) || 'Voiceover')
-    if (!imported.ok) return imported.error
-    voiceoverAsset = imported.asset
-  } else if (proposal.voiceoverAssetId) {
-    voiceoverAsset = host.getState().editorModel.assets.find(item => item.id === proposal.voiceoverAssetId)
-    if (!voiceoverAsset) return errorResult(`Asset not found: ${proposal.voiceoverAssetId}`)
-    if (voiceoverAsset.type !== 'audio') return errorResult('voiceoverAssetId must be an audio asset')
+  } else if (existing.voiceoverAssetId) {
+    voiceoverAsset = host.getState().editorModel.assets.find(item => item.id === existing.voiceoverAssetId)
   }
 
-  for (const [index, shot] of proposal.shots.entries()) {
+  for (let index = startIndex; index < proposal.shots.length; index += 1) {
+    const shot = proposal.shots[index]!
     if (host.getAbortSignal?.()?.aborted) {
       checklist[index] = { ...checklist[index]!, status: 'cancelled', error: 'cancelled' }
       return {
@@ -256,6 +305,7 @@ export async function executeAssemblyTool(
     }
 
     const total = proposal.shots.length
+    const resumeStage = index === startIndex ? existing?.stage ?? 'still' : 'still'
     host.onProgress?.({
       toolName: 'assemble_shots',
       percent: Math.round((index / total) * 100),
@@ -264,10 +314,61 @@ export async function executeAssemblyTool(
         : `${index + 1}/${total} generating…`,
     })
 
-    const result = await generateAndPlaceShot(host, proposal, shot, cursor, index === 0, lastStillId)
+    if (stepByStep && resumeStage === 'still' && !shot.assetId && !proposal.skipStills && !shot.skipStill) {
+      const stillResult = await generateShotStill(host, shot, lastStillId)
+      if (stillResult.status !== 'ready') {
+        checklist[index] = {
+          ...checklist[index]!,
+          status: stillResult.status,
+          error: stillResult.error,
+        }
+        return {
+          ok: false,
+          error: stillResult.error ?? 'Assembly stopped',
+          completed: placed,
+          failedAt: shot.id,
+          checklist,
+        }
+      }
+      lastStillId = stillResult.stillAssetId
+      checklist[index] = {
+        ...checklist[index]!,
+        stillAssetId: stillResult.stillAssetId,
+        status: 'pending',
+      }
+      memory.setProgress({
+        shotIndex: index,
+        stage: 'video',
+        lastStillId,
+        cursor,
+        placed,
+        checklist,
+        ...(voiceoverAsset ? { voiceoverAssetId: voiceoverAsset.id } : {}),
+      })
+      return reviewAssemblyStep(host, {
+        checkpoint: 'still',
+        shot,
+        assetId: stillResult.stillAssetId,
+        nextStep: 'video',
+        placed,
+        checklist,
+        remaining: total - index,
+      })
+    }
+
+    const result = await generateAndPlaceShot(
+      host,
+      proposal,
+      shot,
+      cursor,
+      index === 0,
+      lastStillId,
+      resumeStage === 'video' ? lastStillId ?? resolveShotStillId(host, shot) : undefined,
+    )
     checklist[index] = result
     if (result.status === 'placed' && result.stillAssetId) lastStillId = result.stillAssetId
     if (result.status !== 'placed') {
+      memory.setProgress(null)
       return {
         ok: false,
         error: result.error ?? 'Assembly stopped',
@@ -280,6 +381,27 @@ export async function executeAssemblyTool(
     if (result.start != null && result.duration != null) {
       cursor = result.start + result.duration
     }
+
+    if (stepByStep && index < proposal.shots.length - 1) {
+      memory.setProgress({
+        shotIndex: index + 1,
+        stage: 'still',
+        lastStillId,
+        cursor,
+        placed,
+        checklist,
+        ...(voiceoverAsset ? { voiceoverAssetId: voiceoverAsset.id } : {}),
+      })
+      return reviewAssemblyStep(host, {
+        checkpoint: 'next_shot',
+        shot,
+        assetId: result.stillAssetId ?? result.assetId,
+        nextStep: 'the next shot',
+        placed,
+        checklist,
+        remaining: total - index - 1,
+      })
+    }
   }
 
   const mix = placeAssemblyMix(host, proposal, placed, voiceoverAsset)
@@ -290,6 +412,7 @@ export async function executeAssemblyTool(
     status: `${proposal.shots.length}/${proposal.shots.length} placed`,
   })
   memory.setConfirmedMore(false)
+  memory.setProgress(null)
   return {
     ok: true,
     kind: proposal.kind,
@@ -384,6 +507,65 @@ function placeAssemblyMix(
   return extras
 }
 
+async function generateShotStill(
+  host: AgentAssemblyActionHost,
+  shot: AgentAssemblyShot,
+  previousStillId?: string,
+): Promise<{ status: 'ready'; stillAssetId: string } | { status: 'failed' | 'cancelled'; error: string }> {
+  const attachedStillId = resolveShotStillId(host, shot)
+  const referenceAssetId = attachedStillId ?? previousStillId
+  const still = await executeGenerateTool(host, 'generate_image', {
+    prompt: shot.prompt,
+    destination: 'assets',
+    confirmed: true,
+    skipReview: true,
+    ...(referenceAssetId ? { referenceAssetId } : {}),
+  })
+  if (still.ok === false) {
+    return {
+      status: String(still.error) === 'Generation cancelled' ? 'cancelled' : 'failed',
+      error: String(still.error ?? 'Image generation failed'),
+    }
+  }
+  if (typeof still.assetId !== 'string') {
+    return { status: 'failed', error: 'Image generation did not return an asset' }
+  }
+  return { status: 'ready', stillAssetId: still.assetId }
+}
+
+async function reviewAssemblyStep(
+  host: AgentAssemblyActionHost,
+  input: {
+    checkpoint: 'still' | 'next_shot'
+    shot: AgentAssemblyShot
+    assetId?: string
+    nextStep: string
+    placed: AgentAssemblyShotResult[]
+    checklist: AgentAssemblyShotResult[]
+    remaining: number
+  },
+): Promise<Record<string, unknown>> {
+  const asset = input.assetId
+    ? host.getState().editorModel.assets.find(item => item.id === input.assetId)
+    : undefined
+  const preview: AgentReviewPreview | null | undefined = asset && host.readAssetPreview
+    ? await host.readAssetPreview(asset)
+    : parseReviewPreview(undefined)
+  return {
+    ok: true,
+    needsReview: true,
+    checkpoint: input.checkpoint,
+    nextStep: input.nextStep,
+    shotId: input.shot.id,
+    ...(input.shot.title ? { shotTitle: input.shot.title } : {}),
+    ...(input.assetId ? { assetId: input.assetId } : {}),
+    ...(preview ? { preview } : {}),
+    remaining: input.remaining,
+    placed: input.placed,
+    checklist: input.checklist,
+  }
+}
+
 async function generateAndPlaceShot(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
@@ -391,6 +573,7 @@ async function generateAndPlaceShot(
   startTime: number,
   isFirst: boolean,
   previousStillId?: string,
+  approvedStillId?: string,
 ): Promise<AgentAssemblyShotResult> {
   if (shot.assetId) {
     return placeExistingShot(host, proposal, shot, startTime)
@@ -398,8 +581,9 @@ async function generateAndPlaceShot(
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
   const attachedStillId = resolveShotStillId(host, shot)
-  let imageAssetId = shot.skipStill || proposal.skipStills ? attachedStillId : undefined
-  const wantStill = !proposal.skipStills && !shot.skipStill
+  let imageAssetId = approvedStillId
+    ?? (shot.skipStill || proposal.skipStills ? attachedStillId : undefined)
+  const wantStill = !proposal.skipStills && !shot.skipStill && !approvedStillId
   const referenceAssetId = attachedStillId ?? previousStillId
 
   if (wantStill) {
@@ -407,6 +591,7 @@ async function generateAndPlaceShot(
       prompt: shot.prompt,
       destination: 'assets',
       confirmed: true,
+      skipReview: true,
       ...(referenceAssetId ? { referenceAssetId } : {}),
     })
     if (still.ok === false) {
@@ -431,6 +616,7 @@ async function generateAndPlaceShot(
     trackIndex: proposal.trackIndex,
     startTime,
     confirmed: true,
+    skipReview: true,
   })
   if (video.ok === false) {
     return {

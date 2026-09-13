@@ -213,6 +213,24 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
         <div className="h-8 px-3 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
           <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
           <span className="text-[11px] font-semibold text-zinc-400 tracking-wide">Agent</span>
+          {hasAgentLlmKey && (
+            <button
+              type="button"
+              data-testid="agent-approve-all"
+              aria-pressed={chat.approveAll}
+              onClick={() => chat.setApproveAll(!chat.approveAll)}
+              className={`ml-auto px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                chat.approveAll
+                  ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
+                  : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-zinc-200 hover:border-zinc-500'
+              }`}
+              title={chat.approveAll
+                ? 'Approve all is on. Click to ask after each still, sheet, and shot.'
+                : 'Ask after each still, sheet, and shot. Click to approve everything.'}
+            >
+              {chat.approveAll ? 'Approve all on' : 'Approve all'}
+            </button>
+          )}
         </div>
 
         {hasAgentLlmKey && (

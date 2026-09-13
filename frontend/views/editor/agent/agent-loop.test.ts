@@ -168,6 +168,41 @@ describe('agent loop', () => {
     assert.equal(kind, 'shot_list')
   })
 
+  it('pauses on needsReview and shows the still in chat', async () => {
+    let messages = [userText('Make a still of the stoop')]
+    let asked: string[] = []
+    const result = await runAgentLoop({
+      getMessages: () => messages,
+      getProjectContext: () => ({}),
+      availableTools: READ_TOOL_DEFINITIONS,
+      skills: '',
+      requestTurn: async () => ({
+        status: 'success',
+        text: '',
+        toolCalls: [{ id: 'call_s', name: 'generate_image', arguments: { prompt: 'stoop' } }],
+        askUser: null,
+        finishReason: 'tool_calls',
+      }),
+      executeTool: async () => ({
+        ok: true,
+        needsReview: true,
+        checkpoint: 'still',
+        assetId: 'asset-still',
+        nextStep: 'video',
+        preview: { mimeType: 'image/png', data: 'abc', name: 'stoop' },
+      }),
+      onMessages: next => { messages = next },
+      onAskUser: questions => {
+        asked = questions.map(question => question.id)
+      },
+      signal: new AbortController().signal,
+    })
+    assert.equal(result.stopReason, 'ask_user')
+    assert.deepEqual(asked, ['review'])
+    const image = result.messages.find(message => message.parts.some(part => part.type === 'inline_image'))
+    assert.ok(image)
+  })
+
   it('maps renderer tool part ids to API toolCallId so the next turn is not an orphan output', () => {
     const mapped = toAgentTurnApiParts([
       { type: 'tool_call', id: 'call_timeline_1', name: 'get_timeline', arguments: {} },
