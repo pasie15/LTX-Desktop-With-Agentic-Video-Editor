@@ -12,6 +12,8 @@ export interface AgentLlmModelsQuery {
   apiKey?: string
   baseUrl?: string
   model?: string
+  // Flip after Save Key / Connect so a saved provider refetches without a typed key.
+  credentialsRevision?: string
 }
 
 export function useAgentLlmModels(query: AgentLlmModelsQuery) {
@@ -28,6 +30,7 @@ export function useAgentLlmModels(query: AgentLlmModelsQuery) {
   const apiKey = query.apiKey?.trim() ?? ''
   const baseUrl = query.baseUrl?.trim() ?? ''
   const model = query.model?.trim() ?? ''
+  const credentialsRevision = query.credentialsRevision?.trim() ?? ''
 
   useEffect(() => {
     let cancelled = false
@@ -58,7 +61,7 @@ export function useAgentLlmModels(query: AgentLlmModelsQuery) {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [query.kind, providerId, apiKey, baseUrl, model])
+  }, [query.kind, providerId, apiKey, baseUrl, model, credentialsRevision])
 
   return { models, source, error, loading }
 }

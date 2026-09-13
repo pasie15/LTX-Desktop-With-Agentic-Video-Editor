@@ -10,6 +10,7 @@ export function AgentLlmModelSelect({
   value,
   onChange,
   disabled,
+  credentialsRevision,
 }: {
   kind: AgentLlmProviderKind
   providerId?: string
@@ -18,6 +19,7 @@ export function AgentLlmModelSelect({
   value: string
   onChange: (model: string) => void
   disabled?: boolean
+  credentialsRevision?: string
 }) {
   const { models, source, error, loading } = useAgentLlmModels({
     kind,
@@ -25,6 +27,7 @@ export function AgentLlmModelSelect({
     apiKey,
     baseUrl,
     model: value,
+    credentialsRevision,
   })
   const [customOpen, setCustomOpen] = useState(false)
   const [customValue, setCustomValue] = useState(value)

@@ -287,7 +287,7 @@ def _fetch_provider_models(
             headers=_anthropic_headers(api_key, use_oauth=use_oauth),
             kind=kind,
         )
-    urls = _openai_model_urls(kind, base_url)
+    urls = _openai_model_urls(kind, base_url, use_oauth=use_oauth)
     last_error: HTTPError | None = None
     for url in urls:
         try:
@@ -307,12 +307,15 @@ def _fetch_provider_models(
     return []
 
 
-def _openai_model_urls(kind: AgentLlmProviderKind, base_url: str) -> list[str]:
+def _openai_model_urls(kind: AgentLlmProviderKind, base_url: str, *, use_oauth: bool = False) -> list[str]:
     urls: list[str] = []
     if base_url.strip() and "chatgpt.com" not in base_url:
         urls.append(openai_models_url(base_url))
     if kind == "openai":
-        urls.append("https://chatgpt.com/backend-api/codex/models")
+        # chatgpt.com/backend-api/codex/models is the ChatGPT Connect catalog — OAuth only.
+        # A project API key must not be sent there.
+        if use_oauth:
+            urls.append("https://chatgpt.com/backend-api/codex/models")
         urls.append("https://api.openai.com/v1/models")
     unique: list[str] = []
     seen: set[str] = set()
@@ -412,7 +415,8 @@ def _iter_model_records(payload: object) -> list[dict[str, JSONValue]]:
 
 
 def _model_id(record: dict[str, JSONValue]) -> str:
-    for key in ("id", "model", "name"):
+    # OpenAI Connect / Codex lists the usable chat id in `slug`; `id` is often an internal row.
+    for key in ("slug", "id", "model", "name"):
         value = record.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()

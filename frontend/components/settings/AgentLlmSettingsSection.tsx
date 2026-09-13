@@ -67,9 +67,11 @@ export function AgentLlmSettingsSection({
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
   const [pasteCode, setPasteCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [modelsEpoch, setModelsEpoch] = useState(0)
   const catalog = useMemo(() => catalogEntry(draft.kind), [draft.kind])
   const oauth = useAgentLlmOAuth(async () => {
     await onSaved()
+    setModelsEpoch(current => current + 1)
     setAdding(false)
     setDraft(emptyDraft())
     setPasteCode('')
@@ -121,6 +123,7 @@ export function AgentLlmSettingsSection({
       agentLlmProviderId: next.id,
       agentLlmProviders: [...toPublicPatch(settings.agentLlmProviders), next],
     })
+    setModelsEpoch(current => current + 1)
     setDraft(emptyDraft())
     setAdding(false)
   }
@@ -143,7 +146,7 @@ export function AgentLlmSettingsSection({
           ? { ...toPublicPatch([item])[0], apiKey: nextKey }
           : toPublicPatch([item])[0]
       )),
-    })
+    }).then(() => setModelsEpoch(current => current + 1))
     setKeyInputs(current => ({ ...current, [provider.id]: '' }))
   }
 
@@ -169,15 +172,16 @@ export function AgentLlmSettingsSection({
       {showBanner && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-          <span>Connect or add an API key for the selected Agent provider to use chat.</span>
+          <span>Connect or add an API key for the selected Agent provider to use chat, Enhance (API), and timeline gap suggestions.</span>
         </div>
       )}
 
       <p className="text-xs text-zinc-500 leading-relaxed">
-        The Video Editor Agent uses this provider for chat and tool calls. Gemini for Enhance and
-        gap suggestions stays above. OpenAI, Anthropic, MiniMax, xAI, and Moonshot/Kimi can
-        Connect via the provider&apos;s real login. API keys and custom endpoints remain a fallback.
-        Credentials stay in Settings — they are never written into a project.
+        The Video Editor Agent, Enhance (API), and timeline gap suggestions use this provider —
+        any connected account or API key, not Gemini only. Local Enhance still uses Gemma
+        on-device. OpenAI, Anthropic, MiniMax, xAI, and Moonshot/Kimi can Connect via the
+        provider&apos;s real login. API keys and custom endpoints remain a fallback. Credentials
+        stay in Settings — they are never written into a project.
       </p>
 
       <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
@@ -210,7 +214,7 @@ export function AgentLlmSettingsSection({
           {settings.hasAgentLlmKey ? (
             <>
               <Check className="h-3 w-3" />
-              Agent will use {selectedLabel}
+              Agent, Enhance (API), and gap suggestions will use {selectedLabel}
             </>
           ) : (
             <>
@@ -252,6 +256,7 @@ export function AgentLlmSettingsSection({
                     value={provider.model}
                     onChange={model => handleModelChange(provider, model)}
                     disabled={busy}
+                    credentialsRevision={`${provider.hasApiKey ? 'k' : ''}${provider.hasOAuth ? 'o' : ''}:${modelsEpoch}`}
                   />
                   {provider.baseUrl ? (
                     <p className="text-[11px] text-zinc-500 break-all">{provider.baseUrl}</p>

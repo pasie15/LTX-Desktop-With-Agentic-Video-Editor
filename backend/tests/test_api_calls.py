@@ -70,7 +70,7 @@ class TestSuggestGapPrompt:
         assert "models/gemini-2.0-flash:generateContent" in url
         assert "gemini-2.5-flash:" not in url
         assert any(
-            record.getMessage() == "Suggesting gap prompt via Gemini API (gemini-2.0-flash)"
+            record.getMessage() == "Suggesting gap prompt via Agent LLM Gemini (gemini-2.0-flash)"
             for record in caplog.records
         )
         assert "thinkingConfig" not in test_state.http.calls[-1].json_payload["generationConfig"]
@@ -117,6 +117,34 @@ class TestSuggestGapPrompt:
     def test_missing_gemini_key_400(self, client):
         r = client.post("/api/suggest-gap-prompt", json={"beforePrompt": "test"})
         assert_http_error(r, status_code=400, code="GEMINI_API_KEY_MISSING")
+
+    def test_gap_suggest_uses_selected_openai_provider(self, client, test_state):
+        from state.app_settings import AgentLlmProviderSettings
+
+        test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+        test_state.state.app_settings.agent_llm_providers = [
+            AgentLlmProviderSettings(id="prov_oai", kind="openai", api_key="sk-test", model="gpt-5.6-sol"),
+        ]
+        test_state.http.queue(
+            "post",
+            FakeResponse(
+                json_payload={"choices": [{"message": {"content": "A linking shot across the courtyard."}}]}
+            ),
+        )
+        r = client.post("/api/suggest-gap-prompt", json={"beforePrompt": "a courtyard"})
+        assert r.status_code == 200
+        assert r.json()["suggested_prompt"] == "A linking shot across the courtyard."
+        assert test_state.http.calls[-1].url == "https://api.openai.com/v1/chat/completions"
+
+    def test_missing_selected_agent_llm_key_400(self, client, test_state):
+        from state.app_settings import AgentLlmProviderSettings
+
+        test_state.state.app_settings.agent_llm_provider_id = "prov_oai"
+        test_state.state.app_settings.agent_llm_providers = [
+            AgentLlmProviderSettings(id="prov_oai", kind="openai", model="gpt-4o"),
+        ]
+        r = client.post("/api/suggest-gap-prompt", json={"beforePrompt": "test"})
+        assert_http_error(r, status_code=400, code="AGENT_LLM_KEY_MISSING")
 
     def test_timeout_504(self, client, test_state):
         test_state.state.app_settings.gemini_api_key = "key"

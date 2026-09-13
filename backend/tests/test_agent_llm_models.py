@@ -63,8 +63,9 @@ def test_openai_fetch_uses_key_and_sorts_newest_first(client, test_state) -> Non
     ids = [model["id"] for model in body["models"]]
     assert ids[:2] == ["gpt-5.4", "gpt-4o"]
     assert "whisper-1" not in ids
-    assert test_state.http.calls[0].url == "https://api.openai.com/v1/models"
+    assert [call.url for call in test_state.http.calls] == ["https://api.openai.com/v1/models"]
     assert test_state.http.calls[0].headers["Authorization"] == "Bearer sk-test"
+    assert "chatgpt.com" not in test_state.http.calls[0].url
 
 
 def test_saved_oauth_provider_uses_access_token(client, test_state) -> None:
@@ -163,6 +164,51 @@ def test_openrouter_fetches_public_catalog_without_key(client, test_state) -> No
     assert body["source"] == "provider"
     assert body["models"][0]["id"] == "openai/gpt-6-astra"
     assert test_state.http.calls[0].url == "https://openrouter.ai/api/v1/models"
+
+
+def test_openai_connect_parses_slug(client, test_state) -> None:
+    from services.agent_llm_models import _model_id
+
+    assert _model_id({"id": "internal-row-1", "slug": "gpt-5.4"}) == "gpt-5.4"
+
+    test_state.state.app_settings.agent_llm_providers = [
+        AgentLlmProviderSettings(
+            id="prov_oai",
+            kind="openai",
+            oauth_access_token="oauth-access",
+            oauth_account_id="acct_9",
+            auth_mode="oauth",
+            model="gpt-5.4",
+        )
+    ]
+    test_state.http.queue(
+        "get",
+        FakeResponse(
+            json_payload={
+                "data": [
+                    {
+                        "id": "internal-row-1",
+                        "slug": "gpt-5.4",
+                        "display_name": "GPT-5.4",
+                        "created": 200,
+                    },
+                    {
+                        "id": "internal-row-2",
+                        "slug": "gpt-4o",
+                        "name": "GPT-4o",
+                        "created": 100,
+                    },
+                ]
+            }
+        ),
+    )
+    response = client.post("/api/agent/llm/models", json={"providerId": "prov_oai"})
+    assert response.status_code == 200
+    ids = [model["id"] for model in response.json()["models"]]
+    assert ids[0] == "gpt-5.4"
+    assert "gpt-4o" in ids
+    assert "internal-row-1" not in ids
+    assert test_state.http.calls[0].url == "https://chatgpt.com/backend-api/codex/models"
 
 
 def test_unknown_provider_id(client) -> None:

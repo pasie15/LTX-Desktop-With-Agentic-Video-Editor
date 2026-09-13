@@ -70,9 +70,10 @@ import { FreeApiKeyBubble } from '../components/FreeApiKeyBubble'
 import { shouldShowGeneratingTile } from '../lib/genspace-gallery'
 import { shouldShowLastFrameChip } from '../lib/genspace-last-frame'
 import {
-  GEMINI_KEY_REQUIRED_SETTINGS_DETAIL,
-  isEnhanceBlockedByMissingGeminiKey,
+  AGENT_LLM_ENHANCE_SETTINGS_DETAIL,
+  isEnhanceBlockedByMissingAgentLlmKey,
 } from '../lib/enhance-gemini-key'
+import { isAgentLlmKeyError } from '../lib/agent-llm'
 import {
   autoDurationOptionVisible,
   canUseMultiKeyframeMode,
@@ -541,7 +542,7 @@ function PromptBar({
   loraCatalogIdsByPath,
   enhanceAvailableForMode,
   canEnhancePrompt,
-  enhanceBlockedByMissingGeminiKey,
+  enhanceBlockedByMissingAgentLlmKey,
   isEnhancingPrompt,
   enhancePromptError,
   onEnhancePrompt,
@@ -618,13 +619,13 @@ function PromptBar({
   // generation) — gates the whole Enhance/Undo/Redo cluster's visibility.
   enhanceAvailableForMode?: boolean
   canEnhancePrompt?: boolean
-  enhanceBlockedByMissingGeminiKey?: boolean
+  enhanceBlockedByMissingAgentLlmKey?: boolean
   isEnhancingPrompt?: boolean
   enhancePromptError?: string | null
   onEnhancePrompt?: () => void
   // The dropdown is only rendered when this is passed — the parent omits it when local
   // Enhance isn't available (the button is already API-only). API stays listed even without
-  // a Gemini key so picking it can open Settings.
+  // an Agent LLM key so picking it can open Settings.
   enhanceProvider?: 'local' | 'api'
   onEnhanceProviderChange?: (provider: 'local' | 'api') => void
   canUndoPrompt?: boolean
@@ -632,7 +633,7 @@ function PromptBar({
   canRedoPrompt?: boolean
   onRedoPrompt?: () => void
 }) {
-  const enhanceDisabled = (!canEnhancePrompt && !enhanceBlockedByMissingGeminiKey) || !!isEnhancingPrompt
+  const enhanceDisabled = (!canEnhancePrompt && !enhanceBlockedByMissingAgentLlmKey) || !!isEnhancingPrompt
   const inputRef = useRef<HTMLInputElement>(null)
   const lastFrameInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -1247,7 +1248,7 @@ function PromptBar({
         
         {/* Catalog-aware prompt enhancer — video/multi-keyframe/IC-LoRA (local-generation-only)
             or image (generation/editing, any backend). Runs either the local Gemma text encoder
-            or, if available, Gemini's hosted API. */}
+            or, if available, the selected Agent LLM. */}
         {enhanceAvailableForMode && (
           <>
             {(canUndoPrompt || canRedoPrompt) && (
@@ -1302,7 +1303,7 @@ function PromptBar({
                   onChange={(v) => onEnhanceProviderChange(v === 'api' ? 'api' : 'local')}
                   options={[
                     { value: 'local', label: 'Local (Gemma)' },
-                    { value: 'api', label: 'API (Gemini)' },
+                    { value: 'api', label: 'API (Agent LLM)' },
                   ]}
                   trigger={<ChevronUp className="h-3 w-3 text-zinc-500" />}
                   triggerClassName="rounded-l-none border-l border-zinc-700 px-1"
@@ -1503,18 +1504,18 @@ export function GenSpace() {
   const canUseRetake = isLocalMode ? Boolean(localCaps?.retake) : Boolean(apiCaps?.retake)
   const canUseExtend = isLocalMode ? Boolean(localCaps?.extend) : Boolean(apiCaps?.extend)
   // Enhance itself is independent of the video-generation backend — the backend enhance
-  // endpoint only cares about the enhancer provider (local Gemma vs. Gemini), not whether video
+  // endpoint only cares about the enhancer provider (local Gemma vs. Agent LLM), not whether video
   // generation runs locally or via the LTX API. If no catalog LoRA is selected (e.g. because the
   // LoRA picker is local-only), it just falls back to a generic rewrite. "retake"/"extend" have
   // no prompt input, so they're excluded. Multi-keyframe uses the same video enhance path, driven
   // by timeline stills (and optional prompt text).
   const enhanceAvailableForMode = isEnhanceAvailableForMode(mode)
-  // The prompt enhancer can run the local Gemma text encoder OR Gemini's hosted API — this hook
-  // tracks which of those is actually available (not just which the user prefers) and picks
+  // The prompt enhancer can run the local Gemma text encoder OR the selected Agent LLM — this
+  // hook tracks which of those is actually available (not just which the user prefers) and picks
   // whichever provider Enhance should use. Refetched whenever the user is in a mode the button
   // could appear in, so downloading the checkpoint from Settings and coming back here picks it up.
   const {
-    hasGeminiApiKey,
+    hasAgentLlmKey,
     provider: enhanceProvider,
     canToggleProvider: canToggleEnhanceProvider,
     setProviderPreference: setEnhanceProviderPref,
@@ -2513,7 +2514,7 @@ export function GenSpace() {
   }
 
   // Catalog-aware prompt enhancer: rewrites `prompt` in place using either the local Gemma text
-  // encoder or, if available, Gemini's hosted API — informed by whichever catalog LoRA(s)/
+  // encoder or, if available, the selected Agent LLM — informed by whichever catalog LoRA(s)/
   // IC-LoRA are currently selected (or a generic rewrite if none are). Regular-LoRA and IC-LoRA
   // selection are mutually exclusive UI surfaces, so at most one of loraCatalogIds/icLoraId is
   // ever sent.
@@ -2531,12 +2532,12 @@ export function GenSpace() {
     ? keyframes.length > 0
     : (mode === 'video' || mode === 'image') && !!inputImage
   const canEnhancePrompt = enhanceAvailableForMode
-    && (enhanceProvider === 'api' ? hasGeminiApiKey : true)
+    && (enhanceProvider === 'api' ? hasAgentLlmKey : true)
     && (hasEnhanceText || hasEnhanceImage) && !isGenerationInProgressForEnhance && !isOtherGenerationRunning
-  const enhanceBlockedByMissingGeminiKey = isEnhanceBlockedByMissingGeminiKey({
+  const enhanceBlockedByMissingAgentLlmKey = isEnhanceBlockedByMissingAgentLlmKey({
     enhanceAvailableForMode,
     enhanceProvider,
-    hasGeminiApiKey,
+    hasAgentLlmKey,
     hasEnhanceInput: hasEnhanceText || hasEnhanceImage,
     isGenerationInProgressForEnhance,
     isOtherGenerationRunning,
@@ -2615,9 +2616,9 @@ export function GenSpace() {
 
     setIsEnhancingPrompt(false)
     if (!result.ok) {
-      if (result.error.code === 'GEMINI_INVALID_API_KEY' || result.error.code === 'GEMINI_API_KEY_MISSING') {
+      if (isAgentLlmKeyError(result.error.code)) {
         window.dispatchEvent(new CustomEvent('open-settings', {
-          detail: GEMINI_KEY_REQUIRED_SETTINGS_DETAIL,
+          detail: AGENT_LLM_ENHANCE_SETTINGS_DETAIL,
         }))
       }
       // Don't clear the marker here: this "failure" can just be our own fetch getting cut by a
@@ -2638,23 +2639,23 @@ export function GenSpace() {
 
   const handleEnhanceProviderChange = useCallback((provider: EnhanceProvider) => {
     setEnhanceProviderPref(provider)
-    if (provider === 'api' && !hasGeminiApiKey) {
+    if (provider === 'api' && !hasAgentLlmKey) {
       window.dispatchEvent(new CustomEvent('open-settings', {
-        detail: GEMINI_KEY_REQUIRED_SETTINGS_DETAIL,
+        detail: AGENT_LLM_ENHANCE_SETTINGS_DETAIL,
       }))
     }
-  }, [setEnhanceProviderPref, hasGeminiApiKey])
+  }, [setEnhanceProviderPref, hasAgentLlmKey])
 
   const handleEnhancePrompt = useCallback(() => {
-    if (enhanceBlockedByMissingGeminiKey) {
+    if (enhanceBlockedByMissingAgentLlmKey) {
       window.dispatchEvent(new CustomEvent('open-settings', {
-        detail: GEMINI_KEY_REQUIRED_SETTINGS_DETAIL,
+        detail: AGENT_LLM_ENHANCE_SETTINGS_DETAIL,
       }))
       return
     }
     if (!canEnhancePrompt) return
     void runEnhance(prompt)
-  }, [enhanceBlockedByMissingGeminiKey, canEnhancePrompt, prompt, runEnhance])
+  }, [enhanceBlockedByMissingAgentLlmKey, canEnhancePrompt, prompt, runEnhance])
 
   // Pure local navigation through promptHistory — no network call. "Redo" means redo the
   // undo you just did, not "enhance again" (a fresh rewrite is just Enhance after an Undo).
@@ -3406,7 +3407,7 @@ export function GenSpace() {
                 loraCatalogIdsByPath={loraCatalogIdsByPath}
                 enhanceAvailableForMode={enhanceAvailableForMode}
                 canEnhancePrompt={canEnhancePrompt}
-                enhanceBlockedByMissingGeminiKey={enhanceBlockedByMissingGeminiKey}
+                enhanceBlockedByMissingAgentLlmKey={enhanceBlockedByMissingAgentLlmKey}
                 enhanceProvider={enhanceProvider}
                 onEnhanceProviderChange={canToggleEnhanceProvider ? handleEnhanceProviderChange : undefined}
                 isEnhancingPrompt={isEnhancingPrompt}

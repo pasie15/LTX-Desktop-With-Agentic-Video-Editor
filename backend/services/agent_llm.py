@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import uuid4
 
-from api_types import AgentMessagePayload, AgentToolDeclarationPayload
+from api_types import AgentMessagePartPayload, AgentMessagePayload, AgentToolDeclarationPayload
 from _routes._errors import HTTPError
 from services.anthropic_messages_client import (
     anthropic_messages_from_agent,
@@ -298,6 +298,38 @@ def missing_key_code(resolved: ResolvedAgentLlm) -> str:
     if resolved.kind == "gemini":
         return "GEMINI_API_KEY_MISSING"
     return "AGENT_LLM_KEY_MISSING"
+
+
+def require_resolved_agent_llm(settings: AppSettings, model_override: str | None = None) -> ResolvedAgentLlm:
+    resolved = resolve_agent_llm(settings, model_override)
+    if not resolved.api_key:
+        raise HTTPError(400, missing_key_code(resolved))
+    return resolved
+
+
+def complete_agent_llm_text(
+    http: HTTPClient,
+    resolved: ResolvedAgentLlm,
+    *,
+    system_instruction: str,
+    user_text: str,
+) -> str:
+    result = run_agent_llm_turn(
+        http,
+        resolved,
+        messages=[
+            AgentMessagePayload(
+                role="user",
+                parts=[AgentMessagePartPayload(type="text", text=user_text)],
+            )
+        ],
+        available_tools=[],
+        system_instruction=system_instruction,
+    )
+    text = (result.text or "").strip()
+    if not text:
+        raise HTTPError(502, "AGENT_LLM_EMPTY_RESPONSE")
+    return text
 
 
 def run_agent_llm_turn(
