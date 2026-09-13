@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { GENERATION_SLOT_WAIT_STATUS, waitForGenerationSlot } from './agent-generation-slot.ts'
+import { GENERATION_SLOT_WAIT_STATUS, slotOccupiedFromProgress, waitForGenerationSlot } from './agent-generation-slot.ts'
 
 describe('generation slot wait', () => {
   it('returns immediately when the slot is free', async () => {
@@ -25,6 +25,26 @@ describe('generation slot wait', () => {
     assert.deepEqual(result, { ok: true })
     assert.ok(announced >= 1)
     assert.equal(GENERATION_SLOT_WAIT_STATUS.includes('Waiting'), true)
+  })
+
+  it('does not treat a failed or missing progress poll as occupied', () => {
+    assert.equal(slotOccupiedFromProgress({ inFlight: false, progress: null }), false)
+    assert.equal(slotOccupiedFromProgress({ inFlight: false, progress: { ok: false } }), false)
+    assert.equal(slotOccupiedFromProgress({
+      inFlight: false,
+      locallyActive: false,
+      progress: { ok: true, data: { status: 'idle' } },
+    }), false)
+    assert.equal(slotOccupiedFromProgress({
+      inFlight: false,
+      progress: { ok: true, data: { status: 'running' } },
+    }), true)
+    assert.equal(slotOccupiedFromProgress({ inFlight: true, progress: null }), true)
+    assert.equal(slotOccupiedFromProgress({
+      inFlight: false,
+      locallyActive: true,
+      progress: { ok: false },
+    }), true)
   })
 
   it('stops waiting when the abort signal fires', async () => {

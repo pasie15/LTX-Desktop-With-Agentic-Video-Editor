@@ -48,6 +48,7 @@ export interface CreateAgentToolExecutorInput {
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
   getApproveAll?: () => boolean
   readAssetPreview?: AgentToolExecutorHost['readAssetPreview']
+  getPreferredAssemblyMedia?: AgentToolExecutorHost['getPreferredAssemblyMedia']
 }
 
 function errorResult(message: string): Record<string, unknown> {
@@ -86,8 +87,9 @@ export function createAgentToolExecutor(input: CreateAgentToolExecutorInput): Ag
     projectId: input.projectId,
     getAbortSignal: input.getAbortSignal,
     onProgress: input.onProgress,
-    getApproveAll: input.getApproveAll,
-    readAssetPreview: input.readAssetPreview,
+      getApproveAll: input.getApproveAll,
+      readAssetPreview: input.readAssetPreview,
+      getPreferredAssemblyMedia: input.getPreferredAssemblyMedia,
   }
   return new AgentToolExecutor(host)
 }

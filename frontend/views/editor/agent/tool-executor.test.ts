@@ -1230,6 +1230,48 @@ describe('import tool executor', () => {
 })
 
 describe('refs speech and mix', () => {
+  it('uses the project still and song instead of generating 8 stills', async () => {
+    let imageCalls = 0
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [imageAsset('ken-tune'), audioAsset('midnight-river', 180)],
+    }), {
+      generation: fakeJobs({
+        runImage: async () => {
+          imageCalls += 1
+          return { status: 'complete', path: '/tmp/still.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: `/tmp/cut-${videoPaths.length}.mp4` }
+        },
+      }),
+      approveAll: true,
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('assemble_shots', {
+      kind: 'music_video',
+      shots: Array.from({ length: 8 }, (_, index) => ({
+        id: `s${index + 1}`,
+        prompt: `cinematic shot ${index + 1} of the subject`,
+        duration: 5,
+      })),
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(imageCalls, 0)
+    assert.equal(videoPaths.length, 8)
+    assert.ok(videoPaths.every(path => path === '/tmp/ken-tune.png'))
+    assert.equal(result.jobCount, 8)
+    const clips = activeClips(host.getState())
+    assert.equal(clips.filter(item => item.type === 'video').length, 8)
+    const music = clips.find(item => item.assetId === 'midnight-river')
+    assert.ok(music)
+    assert.equal(music.trackIndex, 4)
+  })
+
   it('registers a still and resolves it on assemble', async () => {
     const refs = createMemoryRefStore()
     const host = createHost(makeState({
@@ -1252,11 +1294,16 @@ describe('refs speech and mix', () => {
     assert.equal((listed.refs as unknown[]).length, 1)
 
     let imageCalls = 0
+    const videoPaths: Array<string | null | undefined> = []
     host.generation = fakeJobs({
       runImage: async input => {
         imageCalls += 1
         assert.equal(input.imagePath, '/tmp/hero-still.png')
         return { status: 'complete', path: '/tmp/still-from-ref.png' }
+      },
+      runVideo: async input => {
+        videoPaths.push(input.imagePath)
+        return { status: 'complete', path: '/tmp/cut.mp4' }
       },
     })
     const result = await executor.execute('assemble_shots', {
@@ -1267,7 +1314,8 @@ describe('refs speech and mix', () => {
       musicAssetId: 'theme',
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 1)
+    assert.equal(imageCalls, 0)
+    assert.deepEqual(videoPaths, ['/tmp/hero-still.png'])
     const clips = activeClips(host.getState())
     assert.ok(clips.some(item => item.type === 'text'))
     const music = clips.find(item => item.assetId === 'theme')

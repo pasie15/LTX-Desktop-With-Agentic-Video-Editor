@@ -18,6 +18,11 @@ export function useIsGenerationActive(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+/** True only while a renderer job is inside `withGenerationActive` — not the fail-closed UI lock. */
+export function isGenerationActiveNow(): boolean {
+  return activeCount > 0
+}
+
 // Local generation can starve the backend's event loop; withGenerationActive tells main so the
 // liveness monitor doesn't kill a busy backend. We also keep a local count for the UI signal above.
 export async function withGenerationActive<T>(fn: () => Promise<T>): Promise<T> {

@@ -918,7 +918,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Call plan_edit first (Approve all does not skip planning). Picture on V1, titles on V2, voiceover on A1, music on A2. Voiceover duration drives picture: shots are sized to cover VO, then sync_narration / check_cut after place. Still-then-video with a review pause after each still unless approveAll. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId for continuity.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Call plan_edit first (Approve all does not skip planning). Picture on V1, titles on V2, voiceover on A1, music on A2. Voiceover duration drives picture: shots are sized to cover VO, then sync_narration / check_cut after place. Still-then-video with a review pause after each still unless approveAll. When the user already supplied a subject still or song, pass imageAssetId / musicAssetId — do not generate replacement stills. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId for continuity.',
     parameters: {
       type: 'object',
       properties: {

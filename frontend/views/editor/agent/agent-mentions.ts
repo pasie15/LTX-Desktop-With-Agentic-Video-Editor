@@ -1,6 +1,8 @@
 import type { Asset } from '../../../types/project-model'
+import type { AgentAssemblyPreferredMedia } from './agent-assembly.ts'
 import {
   formatAgentTimecode,
+  type AgentChatMessage,
   type AgentMention,
   type AgentPart,
 } from './agent-types.ts'
@@ -106,6 +108,53 @@ export async function mentionPartsForMessage(
     }
   }
   return parts
+}
+
+export function mentionsFromMessages(messages: AgentChatMessage[]): AgentMention[] {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== 'user') continue
+    for (const part of message.parts) {
+      if (part.type !== 'text' || !part.text.startsWith('Mentions:')) continue
+      const raw = part.text.slice('Mentions:'.length).trim()
+      try {
+        const parsed = JSON.parse(raw) as unknown
+        if (!Array.isArray(parsed)) continue
+        return parsed.flatMap(item => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+          const record = item as Record<string, unknown>
+          if (record.kind !== 'asset' || typeof record.assetId !== 'string') return []
+          return [{
+            kind: 'asset' as const,
+            id: typeof record.id === 'string' ? record.id : record.assetId,
+            label: typeof record.label === 'string' ? record.label : record.assetId,
+            assetId: record.assetId,
+            assetType: typeof record.assetType === 'string'
+              ? record.assetType as AgentMention['assetType']
+              : undefined,
+          }]
+        })
+      } catch {
+        return []
+      }
+    }
+  }
+  return []
+}
+
+export function preferredAssemblyMediaFromMentions(
+  mentions: AgentMention[],
+  assets: Asset[],
+): AgentAssemblyPreferredMedia {
+  const mentionedIds = new Set(
+    mentions.filter(mention => mention.kind === 'asset' && mention.assetId).map(mention => mention.assetId!),
+  )
+  const mentioned = assets.filter(asset => mentionedIds.has(asset.id))
+  const image = mentioned.find(asset => asset.type === 'image')
+  const audio = mentioned.find(asset => asset.type === 'audio')
+  return {
+    ...(image ? { imageAssetId: image.id } : {}),
+    ...(audio ? { musicAssetId: audio.id } : {}),
+  }
 }
 
 function compactMention(mention: AgentMention): Record<string, unknown> {

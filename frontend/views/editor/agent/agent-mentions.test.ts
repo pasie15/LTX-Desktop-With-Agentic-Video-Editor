@@ -7,6 +7,8 @@ import {
   mentionFromRange,
   mentionFromSelection,
   mentionPartsForMessage,
+  mentionsFromMessages,
+  preferredAssemblyMediaFromMentions,
   replaceMentionQuery,
 } from './agent-mentions.ts'
 import { formatAgentTimecode } from './agent-types.ts'
@@ -48,6 +50,26 @@ describe('agent mentions', () => {
     assert.equal(parts[1]?.type, 'inline_image')
     const replaced = replaceMentionQuery('Look at @he', 11, '')
     assert.equal(replaced.text, 'Look at ')
+  })
+
+  it('reads mentioned still and song from the last user message', () => {
+    const music: Asset = { ...still, id: 'aud-1', type: 'audio', prompt: 'Midnight' }
+    const mentions = mentionsFromMessages([{
+      id: 'm1',
+      role: 'user',
+      createdAt: 1,
+      parts: [{
+        type: 'text',
+        text: `Mentions:\n${JSON.stringify([
+          { kind: 'asset', id: 'n1', label: 'Ken Tune', assetId: 'img-1', assetType: 'image' },
+          { kind: 'asset', id: 'n2', label: 'Midnight', assetId: 'aud-1', assetType: 'audio' },
+        ])}`,
+      }],
+    }])
+    assert.deepEqual(preferredAssemblyMediaFromMentions(mentions, [still, music]), {
+      imageAssetId: 'img-1',
+      musicAssetId: 'aud-1',
+    })
   })
 
   it('formats human timecode as m:ss.t', () => {

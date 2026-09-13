@@ -1,10 +1,10 @@
 import type { GenerationSettings } from '../../../components/SettingsPanel'
 import { ApiClient, type ApiRequestBodyOf } from '../../../lib/api-client'
 import { buildGenerateVideoImageInputs } from '../../../lib/build-generate-video-body'
-import { canCancelLocalJob, withGenerationActive } from '../../../lib/generation-active'
+import { canCancelLocalJob, isGenerationActiveNow, withGenerationActive } from '../../../lib/generation-active'
 import { GENERATION_RECOVERY_KEY, type GenerationRecoveryContext } from '../../../hooks/use-generation'
 import type { VideoGenerationPipeline } from '../../../lib/video-generation-model-specs'
-import { GENERATION_SLOT_WAIT_STATUS, waitForGenerationSlot } from './agent-generation-slot.ts'
+import { GENERATION_SLOT_WAIT_STATUS, slotOccupiedFromProgress, waitForGenerationSlot } from './agent-generation-slot.ts'
 import type { AgentGenerateJobResult, AgentGenerateSettings, AgentGenerationJobs, AgentPersistedVisualAsset } from './agent-generate-runtime.ts'
 
 type GenerateVideoRequest = ApiRequestBodyOf<'generateVideo'>
@@ -96,17 +96,19 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
   }
 
   const isSlotOccupied = async () => {
-    if (inFlight) return true
-    const localBusy = input.isBusy()
+    if (inFlight || isGenerationActiveNow()) return true
     try {
       const progress = await Promise.race([
         ApiClient.getGenerationProgress(),
         new Promise<null>(resolve => setTimeout(() => resolve(null), 2000)),
       ])
-      if (!progress || !progress.ok) return localBusy
-      return progress.data.status === 'running'
+      return slotOccupiedFromProgress({
+        inFlight: false,
+        locallyActive: false,
+        progress,
+      })
     } catch {
-      return localBusy
+      return false
     }
   }
 
