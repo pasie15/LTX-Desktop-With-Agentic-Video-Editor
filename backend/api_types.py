@@ -1308,3 +1308,26 @@ class AgentLlmOAuthDisconnectRequest(BaseModel):
 
 class AgentLlmOAuthOkResponse(BaseModel):
     status: Literal["ok"] = "ok"
+
+
+class AgentLlmModelsRequest(BaseModel):
+    providerId: str = ""
+    kind: str = ""
+    apiKey: str = ""
+    baseUrl: str = ""
+    model: str = ""
+
+
+class AgentLlmModelOptionPayload(BaseModel):
+    model_config = ConfigDict(strict=True)
+    id: str
+    displayName: str
+    description: str = ""
+
+
+class AgentLlmModelsResponse(BaseModel):
+    model_config = ConfigDict(strict=True)
+    models: list[AgentLlmModelOptionPayload]
+    resolvedModel: str = ""
+    source: Literal["provider", "catalog"] = "catalog"
+    error: str = ""

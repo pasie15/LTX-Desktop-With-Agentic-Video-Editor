@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from api_types import AgentTurnRequest, AgentTurnResponse
+from api_types import AgentLlmModelsRequest, AgentLlmModelsResponse, AgentTurnRequest, AgentTurnResponse
 from state import get_state_service
 from app_handler import AppHandler
 
@@ -17,3 +17,11 @@ def route_agent_turn(
     handler: AppHandler = Depends(get_state_service),
 ) -> AgentTurnResponse:
     return handler.agent.run_turn(req)
+
+
+@router.post("/agent/llm/models", response_model=AgentLlmModelsResponse)
+def route_agent_llm_models(
+    req: AgentLlmModelsRequest,
+    handler: AppHandler = Depends(get_state_service),
+) -> AgentLlmModelsResponse:
+    return handler.settings.list_agent_llm_models(req)

@@ -391,6 +391,10 @@ export class ApiClient {
     exactErrorStatuses: [400] as const,
   })
 
+  static listAgentLlmModels = makeEndpointClient('/api/agent/llm/models', 'post', {
+    exactErrorStatuses: [400] as const,
+  })
+
   static agentLlmOAuthStart = makeEndpointClient('/api/agent/llm/oauth/start', 'post', {
     exactErrorStatuses: [400] as const,
   })

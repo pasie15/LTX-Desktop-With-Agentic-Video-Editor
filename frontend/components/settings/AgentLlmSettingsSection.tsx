@@ -13,6 +13,8 @@ import {
 } from '../../lib/agent-llm'
 import { useAgentLlmOAuth } from '../../hooks/use-agent-llm-oauth'
 import type { AppSettings } from '../../contexts/AppSettingsContext'
+import { AgentLlmModelSelect } from './AgentLlmModelSelect'
+import { CopyCodeButton, CopyableCode } from './CopyCodeButton'
 
 interface AgentLlmSettingsSectionProps {
   settings: AppSettings
@@ -244,13 +246,12 @@ export function AgentLlmSettingsSection({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <input
-                    type="text"
+                  <AgentLlmModelSelect
+                    kind={provider.kind}
+                    providerId={provider.id}
                     value={provider.model}
-                    onChange={event => handleModelChange(provider, event.target.value)}
-                    placeholder={entry.defaultModel || 'Model id'}
-                    onKeyDown={event => event.stopPropagation()}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                    onChange={model => handleModelChange(provider, model)}
+                    disabled={busy}
                   />
                   {provider.baseUrl ? (
                     <p className="text-[11px] text-zinc-500 break-all">{provider.baseUrl}</p>
@@ -286,14 +287,19 @@ export function AgentLlmSettingsSection({
                   ) : null}
                   {waiting && oauth.session?.flow === 'code' ? (
                     <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={pasteCode}
-                        onChange={event => setPasteCode(event.target.value)}
-                        placeholder="Paste the code from the browser"
-                        onKeyDown={event => event.stopPropagation()}
-                        className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
-                      />
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={pasteCode}
+                          onChange={event => setPasteCode(event.target.value)}
+                          placeholder="Paste the code from the browser"
+                          onKeyDown={event => event.stopPropagation()}
+                          className="w-full px-3 py-2 pr-9 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                        />
+                        <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                          <CopyCodeButton value={pasteCode} label="paste code" />
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => void oauth.completeCode(pasteCode)}
@@ -306,7 +312,8 @@ export function AgentLlmSettingsSection({
                   ) : null}
                   {waiting && oauth.session?.userCode ? (
                     <p className="text-[11px] text-zinc-400">
-                      Confirm this code in the browser: <span className="text-white">{oauth.session.userCode}</span>
+                      Confirm this code in the browser:{' '}
+                      <CopyableCode value={oauth.session.userCode} label="device code" />
                     </p>
                   ) : null}
                   <div className="flex gap-2">
@@ -381,14 +388,19 @@ export function AgentLlmSettingsSection({
                 </button>
                 {oauth.connecting && !connectTargetId && oauth.session?.flow === 'code' ? (
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={pasteCode}
-                      onChange={event => setPasteCode(event.target.value)}
-                      placeholder="Paste the code from the browser"
-                      onKeyDown={event => event.stopPropagation()}
-                      className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
-                    />
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={pasteCode}
+                        onChange={event => setPasteCode(event.target.value)}
+                        placeholder="Paste the code from the browser"
+                        onKeyDown={event => event.stopPropagation()}
+                        className="w-full px-3 py-2 pr-9 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+                      />
+                      <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                        <CopyCodeButton value={pasteCode} label="paste code" />
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={async () => {
@@ -408,7 +420,8 @@ export function AgentLlmSettingsSection({
                 ) : null}
                 {oauth.connecting && !connectTargetId && oauth.session?.userCode ? (
                   <p className="text-[11px] text-zinc-400">
-                    Confirm this code in the browser: <span className="text-white">{oauth.session.userCode}</span>
+                    Confirm this code in the browser:{' '}
+                    <CopyableCode value={oauth.session.userCode} label="device code" />
                   </p>
                 ) : null}
                 <p className="text-[11px] text-zinc-500">Or paste an API key as a fallback.</p>
@@ -422,13 +435,13 @@ export function AgentLlmSettingsSection({
               onKeyDown={event => event.stopPropagation()}
               className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
             />
-            <input
-              type="text"
+            <AgentLlmModelSelect
+              kind={draft.kind}
+              apiKey={draft.apiKey}
+              baseUrl={draft.baseUrl}
               value={draft.model}
-              onChange={event => setDraft(current => ({ ...current, model: event.target.value }))}
-              placeholder={catalog.defaultModel || 'Model id'}
-              onKeyDown={event => event.stopPropagation()}
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500"
+              onChange={model => setDraft(current => ({ ...current, model }))}
+              disabled={busy}
             />
             {(catalog.requiresBaseUrl || draft.kind.startsWith('custom_')) && (
               <input

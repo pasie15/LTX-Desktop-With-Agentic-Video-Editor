@@ -4,7 +4,9 @@ import {
   AGENT_LLM_CATALOG,
   AGENT_LLM_KEY_REQUIRED_SETTINGS_DETAIL,
   catalogEntry,
+  catalogModels,
   isAgentLlmKeyError,
+  mergeAgentLlmModelOptions,
   providerDisplayLabel,
 } from './agent-llm.ts'
 
@@ -28,6 +30,28 @@ describe('agent LLM catalog', () => {
   it('marks custom endpoints as requiring a base URL', () => {
     assert.equal(catalogEntry('custom_openai').requiresBaseUrl, true)
     assert.equal(catalogEntry('openai').requiresBaseUrl, false)
+  })
+})
+
+describe('catalogModels', () => {
+  it('lists latest models first and keeps the rest', () => {
+    const openai = catalogModels('openai').map(model => model.id)
+    assert.equal(openai[0], 'gpt-5.4')
+    assert.ok(openai.includes('gpt-4o'))
+    assert.equal(catalogModels('anthropic')[0]?.id, 'claude-opus-4-6')
+  })
+})
+
+describe('mergeAgentLlmModelOptions', () => {
+  it('keeps fetched ids first and appends a custom current model', () => {
+    const ids = mergeAgentLlmModelOptions(
+      [{ id: 'gpt-5.4', displayName: 'GPT-5.4' }],
+      'openai',
+      'my-fine-tune',
+    ).map(model => model.id)
+    assert.equal(ids[0], 'gpt-5.4')
+    assert.equal(ids.filter(id => id === 'gpt-5.4').length, 1)
+    assert.equal(ids.at(-1), 'my-fine-tune')
   })
 })
 
