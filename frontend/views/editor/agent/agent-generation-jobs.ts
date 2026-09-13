@@ -141,7 +141,7 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
     return () => clearInterval(timer)
   }
 
-  const runImage: AgentGenerationJobs['runImage'] = async ({ prompt, settings, signal, onProgress }) => {
+  const runImage: AgentGenerationJobs['runImage'] = async ({ prompt, settings, imagePath, strength, signal, onProgress }) => {
     const waited = await waitForSlot({
       signal,
       onWaiting: () => onProgress?.({ percent: 0, status: GENERATION_SLOT_WAIT_STATUS }),
@@ -165,7 +165,8 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
         height: dims.height,
         numSteps: videoSettings.imageSteps || 4,
         numImages: 1,
-        strength: 0.6,
+        strength: imagePath ? (strength ?? 0.35) : 0.6,
+        ...(imagePath ? { imagePath } : {}),
       }))
       stopPoll()
       if (signal?.aborted || cancelRequested) {

@@ -392,6 +392,14 @@ export const electronAPISchemas = {
     input: z.object({ projectId: z.string(), sessionId: z.string() }),
     output: emptyResult,
   },
+  readProjectRefs: {
+    input: z.object({ projectId: z.string() }),
+    output: ipcResult({ data: z.string() }),
+  },
+  writeProjectRefs: {
+    input: z.object({ projectId: z.string(), data: z.string() }),
+    output: ipcResult({ path: z.string() }),
+  },
 } as const
 
 type Schemas = typeof electronAPISchemas

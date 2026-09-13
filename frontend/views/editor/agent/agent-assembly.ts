@@ -8,7 +8,7 @@ import type { AgentAskUserQuestion } from './agent-types.ts'
 
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 
-export type AgentAssemblyKind = 'script' | 'broll'
+export type AgentAssemblyKind = 'script' | 'broll' | 'music_video' | 'narrative'
 
 export interface AgentAssemblyShot {
   id: string
@@ -16,6 +16,7 @@ export interface AgentAssemblyShot {
   duration: number
   title?: string
   imageAssetId?: string
+  refId?: string
   assetId?: string
   skipStill?: boolean
 }
@@ -33,6 +34,10 @@ export interface AgentAssemblyProposal {
   jobCount: number
   exceedsJobCap: boolean
   shots: AgentAssemblyShot[]
+  voiceover?: string
+  voiceoverAssetId?: string
+  musicAssetId?: string
+  openingTitle?: string
 }
 
 const SLUG_PREFIX = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.|SCENE\b|#\s+)/i
@@ -100,17 +105,32 @@ export function normalizeAssemblyShots(raw: unknown): AgentAssemblyShot[] | null
     const imageAssetId = typeof record.imageAssetId === 'string' && record.imageAssetId.trim()
       ? record.imageAssetId.trim()
       : undefined
+    const refId = typeof record.refId === 'string' && record.refId.trim()
+      ? record.refId.trim()
+      : undefined
     shots.push({
       id,
       prompt: prompt || `Place ${assetId}`,
       duration,
       ...(title ? { title } : {}),
       ...(imageAssetId ? { imageAssetId } : {}),
+      ...(refId ? { refId } : {}),
       ...(assetId ? { assetId } : {}),
       ...(record.skipStill === true ? { skipStill: true } : {}),
     })
   }
   return shots
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function parseAssemblyKind(value: unknown): AgentAssemblyKind {
+  if (value === 'broll' || value === 'music_video' || value === 'narrative' || value === 'script') {
+    return value
+  }
+  return 'script'
 }
 
 export function buildAssemblyProposal(input: {
@@ -123,11 +143,17 @@ export function buildAssemblyProposal(input: {
   audio?: unknown
   skipStills?: unknown
   shots: AgentAssemblyShot[]
+  voiceover?: unknown
+  voiceoverAssetId?: unknown
+  musicAssetId?: unknown
+  openingTitle?: unknown
+  title?: unknown
 }): AgentAssemblyProposal {
-  const kind: AgentAssemblyKind = input.kind === 'broll' ? 'broll' : 'script'
+  const kind = parseAssemblyKind(input.kind)
   const destination = parseDestination(input.destination, kind === 'broll' ? 'after_last' : 'playhead')
   const skipStills = input.skipStills === true
   const jobCount = countAssemblyGenerateJobs(input.shots, skipStills)
+  const openingTitle = optionalString(input.openingTitle) ?? optionalString(input.title)
   return {
     tool: 'assemble_shots',
     kind,
@@ -149,11 +175,21 @@ export function buildAssemblyProposal(input: {
     jobCount,
     exceedsJobCap: jobCount > MAX_ASSEMBLY_GENERATE_JOBS,
     shots: input.shots,
+    ...(optionalString(input.voiceover) ? { voiceover: optionalString(input.voiceover) } : {}),
+    ...(optionalString(input.voiceoverAssetId) ? { voiceoverAssetId: optionalString(input.voiceoverAssetId) } : {}),
+    ...(optionalString(input.musicAssetId) ? { musicAssetId: optionalString(input.musicAssetId) } : {}),
+    ...(openingTitle ? { openingTitle } : {}),
   }
 }
 
 export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): AgentAskUserQuestion[] {
-  const jobLabel = `${proposal.shots.length} shot${proposal.shots.length === 1 ? '' : 's'}, ${proposal.jobCount} generate job${proposal.jobCount === 1 ? '' : 's'}`
+  const extras = [
+    proposal.voiceover || proposal.voiceoverAssetId ? 'VO on A1' : null,
+    proposal.musicAssetId ? 'music on A2' : null,
+    proposal.openingTitle ? 'opening title' : null,
+  ].filter(Boolean)
+  const extraLabel = extras.length > 0 ? `; ${extras.join(', ')}` : ''
+  const jobLabel = `${proposal.shots.length} shot${proposal.shots.length === 1 ? '' : 's'}, ${proposal.jobCount} generate job${proposal.jobCount === 1 ? '' : 's'}${extraLabel}`
   return [{
     id: 'shot_list',
     prompt: proposal.exceedsJobCap

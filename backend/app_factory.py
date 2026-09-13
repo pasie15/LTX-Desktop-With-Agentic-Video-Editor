@@ -28,6 +28,7 @@ from _routes.agent_llm_oauth import router as agent_llm_oauth_router
 from _routes.suggest_gap_prompt import router as suggest_gap_prompt_router
 from _routes.retake import router as retake_router
 from _routes.extend import router as extend_router
+from _routes.elevenlabs import router as elevenlabs_router
 from _routes.runtime_policy import router as runtime_policy_router
 from _routes.settings import router as settings_router
 from api_types import HTTPErrorResponse
@@ -171,5 +172,6 @@ def create_app(
     app.include_router(prompt_enhancement_router)
     app.include_router(runtime_policy_router)
     app.include_router(hf_auth_router)
+    app.include_router(elevenlabs_router)
 
     return app

@@ -38,6 +38,11 @@ export const AGENT_STARTER_PROMPTS: readonly AgentStarterPrompt[] = [
     composerText: 'Add titles / subtitles',
   },
   {
+    id: 'voiceover-music',
+    label: 'Add voiceover and music',
+    composerText: 'Add a voiceover and background music. Generate or import the VO onto A1 and place music on A2 under the picture, then mix music down.',
+  },
+  {
     id: 'organize-bins',
     label: 'Organize assets into bins',
     composerText: 'Organize assets into bins',

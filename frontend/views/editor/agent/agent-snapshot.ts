@@ -11,6 +11,7 @@ import {
   selectTimelines,
 } from '../editor-selectors'
 import { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
+import type { AgentRef } from './agent-refs'
 import type { AgentProjectSnapshot } from './agent-types'
 
 export { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
@@ -59,6 +60,7 @@ export interface BuildAgentSnapshotInput {
   generationCanCancel: boolean
   currentModelLabel: string
   selectedGapOverride?: TimelineGapSelection | null
+  refs?: AgentRef[]
 }
 
 export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProjectSnapshot {
@@ -117,5 +119,11 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
       canCancel: input.generationCanCancel,
       currentModelLabel: input.currentModelLabel,
     },
+    refs: (input.refs ?? []).map(ref => ({
+      id: ref.id,
+      name: ref.name,
+      role: ref.role,
+      assetId: ref.assetId,
+    })),
   }
 }

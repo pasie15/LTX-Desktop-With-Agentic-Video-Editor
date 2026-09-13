@@ -22,6 +22,7 @@ export const EDIT_TOOL_NAMES = [
   'delete_clips',
   'add_text',
   'add_subtitle',
+  'set_clip_volume',
   'select_clips',
   'set_playhead',
   'create_timeline',
@@ -55,12 +56,28 @@ export const IMPORT_TOOL_NAMES = [
 
 export type AgentImportToolName = (typeof IMPORT_TOOL_NAMES)[number]
 
+export const REF_TOOL_NAMES = [
+  'list_refs',
+  'register_ref',
+  'forget_ref',
+] as const
+
+export type AgentRefToolName = (typeof REF_TOOL_NAMES)[number]
+
+export const SPEECH_TOOL_NAMES = [
+  'generate_speech',
+] as const
+
+export type AgentSpeechToolName = (typeof SPEECH_TOOL_NAMES)[number]
+
 export type AgentToolName =
   | AgentReadToolName
   | AgentEditToolName
   | AgentGenerateToolName
   | AgentAssemblyToolName
   | AgentImportToolName
+  | AgentRefToolName
+  | AgentSpeechToolName
 
 export function isGenerateToolName(name: string): name is AgentGenerateToolName {
   return (GENERATE_TOOL_NAMES as readonly string[]).includes(name)
@@ -72,6 +89,14 @@ export function isAssemblyToolName(name: string): name is AgentAssemblyToolName 
 
 export function isImportToolName(name: string): name is AgentImportToolName {
   return (IMPORT_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isRefToolName(name: string): name is AgentRefToolName {
+  return (REF_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isSpeechToolName(name: string): name is AgentSpeechToolName {
+  return (SPEECH_TOOL_NAMES as readonly string[]).includes(name)
 }
 
 export function isSlotHoldingToolName(name: string): boolean {
@@ -98,6 +123,7 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
   delete_clips: ['clipIds', 'confirmed'],
   add_text: ['text', 'startTime', 'trackIndex', 'duration'],
   add_subtitle: ['text', 'startTime', 'endTime', 'trackIndex'],
+  set_clip_volume: ['clipId', 'id', 'volume'],
   select_clips: ['clipIds'],
   set_playhead: ['time'],
   create_timeline: ['name'],
@@ -108,8 +134,8 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
 }
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
-  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed'],
-  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
+  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId'],
+  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
   fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
   regenerate_clip: ['clipId', 'assetId', 'confirmed'],
   enhance_prompt: ['prompt', 'mediaType'],
@@ -129,6 +155,11 @@ export const ASSEMBLY_TOOL_ALLOWED_KEYS: Record<AgentAssemblyToolName, readonly 
     'skipStills',
     'confirmed',
     'confirmedMore',
+    'voiceover',
+    'voiceoverAssetId',
+    'musicAssetId',
+    'openingTitle',
+    'title',
   ],
 }
 
@@ -146,12 +177,24 @@ export const IMPORT_TOOL_ALLOWED_KEYS: Record<AgentImportToolName, readonly stri
   ],
 }
 
+export const REF_TOOL_ALLOWED_KEYS: Record<AgentRefToolName, readonly string[]> = {
+  list_refs: [],
+  register_ref: ['name', 'assetId', 'role', 'id'],
+  forget_ref: ['id', 'refId'],
+}
+
+export const SPEECH_TOOL_ALLOWED_KEYS: Record<AgentSpeechToolName, readonly string[]> = {
+  generate_speech: ['text', 'voiceId', 'modelId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
+}
+
 export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> = {
   ...READ_TOOL_ALLOWED_KEYS,
   ...EDIT_TOOL_ALLOWED_KEYS,
   ...GENERATE_TOOL_ALLOWED_KEYS,
   ...ASSEMBLY_TOOL_ALLOWED_KEYS,
   ...IMPORT_TOOL_ALLOWED_KEYS,
+  ...REF_TOOL_ALLOWED_KEYS,
+  ...SPEECH_TOOL_ALLOWED_KEYS,
 }
 
 export const READ_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
@@ -328,6 +371,19 @@ export const EDIT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
     },
   },
   {
+    name: 'set_clip_volume',
+    description: 'Set clip volume from 0 to 1. Use for a basic mix: voiceover near 1, background music around 0.25.',
+    parameters: {
+      type: 'object',
+      required: ['volume'],
+      properties: {
+        clipId: { type: 'string' },
+        id: { type: 'string', description: 'Alias for clipId' },
+        volume: { type: 'number', description: '0 silent, 1 full' },
+      },
+    },
+  },
+  {
     name: 'add_subtitle',
     description: 'Add a subtitle cue. Creates a subtitle track if needed.',
     parameters: {
@@ -430,6 +486,8 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
         confirmed: { type: 'boolean' },
+        referenceAssetId: { type: 'string', description: 'Existing still for img2img / IC-LoRA-style continuity' },
+        refId: { type: 'string', description: 'Named ref from list_refs; resolved to an image asset' },
       },
     },
   },
@@ -446,6 +504,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         resolution: { type: 'string', description: 'Video resolution, default 540p preview' },
         audio: { type: 'boolean' },
         imageAssetId: { type: 'string', description: 'Exact still asset id for image-to-video' },
+        refId: { type: 'string', description: 'Named character/object ref used as the i2v start still' },
         destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
@@ -502,7 +561,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, commercial, montage, B-roll, or pasted script. Propose a 4–8 shot list, confirm once, then wait for the GPU slot if needed and sequentially generate still-then-video on local LTX until every shot is placed. Do not stop with a busy error. Pass a script or shots[]. Use assetId on a shot to place an existing user asset instead of generating. First call without confirmed. After Accept, retry with confirmed=true. More than 8 generate jobs also needs confirmedMore=true.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Picture on V1, optional titles on V2, voiceover on A1, music on A2. Propose a 4–8 shot list, confirm once, then generate still-then-video (reusing refs for continuity) and place VO/music with a basic mix. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId on shots for character/object consistency. First call without confirmed. After Accept, retry with confirmed=true.',
     parameters: {
       type: 'object',
       properties: {
@@ -518,12 +577,13 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               duration: { type: 'number' },
               title: { type: 'string', description: 'Scene slug; placed as a text clip' },
               imageAssetId: { type: 'string', description: 'Reuse an existing still instead of generating one' },
+              refId: { type: 'string', description: 'Named ref; img2img then i2v from the new still' },
               assetId: { type: 'string', description: 'Place this existing image, video, or audio asset instead of generating' },
               skipStill: { type: 'boolean' },
             },
           },
         },
-        kind: { type: 'string', enum: ['script', 'broll'] },
+        kind: { type: 'string', enum: ['script', 'broll', 'music_video', 'narrative'] },
         destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
@@ -533,6 +593,64 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         skipStills: { type: 'boolean' },
         confirmed: { type: 'boolean' },
         confirmedMore: { type: 'boolean', description: 'Required when the assembly exceeds 8 generate jobs' },
+        voiceover: { type: 'string', description: 'Narration to synthesize with ElevenLabs and place on A1' },
+        voiceoverAssetId: { type: 'string', description: 'Existing audio asset to place on A1' },
+        musicAssetId: { type: 'string', description: 'Existing music asset to place on A2 at 0.25 volume' },
+        openingTitle: { type: 'string', description: 'Opening title on V2' },
+        title: { type: 'string', description: 'Alias for openingTitle' },
+      },
+    },
+  },
+]
+
+export const REF_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'list_refs',
+    description: 'List named character, object, location, and style stills in the project ref library.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'register_ref',
+    description: 'Register an image asset as a reusable character/object/location/style ref for shot continuity.',
+    parameters: {
+      type: 'object',
+      required: ['name', 'assetId'],
+      properties: {
+        name: { type: 'string' },
+        assetId: { type: 'string' },
+        role: { type: 'string', enum: ['character', 'object', 'location', 'style'] },
+        id: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'forget_ref',
+    description: 'Remove a named ref from the library. Does not delete the asset.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        refId: { type: 'string' },
+      },
+    },
+  },
+]
+
+export const SPEECH_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'generate_speech',
+    description: 'Generate ElevenLabs speech, add it as an audio asset, and place it on A1 (voiceover). Requires an ElevenLabs key in Settings. Confirm first.',
+    parameters: {
+      type: 'object',
+      required: ['text'],
+      properties: {
+        text: { type: 'string' },
+        voiceId: { type: 'string' },
+        modelId: { type: 'string' },
+        destination: { type: 'string', enum: ['assets', 'playhead'] },
+        trackIndex: { type: 'number' },
+        startTime: { type: 'number' },
+        confirmed: { type: 'boolean' },
       },
     },
   },
@@ -565,6 +683,8 @@ export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   ...GENERATE_TOOL_DEFINITIONS,
   ...ASSEMBLY_TOOL_DEFINITIONS,
   ...IMPORT_TOOL_DEFINITIONS,
+  ...REF_TOOL_DEFINITIONS,
+  ...SPEECH_TOOL_DEFINITIONS,
 ]
 
 function countLabel(count: number, singular: string, plural: string): string {
@@ -613,6 +733,8 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
       return 'Add text'
     case 'add_subtitle':
       return 'Add subtitle'
+    case 'set_clip_volume':
+      return 'Set clip volume'
     case 'select_clips':
       return count != null ? `Select ${countLabel(count, 'clip', 'clips')}` : 'Select clips'
     case 'set_playhead':
@@ -647,6 +769,14 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
       const paths = Array.isArray(args?.paths) ? args.paths.length : typeof args?.path === 'string' ? 1 : null
       return paths != null ? `Import ${countLabel(paths, 'file', 'files')}` : 'Import media'
     }
+    case 'list_refs':
+      return 'List refs'
+    case 'register_ref':
+      return 'Register ref'
+    case 'forget_ref':
+      return 'Forget ref'
+    case 'generate_speech':
+      return 'Generate speech'
     default:
       return name
   }

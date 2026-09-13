@@ -215,7 +215,7 @@ function aboutUpdateAction(
 }
 
 export function SettingsModal({ isOpen, onClose, initialTab, initialReason, update, onOpenUpdate, onCheckForUpdates }: SettingsModalProps) {
-  const { settings, updateSettings, saveLtxApiKey, saveFalApiKey, saveGeminiApiKey, refreshSettings, forceApiGenerations, cudaAvailable, notifyModelsChanged } = useAppSettings()
+  const { settings, updateSettings, saveLtxApiKey, saveFalApiKey, saveElevenLabsApiKey, saveGeminiApiKey, refreshSettings, forceApiGenerations, cudaAvailable, notifyModelsChanged } = useAppSettings()
   const onSettingsChange = (next: AppSettings) => updateSettings(next)
   const [activeTab, setActiveTab] = useState<TabId>('general')
   const tabBodyRef = useRef<HTMLDivElement>(null)
@@ -227,6 +227,7 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
   const agentLlmKey = useApiKeyFocus(isOpen, activeTab, setActiveTab, agentLlmSectionRef, tabBodyRef)
   const [ltxApiKeyInput, setLtxApiKeyInput] = useState('')
   const [falApiKeyInput, setFalApiKeyInput] = useState('')
+  const [elevenLabsApiKeyInput, setElevenLabsApiKeyInput] = useState('')
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('')
   const showGeminiKeyBanner = initialReason === 'geminiKeyRequired'
   const showAgentLlmKeyBanner = initialReason === 'agentLlmKeyRequired'
@@ -1231,6 +1232,62 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                         : 'bg-zinc-800 text-zinc-500'
                     }`}>
                       {settings.hasFalApiKey ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          Key configured
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3 w-3" />
+                          Optional
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ElevenLabs API Key Section */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-cyan-400" />
+                  <h3 className="text-sm font-semibold text-white">ElevenLabs</h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Optional</span>
+                </div>
+
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Used by the Agent to generate voiceovers and place them on an audio track.
+                </p>
+
+                <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
+                  <div className="flex gap-2">
+                    <LtxApiKeyInput
+                      value={elevenLabsApiKeyInput}
+                      onChange={(e) => setElevenLabsApiKeyInput(e.target.value)}
+                      placeholder={settings.hasElevenLabsApiKey ? 'Enter new key to replace...' : 'Enter your ElevenLabs API key...'}
+                      stopPropagation
+                      className="flex-1"
+                    />
+                    <button
+                      onClick={() => {
+                        const trimmed = elevenLabsApiKeyInput.trim()
+                        if (!trimmed) return
+                        void saveElevenLabsApiKey(trimmed)
+                        setElevenLabsApiKeyInput('')
+                      }}
+                      disabled={!elevenLabsApiKeyInput.trim()}
+                      className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                    >
+                      Save Key
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 ${
+                      settings.hasElevenLabsApiKey
+                        ? 'bg-green-500/10 text-green-400'
+                        : 'bg-zinc-800 text-zinc-500'
+                    }`}>
+                      {settings.hasElevenLabsApiKey ? (
                         <>
                           <Check className="h-3 w-3" />
                           Key configured

@@ -10,6 +10,7 @@ from handlers import (
     AgentHandler,
     AgentLlmOAuthHandler,
     DownloadHandler,
+    ElevenLabsHandler,
     GenerationHandler,
     HealthHandler,
     HuggingFaceAuthHandler,
@@ -220,6 +221,13 @@ class AppHandler:
         self.runtime_policy = RuntimePolicyHandler(config=config)
 
         self.suggest_gap_prompt = SuggestGapPromptHandler(
+            state=self.state,
+            lock=self._lock,
+            config=config,
+            http=http,
+        )
+
+        self.elevenlabs = ElevenLabsHandler(
             state=self.state,
             lock=self._lock,
             config=config,
