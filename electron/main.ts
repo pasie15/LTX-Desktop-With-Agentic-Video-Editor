@@ -1,12 +1,6 @@
 import './win-dll-search'
 import './app-paths'
 import { app } from 'electron'
-
-// Windows + Electron GPU compositing often paints a live window as a blank
-// black client area in dev. CUDA/Python still uses the GPU.
-if (!app.isPackaged && process.platform === 'win32') {
-  app.disableHardwareAcceleration()
-}
 import { setupCSP } from './csp'
 import { registerExportHandlers } from './export/export-handler'
 import { stopExportProcess } from './export/ffmpeg-utils'

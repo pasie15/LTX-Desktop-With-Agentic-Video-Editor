@@ -58,6 +58,7 @@ export function createWindow(): BrowserWindow {
       if (shown || !mainWindow || mainWindow.isDestroyed()) return
       shown = true
       mainWindow.show()
+      mainWindow.focus()
     }
 
     const loadDevRenderer = (): void => {
@@ -93,10 +94,6 @@ export function createWindow(): BrowserWindow {
       }
       logger.info(`${prefix} ${message}`)
     })
-
-    if (process.env.ELECTRON_DEBUG) {
-      mainWindow.webContents.openDevTools({ mode: 'detach' })
-    }
 
     loadDevRenderer()
   } else {

@@ -131,6 +131,20 @@ export function Home() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const migrationStartedRef = useRef(false)
+  const createNameRef = useRef<HTMLInputElement>(null)
+  const renameNameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!isCreating) return
+    const id = window.setTimeout(() => createNameRef.current?.focus(), 0)
+    return () => window.clearTimeout(id)
+  }, [isCreating])
+
+  useEffect(() => {
+    if (!renamingId) return
+    const id = window.setTimeout(() => renameNameRef.current?.focus(), 0)
+    return () => window.clearTimeout(id)
+  }, [renamingId])
 
   useEffect(() => {
     if (migrationStatus.status !== 'needed' || migrationStartedRef.current) return
@@ -297,13 +311,20 @@ export function Home() {
           <div className="bg-zinc-900 rounded-xl p-6 w-full max-w-md border border-zinc-800">
             <h2 className="text-xl font-semibold text-white mb-4">Create New Project</h2>
             <input
+              ref={createNameRef}
               type="text"
               value={newProjectName}
               onChange={(e) => setNewProjectName(e.target.value)}
               placeholder="Project name"
               className="w-full px-4 py-3 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder:text-zinc-500 focus:outline-none focus:border-blue-500"
               autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
+              autoComplete="off"
+              spellCheck={false}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') handleCreateProject()
+              }}
             />
             <div className="flex gap-3 mt-6">
               <Button
@@ -331,13 +352,20 @@ export function Home() {
           <div className="bg-zinc-900 rounded-xl p-6 w-full max-w-md border border-zinc-800">
             <h2 className="text-xl font-semibold text-white mb-4">Rename Project</h2>
             <input
+              ref={renameNameRef}
               type="text"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               placeholder="Project name"
               className="w-full px-4 py-3 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder:text-zinc-500 focus:outline-none focus:border-blue-500"
               autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && submitRename()}
+              autoComplete="off"
+              spellCheck={false}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') submitRename()
+              }}
             />
             <div className="flex gap-3 mt-6">
               <Button
