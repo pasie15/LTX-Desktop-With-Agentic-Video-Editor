@@ -53,6 +53,7 @@ import {
   type AgentSpeechActionHost,
 } from './agent-speech-runtime.ts'
 import { applyShotLipSync, type AgentLipSyncActionHost } from './agent-lipsync-runtime.ts'
+import { collectIdentityStillIds, isIdentityStillId } from './agent-identity.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
 import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-definitions.ts'
 
@@ -365,7 +366,7 @@ export async function executeAssemblyTool(
 
     const total = proposal.shots.length
     const resumeStage = index === startIndex ? existing?.stage ?? 'still' : 'still'
-    const attachedStillId = resolveShotStillId(host, shot)
+    const attachedStillId = resolveShotStillId(host, shot, proposal)
     reportAssemblyProgress(host, {
       percent: Math.round((index / total) * 100),
       status: shot.assetId
@@ -515,7 +516,7 @@ function bindUserMediaIntoProposal(
   proposal: AgentAssemblyProposal,
 ): AgentAssemblyProposal {
   const usedShotAssetIds = new Set(
-    proposal.shots.flatMap(shot => [shot.assetId, shot.imageAssetId].filter((id): id is string => Boolean(id))),
+    proposal.shots.flatMap(shot => [shot.assetId].filter((id): id is string => Boolean(id))),
   )
   const inferred = inferAssemblyMediaFromAssets(
     host.getState().editorModel.assets.filter(asset => (
@@ -591,9 +592,16 @@ function placeAssemblyMusic(
 }
 
 function resolveShotStillId(
-  _host: AgentAssemblyActionHost,
+  host: AgentAssemblyActionHost,
   shot: AgentAssemblyShot,
+  proposal: AgentAssemblyProposal,
 ): string | undefined {
+  const identityIds = collectIdentityStillIds({
+    referenceAssetId: proposal.referenceAssetId,
+    preferred: host.getPreferredAssemblyMedia?.(),
+    refs: host.refs?.list(),
+  })
+  if (isIdentityStillId(shot.imageAssetId, identityIds)) return undefined
   return shot.imageAssetId
 }
 
@@ -819,8 +827,14 @@ async function generateAndPlaceShot(
   }
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
-  const attachedStillId = resolveShotStillId(host, shot)
-  let imageAssetId = approvedStillId ?? attachedStillId
+  const attachedStillId = resolveShotStillId(host, shot, proposal)
+  const identityIds = collectIdentityStillIds({
+    referenceAssetId: proposal.referenceAssetId,
+    preferred: host.getPreferredAssemblyMedia?.(),
+    refs: host.refs?.list(),
+  })
+  const approvedStart = isIdentityStillId(approvedStillId, identityIds) ? undefined : approvedStillId
+  let imageAssetId = approvedStart ?? attachedStillId
   const wantStill = !proposal.skipStills && !shot.skipStill && !imageAssetId
 
   if (wantStill) {
@@ -836,7 +850,9 @@ async function generateAndPlaceShot(
     imageAssetId = still.stillAssetId
   }
 
-  let lastImageAssetId = shot.lastImageAssetId
+  let lastImageAssetId = isIdentityStillId(shot.lastImageAssetId, identityIds)
+    ? undefined
+    : shot.lastImageAssetId
   if (!lastImageAssetId && shot.lastFramePrompt && !proposal.skipStills) {
     const lastStill = await generateShotStill(host, proposal, shot, 'last')
     if (lastStill.status === 'ready') lastImageAssetId = lastStill.stillAssetId
