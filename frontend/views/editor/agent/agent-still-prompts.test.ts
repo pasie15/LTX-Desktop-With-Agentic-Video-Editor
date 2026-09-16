@@ -18,4 +18,14 @@ describe('identity image prompt framing', () => {
     assert.match(framed, /Not a facial close-up/)
     assert.equal(frameIdentityImagePrompt(framed), framed)
   })
+
+  it('keeps empty scenes empty and rewrites still close-ups to medium shots', () => {
+    const empty = frameIdentityImagePrompt('wide moonlit river, no people')
+    assert.match(empty, /wide establishing shot/)
+    assert.match(empty, /No people/)
+    assert.doesNotMatch(empty, /A person stands or walks/)
+    const close = frameIdentityImagePrompt('Ken Tune identity, open leather jacket, close-up midnight')
+    assert.match(close, /medium shot with the location visible/)
+    assert.doesNotMatch(close, /close-up midnight/i)
+  })
 })

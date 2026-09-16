@@ -148,6 +148,8 @@ describe('assembly job cap', () => {
       showProtagonist: false,
     })
     assert.match(broll, /Do not show the protagonist/)
+    assert.match(broll, /wide establishing shot/)
+    assert.doesNotMatch(broll, /A person stands or walks/)
     const talking = videoPromptForShot({
       id: 's3',
       prompt: 'close-up singing',
