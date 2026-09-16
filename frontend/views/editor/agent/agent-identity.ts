@@ -5,16 +5,28 @@ export interface IdentityPreferredMedia {
   referenceAssetId?: string
 }
 
+export interface IdentityStillAsset {
+  id: string
+  type: string
+  generationParams?: unknown
+}
+
 export interface IdentityShotFields {
   imageAssetId?: string
   lastImageAssetId?: string
   skipStill?: boolean
 }
 
+/** User-imported photos have no generationParams. Those are identity, never start frames. */
+export function isImportedStill(asset?: IdentityStillAsset | null): boolean {
+  return Boolean(asset && asset.type === 'image' && !asset.generationParams)
+}
+
 export function collectIdentityStillIds(input: {
   referenceAssetId?: string | null
   preferred?: IdentityPreferredMedia
   refs?: readonly AgentRef[]
+  assets?: readonly IdentityStillAsset[]
 }): Set<string> {
   const ids = new Set<string>()
   const add = (value?: string | null) => {
@@ -26,6 +38,9 @@ export function collectIdentityStillIds(input: {
   add(input.preferred?.imageAssetId)
   for (const ref of input.refs ?? []) {
     if (ref.role === 'character') add(ref.assetId)
+  }
+  for (const asset of input.assets ?? []) {
+    if (isImportedStill(asset)) add(asset.id)
   }
   return ids
 }

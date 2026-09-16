@@ -137,7 +137,8 @@ describe('assembly job cap', () => {
     })
     assert.match(hero, /Ken on a wet street/)
     assert.match(hero, /black leather jacket/)
-    assert.match(hero, /Same person as the referenced artist/)
+    assert.match(hero, /referenced person is inside this location/)
+    assert.match(hero, /not a copy of the reference photograph/)
     assert.match(hero, /Mouth beginning/)
     const broll = stillPromptForShot({
       id: 's2',

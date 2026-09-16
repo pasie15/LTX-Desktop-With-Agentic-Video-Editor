@@ -254,12 +254,14 @@ export function deriveCharacterSheets(input: {
 export function bindAssemblyUserMedia(
   proposal: AgentAssemblyProposal,
   media: AgentAssemblyPreferredMedia,
+  assets?: ReadonlyArray<{ id: string; type: string; generationParams?: unknown }>,
 ): AgentAssemblyProposal {
   const musicAssetId = proposal.musicAssetId ?? media.musicAssetId
   const referenceAssetId = proposal.referenceAssetId ?? preferredReferenceAssetId(media)
   const identityIds = collectIdentityStillIds({
     referenceAssetId,
     preferred: media,
+    assets,
   })
   return buildAssemblyProposal({
     kind: proposal.kind,
@@ -617,7 +619,7 @@ function withScenePromptExtras(
   if (shot.objects) extras.push(`Stage objects: ${shot.objects}`)
   if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
   if (shot.showProtagonist === false) extras.push('Do not show the protagonist. Environment, extras, or objects only.')
-  else if (shotShowsProtagonist(shot)) extras.push('Same person as the referenced artist. Full cinematic scene, new pose and setting. Not a studio headshot. Not a copy of the reference portrait.')
+  else if (shotShowsProtagonist(shot)) extras.push('The referenced person is inside this location, full or three-quarter body, environment filling most of the frame. New pose, wardrobe, and camera. Not a studio headshot, not a cropped face, not a copy of the reference photograph.')
   if (shot.performers) extras.push(`On camera: ${shot.performers}`)
   if (shot.others) extras.push(`Others in the scene: ${shot.others}`)
   const performance = scenePerformanceLine(shot, which)

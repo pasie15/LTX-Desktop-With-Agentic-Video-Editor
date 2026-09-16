@@ -691,7 +691,7 @@ function bindUserMediaIntoProposal(
     ...(musicAssetId && musicAssetId !== proposal.voiceoverAssetId && !usedShotAssetIds.has(musicAssetId)
       ? { musicAssetId }
       : {}),
-  })
+  }, host.getState().editorModel.assets)
 }
 
 function reportAssemblyProgress(
@@ -758,6 +758,7 @@ function resolveShotStillId(
     referenceAssetId: proposal.referenceAssetId,
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
+    assets: host.getState().editorModel.assets,
   })
   if (isIdentityStillId(shot.imageAssetId, identityIds)) return undefined
   return shot.imageAssetId
@@ -776,6 +777,7 @@ function resolveShotIdentity(
     ?? firstIdentityStillId(collectIdentityStillIds({
       preferred,
       refs: host.refs?.list(),
+      assets: host.getState().editorModel.assets,
     }))
 }
 
@@ -982,6 +984,7 @@ async function generateCharacterSheet(
       referenceAssetId: proposal.referenceAssetId,
       preferred: host.getPreferredAssemblyMedia?.(),
       refs: host.refs?.list(),
+      assets: host.getState().editorModel.assets,
     }))
   const still = await executeGenerateTool(host, 'generate_image', {
     prompt: sheet.prompt,
@@ -1083,6 +1086,7 @@ async function generateAndPlaceShot(
     referenceAssetId: proposal.referenceAssetId,
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
+    assets: host.getState().editorModel.assets,
   })
   const approvedStart = isIdentityStillId(approvedStillId, identityIds) ? undefined : approvedStillId
   let imageAssetId = approvedStart ?? attachedStillId

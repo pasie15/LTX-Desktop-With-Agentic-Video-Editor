@@ -977,6 +977,94 @@ describe('generate tool executor', () => {
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
   })
 
+  it('does not img2img an imported photo even without identity flags', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'Ken walking a wet midnight street in a leather jacket',
+      referenceAssetId: 'ken',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
+    assert.notEqual(result.assetId, 'ken')
+  })
+
+  it('does not use an imported photo as a video start even without refs', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_video', {
+      prompt: 'Ken walking the wet street at night',
+      imageAssetId: 'ken',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
+    assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+  })
+
+  it('can restyle a generated scene still with img2img', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const generated = imageAsset('scene-1')
+    generated.generationParams = {
+      mode: 'text-to-image',
+      prompt: 'Ken on a wet street',
+      model: 'z-image',
+      duration: 4,
+      resolution: '1080p',
+      fps: 24,
+      audio: false,
+      cameraMotion: 'none',
+    }
+    const host = createHost(makeState({
+      clips: [],
+      assets: [generated],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/restyle.png' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'same street, warmer sodium light',
+      referenceAssetId: 'scene-1',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(imageRefs[0]?.path, '/tmp/scene-1.png')
+    assert.ok(typeof imageRefs[0]?.strength === 'number')
+  })
+
   it('generates a video and places it in the selected gap after confirm', async () => {
     const host = createHost(makeState({ clips: [] }), {
       generation: fakeJobs(),
