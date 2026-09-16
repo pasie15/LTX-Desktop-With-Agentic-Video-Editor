@@ -42,6 +42,10 @@ class TestHealth:
         r = client.get("/health", headers={"Origin": "http://localhost:5173"})
         assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
+    def test_cors_header_loopback(self, client):
+        r = client.get("/health", headers={"Origin": "http://127.0.0.1:5173"})
+        assert r.headers.get("access-control-allow-origin") == "http://127.0.0.1:5173"
+
 
 class TestGpuInfo:
     def test_no_gpu(self, client, test_state):

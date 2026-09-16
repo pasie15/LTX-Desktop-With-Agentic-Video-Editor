@@ -54,6 +54,12 @@ export default defineConfig({
     }
   },
   base: './',  // Use relative paths for Electron file:// protocol
+  // Pin IPv4 so Electron's loadURL matches the socket Vite actually binds on Windows.
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+  },
   build: {
     outDir: 'dist'
   }
