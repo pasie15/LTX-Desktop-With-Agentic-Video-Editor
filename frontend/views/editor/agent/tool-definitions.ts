@@ -932,7 +932,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         audio: { type: 'boolean' },
         imageAssetId: { type: 'string', description: 'Generated first-frame still for this shot (not the @ character portrait)' },
         lastImageAssetId: { type: 'string', description: 'Generated last-frame still for first-to-last interpolation' },
-        refId: { type: 'string', description: 'Named ref used as i2v start only for a single-shot generate; assemble_shots uses it as identity instead' },
+        refId: { type: 'string', description: 'Character identity only. Never used as the video start frame. Generate a scene still first and pass that as imageAssetId.' },
         destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },

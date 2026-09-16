@@ -94,6 +94,23 @@ describe('assembly job cap', () => {
     assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
   })
 
+  it('strips a portrait the model stuffed onto every shot as imageAssetId', () => {
+    const proposal = bindAssemblyUserMedia(
+      buildAssemblyProposal({
+        kind: 'music_video',
+        shots: [
+          { id: 's1', prompt: 'bridge at night', duration: 5, imageAssetId: 'ken', skipStill: true },
+          { id: 's2', prompt: 'wet street', duration: 5, imageAssetId: 'ken' },
+        ],
+        referenceAssetId: 'ken',
+      }),
+      { referenceAssetId: 'ken' },
+    )
+    assert.equal(proposal.referenceAssetId, 'ken')
+    assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
+    assert.equal(proposal.jobCount, 4)
+  })
+
   it('counts a last-frame still as an extra generate job', () => {
     assert.equal(countAssemblyGenerateJobs([
       { id: 'a', prompt: 'one', duration: 4, lastFramePrompt: 'end pose' },

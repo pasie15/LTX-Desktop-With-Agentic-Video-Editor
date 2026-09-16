@@ -6,6 +6,7 @@ import {
 } from './agent-generate-runtime.ts'
 import { normalizeTextOverlays, type AgentTextOverlay } from './agent-text.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
+import { collectIdentityStillIds, withoutIdentityStartFrames } from './agent-identity.ts'
 
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 
@@ -103,6 +104,10 @@ export function bindAssemblyUserMedia(
 ): AgentAssemblyProposal {
   const musicAssetId = proposal.musicAssetId ?? media.musicAssetId
   const referenceAssetId = proposal.referenceAssetId ?? preferredReferenceAssetId(media)
+  const identityIds = collectIdentityStillIds({
+    referenceAssetId,
+    preferred: media,
+  })
   return buildAssemblyProposal({
     kind: proposal.kind,
     destination: proposal.destination,
@@ -112,7 +117,7 @@ export function bindAssemblyUserMedia(
     resolution: proposal.resolution,
     audio: proposal.audio,
     skipStills: proposal.skipStills,
-    shots: proposal.shots,
+    shots: proposal.shots.map(shot => withoutIdentityStartFrames(shot, identityIds)),
     voiceover: proposal.voiceover,
     voiceoverAssetId: proposal.voiceoverAssetId,
     musicAssetId,

@@ -939,6 +939,38 @@ describe('generate tool executor', () => {
     assert.equal(host.getState().editorModel.assets.length, 2)
   })
 
+  it('does not use a character portrait as the video start frame', async () => {
+    const refs = createMemoryRefStore()
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [imageAsset('ken')],
+    }), {
+      refs,
+      generation: fakeJobs({
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const registered = await executor.execute('register_ref', {
+      name: 'Ken Tune',
+      assetId: 'ken',
+      role: 'character',
+    })
+    assert.equal(registered.ok, true)
+    const result = await executor.execute('generate_video', {
+      prompt: 'Ken walking the wet street at night',
+      imageAssetId: 'ken',
+      refId: (registered.ref as { id: string }).id,
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(videoPaths, [null])
+  })
+
   it('generates a video and places it in the selected gap after confirm', async () => {
     const host = createHost(makeState({ clips: [] }), {
       generation: fakeJobs(),
@@ -1286,6 +1318,8 @@ describe('refs speech and mix', () => {
           lastFramePrompt: 'Ken looks back toward the river',
           showProtagonist: true,
           wardrobe: 'black leather jacket',
+          imageAssetId: 'ken-tune',
+          skipStill: true,
         },
         ...Array.from({ length: 6 }, (_, index) => ({
           id: `s${index + 2}`,
@@ -1293,6 +1327,7 @@ describe('refs speech and mix', () => {
           duration: 5,
           showProtagonist: true,
           wardrobe: 'black leather jacket',
+          imageAssetId: 'ken-tune',
         })),
         {
           id: 's8',

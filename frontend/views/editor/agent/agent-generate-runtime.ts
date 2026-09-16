@@ -25,6 +25,7 @@ import {
   GENERATE_TOOL_ALLOWED_KEYS,
   type AgentGenerateToolName,
 } from './tool-definitions.ts'
+import { collectIdentityStillIds, isIdentityStillId, type IdentityPreferredMedia } from './agent-identity.ts'
 
 export const AGENT_DEFAULT_PREVIEW_DURATION_S = 4
 export const AGENT_DEFAULT_VIDEO_MODEL = 'fast'
@@ -109,6 +110,7 @@ export interface AgentGenerateActionHost {
   getAbortSignal?: () => AbortSignal | null
   onProgress?: (progress: { toolName: string; percent: number; status: string }) => void
   refs?: AgentRefStore
+  getPreferredAssemblyMedia?: () => IdentityPreferredMedia
   getApproveAll?: () => boolean
   readAssetPreview?: (asset: Asset) => Promise<AgentReviewPreview | null>
 }
@@ -523,8 +525,16 @@ async function generateVideo(
     ? Math.max(AGENT_DEFAULT_PREVIEW_DURATION_S, gap.endTime - gap.startTime)
     : AGENT_DEFAULT_PREVIEW_DURATION_S
   const settings = settingsFromArgs(args, defaultSettings({ duration: defaultDuration }))
-  const imageAssetId = asString(args.imageAssetId)
-    ?? (asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null)
+  const requestedStillId = asString(args.imageAssetId)
+  const refStillId = asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null
+  const identityIds = collectIdentityStillIds({
+    preferred: host.getPreferredAssemblyMedia?.(),
+    refs: host.refs?.list(),
+  })
+  if (refStillId) identityIds.add(refStillId)
+  const imageAssetId = requestedStillId && !isIdentityStillId(requestedStillId, identityIds)
+    ? requestedStillId
+    : null
   let imagePath: string | null = null
   if (imageAssetId) {
     const still = assetById(state, imageAssetId)
@@ -532,7 +542,10 @@ async function generateVideo(
     if (still.type !== 'image') return errorResult('imageAssetId must be an image asset')
     imagePath = still.path
   }
-  const lastImageAssetId = asString(args.lastImageAssetId)
+  const requestedLastId = asString(args.lastImageAssetId)
+  const lastImageAssetId = requestedLastId && !isIdentityStillId(requestedLastId, identityIds)
+    ? requestedLastId
+    : null
   let lastImagePath: string | null = null
   if (lastImageAssetId) {
     const lastStill = assetById(state, lastImageAssetId)
