@@ -10,12 +10,14 @@ export function setupCSP(): void {
     const csp = isDev
       ? [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline'",
+          // Vite + React Refresh use eval/inline and blob workers in dev.
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "font-src 'self' https://fonts.gstatic.com",
           "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
           "img-src 'self' data: blob: file: https://storage.googleapis.com",
           "media-src 'self' blob: file: https://videos.ltx.io https://storage.googleapis.com",
+          "worker-src 'self' blob:",
           "object-src 'none'",
           "base-uri 'self'",
           "form-action 'self'",

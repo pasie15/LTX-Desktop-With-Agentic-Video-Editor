@@ -10,7 +10,11 @@
     <title>LTX Desktop</title>
   </head>
   <body class="bg-background text-foreground">
-    <div id="root"></div>
+    <div id="root">
+      <p id="boot-fallback" style="margin:24px;font:15px/1.4 sans-serif;color:#e4e4e7">
+        Starting LTX Desktop… If this stays blank, press Ctrl+Shift+I and check the console.
+      </p>
+    </div>
     <script type="module" src="/frontend/main.tsx"></script>
   </body>
 </html>
