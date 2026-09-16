@@ -18,7 +18,7 @@ export function AgentMessageList(props: {
   return (
     <div className="flex flex-col gap-3">
       {visible.map(message => (
-        <article key={message.id} className="flex flex-col gap-1.5">
+        <article key={message.id} data-agent-copy className="flex flex-col gap-1.5">
           <span className="text-[10px] uppercase tracking-wide text-zinc-600">
             {message.role === 'user' ? 'You' : 'Agent'}
           </span>

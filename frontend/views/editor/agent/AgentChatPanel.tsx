@@ -1,6 +1,14 @@
-import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { ChevronRight, MessageSquare, Send, Square, X } from 'lucide-react'
 import { AGENT_LLM_KEY_REQUIRED_SETTINGS_DETAIL } from '../../../lib/agent-llm'
+import { copyText } from '../../../lib/copy-text'
+import {
+  agentChatContextMenuKind,
+  copyableTextFromTarget,
+  hasDomTextSelection,
+  isEditableKeyboardTarget,
+  selectElementText,
+} from '../../../lib/text-editing-context'
 import { useAppSettings } from '../../../contexts/AppSettingsContext'
 import { useGlobalGenerationLock } from '../../../hooks/use-global-generation-lock'
 import { Tooltip } from '../../../components/ui/tooltip'
@@ -65,9 +73,12 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
   const inPoint = useEditorStore(selectActiveTimelineInPoint)
   const outPoint = useEditorStore(selectActiveTimelineOutPoint)
   const composerRef = useRef<HTMLTextAreaElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0)
   const [caret, setCaret] = useState(0)
+  const [textMenu, setTextMenu] = useState<{ x: number; y: number; messageText: string } | null>(null)
 
   const readSelectedGap = useCallback(() => {
     return props.getSelectedGap?.() ?? storeSelectedGap
@@ -194,11 +205,57 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
     void importDroppedFiles(files)
   }, [importDroppedFiles])
 
+  const handlePanelContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    const kind = agentChatContextMenuKind({
+      isEditable: isEditableKeyboardTarget(event.target),
+      hasTextSelection: hasDomTextSelection(),
+    })
+    if (kind === 'native') return
+    event.preventDefault()
+    const menuWidth = 176
+    const menuHeight = 72
+    setTextMenu({
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+      messageText: copyableTextFromTarget(event.target),
+    })
+  }, [])
+
+  const handlePanelKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') return
+    if (isEditableKeyboardTarget(event.target)) return
+    event.preventDefault()
+    selectElementText(messagesRef.current ?? panelRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (!textMenu) return
+    const close = () => setTextMenu(null)
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [textMenu])
+
   const messages = chat.activeSession?.messages ?? []
   const showEmpty = hasAgentLlmKey && messages.length === 0 && !chat.running
 
   return (
-    <div className="relative h-full group" onDragOver={event => event.preventDefault()} onDrop={handleDrop}>
+    <div
+      ref={panelRef}
+      data-agent-chat=""
+      tabIndex={-1}
+      className="relative h-full group select-text outline-none"
+      onDragOver={event => event.preventDefault()}
+      onDrop={handleDrop}
+      onContextMenu={handlePanelContextMenu}
+      onKeyDown={handlePanelKeyDown}
+    >
       <Tooltip content="Collapse Agent" side="left">
         <button
           type="button"
@@ -256,7 +313,7 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
           />
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
+        <div ref={messagesRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
           {!hasAgentLlmKey ? (
             <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-2">
               <MessageSquare className="h-6 w-6 text-zinc-600" />
@@ -368,6 +425,42 @@ export function AgentChatPanel(props: AgentChatPanelProps) {
           </div>
         </div>
       </div>
+
+      {textMenu && (
+        <div
+          role="menu"
+          data-testid="agent-text-context-menu"
+          className="fixed z-[9999] min-w-[160px] py-1 bg-zinc-800 border border-zinc-700 rounded-md shadow-xl text-[12px]"
+          style={{ left: textMenu.x, top: textMenu.y }}
+          onClick={event => event.stopPropagation()}
+          onContextMenu={event => event.preventDefault()}
+        >
+          {textMenu.messageText ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full text-left px-3 py-1.5 text-zinc-300 hover:bg-zinc-700"
+              onClick={() => {
+                void copyText(textMenu.messageText)
+                setTextMenu(null)
+              }}
+            >
+              Copy message
+            </button>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="w-full text-left px-3 py-1.5 text-zinc-300 hover:bg-zinc-700"
+            onClick={() => {
+              selectElementText(messagesRef.current ?? panelRef.current)
+              setTextMenu(null)
+            }}
+          >
+            Select all
+          </button>
+        </div>
+      )}
     </div>
   )
 }
