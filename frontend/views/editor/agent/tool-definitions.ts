@@ -924,7 +924,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
   {
     name: 'generate_video',
-    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a generated first-frame still via imageAssetId (image-to-video), and lastImageAssetId when the scene has a destination frame. Do not pass an @ portrait as imageAssetId. Waits for the GPU slot instead of returning busy.',
+    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a generated scene start-frame still via imageAssetId (image-to-video), and lastImageAssetId when the scene has a destination frame. Do not pass an @ portrait or a character sheet / lookbook as imageAssetId — those are identity only. The runtime strips them and generates a new scene still first. Waits for the GPU slot instead of returning busy.',
     parameters: {
       type: 'object',
       required: ['prompt'],
@@ -934,7 +934,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         duration: { type: 'number', description: 'Seconds. Default selected gap or 4.' },
         resolution: { type: 'string', description: 'Video resolution, default 540p preview' },
         audio: { type: 'boolean' },
-        imageAssetId: { type: 'string', description: 'Generated first-frame still for this shot. Imported portraits are stripped and replaced with a new scene still.' },
+        imageAssetId: { type: 'string', description: 'Approved scene start-frame still for this shot. Imported portraits and character sheets / T-pose lookbooks are stripped and replaced with a new scene still.' },
         lastImageAssetId: { type: 'string', description: 'Generated last-frame still for first-to-last interpolation' },
         refId: { type: 'string', description: 'Character identity only. Never used as the video start frame. The runtime generates a scene still from this ref and uses that still as imageAssetId.' },
         animateSource: { type: 'boolean', description: 'Only if the user said animate this exact photo. Otherwise imported images are never the start frame.' },
@@ -994,7 +994,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first (character bible, looks, scene start frames). Runtime order: character sheet from the @ portrait as reference, then a new start frame per scene, then videos from those stills. Pauses for approval on the sheet, each start/last frame, and each video unless Approve all. An @ portrait is character identity, never a video start frame.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first (character bible, looks, scene start frames). Runtime order: full-body character sheet per @ character (T-pose / look bible, never a clip), then a new scene start frame per shot, then videos from those scene stills only. Pauses for approval on the sheet, each start/last frame, and each video unless Approve all. Portraits and sheets are identity, never video start frames.',
     parameters: {
       type: 'object',
       properties: {
@@ -1011,7 +1011,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               title: { type: 'string', description: 'Scene slug; placed as a small top shot_title overlay, not a full-screen title' },
               firstFramePrompt: { type: 'string', description: 'Opening still for this scene; not the @ portrait' },
               lastFramePrompt: { type: 'string', description: 'Closing still when the action needs a destination frame' },
-              imageAssetId: { type: 'string', description: 'Already-generated first-frame still for this shot — never the @ portrait' },
+              imageAssetId: { type: 'string', description: 'Already-generated scene start frame for this shot — never the @ portrait and never a character sheet' },
               lastImageAssetId: { type: 'string', description: 'Already-generated last-frame still' },
               refId: { type: 'string', description: 'Character identity for img2img stills when the protagonist appears' },
               assetId: { type: 'string', description: 'Place this existing image, video, or audio asset instead of generating' },
@@ -1066,7 +1066,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         },
         characterSheets: {
           type: 'array',
-          description: 'Optional explicit character-sheet prompts. If omitted and a character ref exists, assemble generates one lookbook sheet first.',
+          description: 'Optional explicit full-body character-sheet prompts (T-pose / costume bible). If omitted, assemble generates one lookbook per character ref. Sheets are identity only — never video starts.',
           items: {
             type: 'object',
             properties: {
@@ -1074,6 +1074,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               prompt: { type: 'string' },
               look: { type: 'string' },
               wardrobe: { type: 'string' },
+              referenceAssetId: { type: 'string', description: 'Portrait this sheet describes. Identity only.' },
             },
           },
         },
@@ -1251,6 +1252,7 @@ export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               prompt: { type: 'string' },
               look: { type: 'string' },
               wardrobe: { type: 'string' },
+              referenceAssetId: { type: 'string' },
             },
           },
         },

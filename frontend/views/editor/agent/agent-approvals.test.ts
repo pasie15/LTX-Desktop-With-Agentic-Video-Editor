@@ -30,6 +30,8 @@ describe('agent approvals', () => {
 
   it('labels stills vs sheets vs video from the prompt', () => {
     assert.equal(checkpointFromGenerate({ prompt: 'character sheet of the paper boy' }, 'image'), 'character_sheet')
+    assert.equal(checkpointFromGenerate({ prompt: 'T-pose front and back reference sheet' }, 'image'), 'character_sheet')
+    assert.equal(checkpointFromGenerate({ prompt: 'full-body lookbook grid' }, 'image'), 'character_sheet')
     assert.equal(checkpointFromGenerate({ prompt: 'last-frame of the stoop' }, 'image'), 'last_frame')
     assert.equal(checkpointFromGenerate({ prompt: 'wide street, dusk' }, 'image'), 'still')
     assert.equal(checkpointFromGenerate({ prompt: 'rides past' }, 'video'), 'video')

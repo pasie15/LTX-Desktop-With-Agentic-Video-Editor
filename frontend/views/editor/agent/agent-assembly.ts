@@ -33,6 +33,7 @@ export interface AgentCharacterSheet {
   prompt: string
   look?: string
   wardrobe?: string
+  referenceAssetId?: string
 }
 
 export interface AgentAssemblyShot {
@@ -147,7 +148,7 @@ export function looksFromShots(shots: readonly AgentAssemblyShot[]): string[] {
 export function characterSheetPrompt(input: {
   character?: AgentCharacterBible
   shots?: readonly AgentAssemblyShot[]
-  sheet?: Pick<AgentCharacterSheet, 'look' | 'wardrobe' | 'prompt'>
+  sheet?: Partial<Pick<AgentCharacterSheet, 'look' | 'wardrobe' | 'prompt' | 'referenceAssetId'>>
 }): string {
   if (input.sheet?.prompt?.trim()) return frameIdentityImagePrompt(input.sheet.prompt)
   const who = input.character?.name?.trim() || 'the referenced artist or subject'
@@ -169,8 +170,9 @@ export function characterSheetPrompt(input: {
   const identityLine = identity ? ` ${identity}.` : ''
   return frameIdentityImagePrompt(
     `Character sheet / lookbook of ${who}.${identityLine} `
-    + `Same person as the referenced artist, new standing poses, not the original photo. `
-    + `Wardrobe looks: ${lookLine}.`,
+    + `T-pose front and back, three-quarter, and side. Full body, hair to shoes. `
+    + `Same person as the referenced artist, new poses, not the original photo. `
+    + `Costume variants: ${lookLine}. Use this bible only to describe the character for later scene stills.`,
   )
 }
 
@@ -214,12 +216,16 @@ export function parseCharacterSheets(raw: unknown): AgentCharacterSheet[] {
     const wardrobe = typeof record.wardrobe === 'string' && record.wardrobe.trim()
       ? record.wardrobe.trim()
       : undefined
-    if (!prompt && !look && !wardrobe) continue
+    const referenceAssetId = typeof record.referenceAssetId === 'string' && record.referenceAssetId.trim()
+      ? record.referenceAssetId.trim()
+      : undefined
+    if (!prompt && !look && !wardrobe && !referenceAssetId) continue
     sheets.push({
       id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `sheet-${index + 1}`,
       prompt: prompt ?? '',
       ...(look ? { look } : {}),
       ...(wardrobe ? { wardrobe } : {}),
+      ...(referenceAssetId ? { referenceAssetId } : {}),
     })
   }
   return sheets
@@ -231,23 +237,53 @@ export function deriveCharacterSheets(input: {
   shots: readonly AgentAssemblyShot[]
   character?: AgentCharacterBible
   characterSheets?: AgentCharacterSheet[]
+  characterRefs?: ReadonlyArray<{ id?: string; name?: string; assetId: string; role?: string }>
 }): AgentCharacterSheet[] {
   if (input.skipStills) return []
-  const hasReference = Boolean(input.referenceAssetId) || input.shots.some(shot => Boolean(shot.refId))
+  const characterRefs = (input.characterRefs ?? []).filter(ref => (
+    ref.assetId && (ref.role == null || ref.role === 'character')
+  ))
+  const hasReference = Boolean(input.referenceAssetId)
+    || input.shots.some(shot => Boolean(shot.refId))
+    || characterRefs.length > 0
   if (!hasReference) return []
-  if (!input.shots.some(shot => shotNeedsIdentity(shot, Boolean(input.referenceAssetId)))) return []
-  const provided = (input.characterSheets ?? []).filter(sheet => sheet.prompt.trim() || sheet.look || sheet.wardrobe)
+  if (!input.shots.some(shot => shotNeedsIdentity(shot, Boolean(input.referenceAssetId) || characterRefs.length > 0))) {
+    return []
+  }
+  const provided = (input.characterSheets ?? []).filter(sheet => (
+    sheet.prompt.trim() || sheet.look || sheet.wardrobe || sheet.referenceAssetId
+  ))
   if (provided.length > 0) {
     return provided.map((sheet, index) => ({
       id: sheet.id || `sheet-${index + 1}`,
       prompt: characterSheetPrompt({ character: input.character, shots: input.shots, sheet }),
       ...(sheet.look ? { look: sheet.look } : {}),
       ...(sheet.wardrobe ? { wardrobe: sheet.wardrobe } : {}),
+      ...(sheet.referenceAssetId ? { referenceAssetId: sheet.referenceAssetId } : {}),
+    }))
+  }
+  if (characterRefs.length > 1) {
+    return characterRefs.map((ref, index) => ({
+      id: `sheet-${ref.id || index + 1}`,
+      prompt: characterSheetPrompt({
+        character: {
+          ...(input.character ?? {}),
+          name: ref.name?.trim() || input.character?.name,
+        },
+        shots: input.shots,
+        sheet: { look: ref.name?.trim() || `character ${index + 1}` },
+      }),
+      look: ref.name?.trim() || `character ${index + 1}`,
+      referenceAssetId: ref.assetId,
     }))
   }
   return [{
     id: 'sheet-1',
     prompt: characterSheetPrompt({ character: input.character, shots: input.shots }),
+    ...(input.referenceAssetId ? { referenceAssetId: input.referenceAssetId } : {}),
+    ...(characterRefs[0]?.assetId && !input.referenceAssetId
+      ? { referenceAssetId: characterRefs[0].assetId }
+      : {}),
   }]
 }
 

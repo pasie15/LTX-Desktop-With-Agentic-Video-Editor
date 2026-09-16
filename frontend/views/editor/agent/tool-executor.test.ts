@@ -1033,6 +1033,51 @@ describe('generate tool executor', () => {
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
   })
 
+  it('does not animate a generated character sheet', async () => {
+    const sheet = imageAsset('sheet-1')
+    sheet.prompt = 'Full-body character reference sheet, T-pose front and back of Ken'
+    sheet.generationParams = {
+      mode: 'text-to-image',
+      prompt: sheet.prompt,
+      model: 'z-image',
+      duration: 4,
+      resolution: '1080p',
+      fps: 24,
+      audio: false,
+      cameraMotion: 'none',
+    }
+    const imageRefs: Array<{ path?: string | null; prompt?: string }> = []
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [sheet, imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, prompt: input.prompt })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_video', {
+      prompt: 'Character sheet of Ken walking, T-pose lookbook',
+      imageAssetId: 'sheet-1',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(imageRefs.length, 1)
+    assert.equal(imageRefs[0]?.path, undefined)
+    assert.match(imageRefs[0]?.prompt ?? '', /^Cinematic 16:9 production still/)
+    assert.doesNotMatch(imageRefs[0]?.prompt ?? '', /T-pose front/)
+    assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+    assert.ok(videoPaths.every(path => path !== '/tmp/sheet-1.png'))
+  })
+
   it('can restyle a generated scene still with img2img', async () => {
     const imageRefs: Array<{ path?: string | null; strength?: number }> = []
     const generated = imageAsset('scene-1')
@@ -1442,6 +1487,7 @@ describe('refs speech and mix', () => {
     assert.ok(imageRefs.every(path => path == null))
     assert.equal(videoPaths.length, 8)
     assert.ok(videoPaths.every(path => path !== '/tmp/ken-tune.png'))
+    assert.ok(videoPaths.every(path => path !== '/project/image-scene-1.png'))
     assert.ok(videoPaths.every(path => typeof path === 'string' && path.startsWith('/project/image-')))
     assert.equal(lastVideoPaths[0], '/project/image-scene-3.png')
     assert.ok(lastVideoPaths.slice(1).every(path => path == null || path === undefined))
@@ -1759,7 +1805,7 @@ describe('refs speech and mix', () => {
     assert.equal(done.ok, true)
     assert.equal(order.filter(item => item === 'video').length, 2)
     assert.ok(order.indexOf('video') > 0)
-    assert.match(order[0] ?? '', /image:Full-body character look/)
+    assert.match(order[0] ?? '', /image:Full-body character/)
     assert.ok(order.some(item => item.startsWith('image:Cinematic 16:9')))
   })
 })

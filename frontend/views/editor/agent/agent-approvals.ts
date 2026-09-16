@@ -94,7 +94,15 @@ export function checkpointFromGenerate(
       : ''
   const blob = `${role} ${prompt}`.toLowerCase()
   if (/\blast[- ]?frame\b/.test(blob)) return 'last_frame'
-  if (/\bcharacter sheet\b/.test(blob) || role === 'character') return 'character_sheet'
+  if (
+    /\bcharacter sheet\b/.test(blob)
+    || /\blookbook\b/.test(blob)
+    || /\bt-pose\b/.test(blob)
+    || /\breference sheet\b/.test(blob)
+    || role === 'character'
+  ) {
+    return 'character_sheet'
+  }
   if (/\bscene sheet\b/.test(blob) || role === 'scene' || role === 'location') return 'scene_sheet'
   if (/\billustration\b/.test(blob)) return 'illustration'
   return 'still'

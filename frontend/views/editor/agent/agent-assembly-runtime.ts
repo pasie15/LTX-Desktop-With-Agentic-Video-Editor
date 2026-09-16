@@ -11,6 +11,8 @@ import {
   assemblyConfirmQuestions,
   bindAssemblyUserMedia,
   buildAssemblyProposal,
+  countAssemblyGenerateJobs,
+  deriveCharacterSheets,
   inferAssemblyMediaFromAssets,
   isAssemblyProceedChoice,
   MAX_ASSEMBLY_GENERATE_JOBS,
@@ -54,7 +56,11 @@ import {
   type AgentSpeechActionHost,
 } from './agent-speech-runtime.ts'
 import { applyShotLipSync, type AgentLipSyncActionHost } from './agent-lipsync-runtime.ts'
-import { collectIdentityStillIds, firstIdentityStillId, isIdentityStillId } from './agent-identity.ts'
+import {
+  collectIdentityStillIds,
+  firstIdentityStillId,
+  isUsableVideoStart,
+} from './agent-identity.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
 import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-definitions.ts'
 
@@ -247,6 +253,7 @@ export async function executeAssemblyTool(
   let proposal = shouldBindUserMedia
     ? bindUserMediaIntoProposal(host, resolved.proposal)
     : resolved.proposal
+  proposal = expandSheetsFromCharacterRefs(host, proposal)
   memory.setProposal(proposal)
   if (proposal.shots.length === 0) return errorResult('Shot list is empty')
   if (!memory.getPlan?.()) {
@@ -412,7 +419,6 @@ export async function executeAssemblyTool(
         }
       }
       characterSheetIds.push(sheetResult.stillAssetId)
-      lastStillId = sheetResult.stillAssetId
       const moreSheets = index < characterSheets.length - 1
       if (stepByStep) {
         memory.setProgress(snapshotProgress({
@@ -450,7 +456,7 @@ export async function executeAssemblyTool(
           checklist,
         }
       }
-      const attachedStillId = resolveShotStillId(host, shot, proposal)
+      const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
       const wantFirst = !shot.assetId && !proposal.skipStills && !shot.skipStill && !attachedStillId
       const wantLast = !shot.assetId
         && !proposal.skipStills
@@ -581,7 +587,7 @@ export async function executeAssemblyTool(
     }
 
     const total = proposal.shots.length
-    const attachedStillId = resolveShotStillId(host, shot, proposal)
+    const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
       ?? checklist[index]?.stillAssetId
     reportAssemblyProgress(host, {
       percent: 60 + Math.round((index / total) * 40),
@@ -602,6 +608,7 @@ export async function executeAssemblyTool(
         index === 0,
         lastStillId,
         attachedStillId,
+        characterSheetIds,
       ),
     )
     checklist[index] = result
@@ -666,6 +673,30 @@ export async function executeAssemblyTool(
       needsGenerate: timing.needsGenerate,
       shortfall: timing.shortfall,
     } : {}),
+  }
+}
+
+function expandSheetsFromCharacterRefs(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+): AgentAssemblyProposal {
+  const characterRefs = (host.refs?.list() ?? []).filter(ref => ref.role === 'character')
+  if (characterRefs.length === 0) return proposal
+  const sheets = deriveCharacterSheets({
+    skipStills: proposal.skipStills,
+    ...(proposal.referenceAssetId ? { referenceAssetId: proposal.referenceAssetId } : {}),
+    shots: proposal.shots,
+    ...(proposal.character ? { character: proposal.character } : {}),
+    characterSheets: proposal.characterSheets,
+    characterRefs,
+  })
+  if (sheets.length === 0 || sheets === proposal.characterSheets) return proposal
+  const jobCount = countAssemblyGenerateJobs(proposal.shots, proposal.skipStills, sheets.length)
+  return {
+    ...proposal,
+    characterSheets: sheets,
+    jobCount,
+    exceedsJobCap: jobCount > MAX_ASSEMBLY_GENERATE_JOBS,
   }
 }
 
@@ -753,14 +784,19 @@ function resolveShotStillId(
   host: AgentAssemblyActionHost,
   shot: AgentAssemblyShot,
   proposal: AgentAssemblyProposal,
+  characterSheetIds: readonly string[] = [],
 ): string | undefined {
   const identityIds = collectIdentityStillIds({
     referenceAssetId: proposal.referenceAssetId,
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
     assets: host.getState().editorModel.assets,
+    extraIds: characterSheetIds,
   })
-  if (isIdentityStillId(shot.imageAssetId, identityIds)) return undefined
+  const asset = shot.imageAssetId
+    ? host.getState().editorModel.assets.find(item => item.id === shot.imageAssetId)
+    : undefined
+  if (!isUsableVideoStart(shot.imageAssetId, asset, identityIds)) return undefined
   return shot.imageAssetId
 }
 
@@ -978,7 +1014,8 @@ async function generateCharacterSheet(
   proposal: AgentAssemblyProposal,
   sheet: AgentCharacterSheet,
 ): Promise<{ status: 'ready'; stillAssetId: string } | { status: 'failed' | 'cancelled'; error: string }> {
-  const identityId = proposal.referenceAssetId
+  const identityId = sheet.referenceAssetId
+    ?? proposal.referenceAssetId
     ?? preferredReferenceAssetId(host.getPreferredAssemblyMedia?.() ?? {})
     ?? firstIdentityStillId(collectIdentityStillIds({
       referenceAssetId: proposal.referenceAssetId,
@@ -1015,8 +1052,11 @@ async function generateShotStill(
   const promptShot = identityId && shot.showProtagonist !== false
     ? { ...shot, showProtagonist: shot.showProtagonist ?? true }
     : shot
+  const sheetHint = (proposal.characterSheets?.length ?? 0) > 0 && promptShot.showProtagonist !== false
+    ? ' Same person as the approved design bible: face, body, hair, and costume. This frame is the character inside the scene, not a studio catalog.'
+    : ''
   const still = await executeGenerateTool(host, 'generate_image', {
-    prompt: stillPromptForShot(promptShot, which),
+    prompt: `${stillPromptForShot(promptShot, which)}${sheetHint}`,
     destination: 'assets',
     confirmed: true,
     skipReview: true,
@@ -1075,20 +1115,27 @@ async function generateAndPlaceShot(
   isFirst: boolean,
   _previousStillId?: string,
   approvedStillId?: string,
+  characterSheetIds: readonly string[] = [],
 ): Promise<AgentAssemblyShotResult> {
   if (shot.assetId) {
     return placeExistingShot(host, proposal, shot, startTime)
   }
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
-  const attachedStillId = resolveShotStillId(host, shot, proposal)
   const identityIds = collectIdentityStillIds({
     referenceAssetId: proposal.referenceAssetId,
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
     assets: host.getState().editorModel.assets,
+    extraIds: characterSheetIds,
   })
-  const approvedStart = isIdentityStillId(approvedStillId, identityIds) ? undefined : approvedStillId
+  const approvedAsset = approvedStillId
+    ? host.getState().editorModel.assets.find(item => item.id === approvedStillId)
+    : undefined
+  const approvedStart = isUsableVideoStart(approvedStillId, approvedAsset, identityIds)
+    ? approvedStillId
+    : undefined
+  const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
   let imageAssetId = approvedStart ?? attachedStillId
   const wantStill = !proposal.skipStills && !shot.skipStill && !imageAssetId
 
@@ -1105,9 +1152,12 @@ async function generateAndPlaceShot(
     imageAssetId = still.stillAssetId
   }
 
-  let lastImageAssetId = isIdentityStillId(shot.lastImageAssetId, identityIds)
-    ? undefined
-    : shot.lastImageAssetId
+  const lastAsset = shot.lastImageAssetId
+    ? host.getState().editorModel.assets.find(item => item.id === shot.lastImageAssetId)
+    : undefined
+  let lastImageAssetId = isUsableVideoStart(shot.lastImageAssetId, lastAsset, identityIds)
+    ? shot.lastImageAssetId
+    : undefined
   if (!lastImageAssetId && shot.lastFramePrompt && !proposal.skipStills) {
     const lastStill = await generateShotStill(host, proposal, shot, 'last')
     if (lastStill.status === 'ready') lastImageAssetId = lastStill.stillAssetId

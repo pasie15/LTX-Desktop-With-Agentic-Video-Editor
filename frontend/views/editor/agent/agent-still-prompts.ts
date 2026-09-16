@@ -16,14 +16,16 @@ export const EMPTY_STILL_TAIL =
   'Empty frame. No character. No portrait. No cropped face.'
 
 export const LOOKBOOK_LEAD =
-  'Full-body character lookbook grid, 16:9, two or three standing poses on a seamless studio backdrop. '
-  + 'Entire figure visible from hair to shoes. Costume and body language readable. '
+  'Full-body character reference sheet, 16:9 orthographic lookbook grid on a seamless studio backdrop. '
+  + 'Panels: T-pose front, T-pose back, three-quarter standing, side profile. '
+  + 'Entire figure visible from hair to shoes in every panel. Hands, shoes, and silhouette readable. '
 
 export const LOOKBOOK_TAIL =
-  'Not a facial close-up. Not a cropped headshot. Not a reprint of a portrait photograph.'
+  'This is a design bible for later scene stills, not a video frame and not a facial close-up. '
+  + 'Not a cropped headshot. Not a reprint of a portrait photograph.'
 
 export function isLookbookPrompt(prompt: string): boolean {
-  return /character sheet|lookbook|turnaround|costume bible/i.test(prompt)
+  return /character sheet|lookbook|turnaround|costume bible|t-pose|reference sheet/i.test(prompt)
 }
 
 export function isEmptyScenePrompt(prompt: string): boolean {
@@ -42,7 +44,7 @@ export function frameIdentityImagePrompt(prompt: string): string {
   const trimmed = prompt.trim()
   if (!trimmed) return trimmed
   if (isLookbookPrompt(trimmed)) {
-    if (/^Full-body character lookbook grid/i.test(trimmed)) return trimmed
+    if (/^Full-body character reference sheet/i.test(trimmed)) return trimmed
     return `${LOOKBOOK_LEAD}${neutralizeStillCloseup(trimmed)} ${LOOKBOOK_TAIL}`
   }
   if (/^Cinematic 16:9 production still/i.test(trimmed)) return trimmed
@@ -51,4 +53,17 @@ export function frameIdentityImagePrompt(prompt: string): string {
     return `${EMPTY_STILL_LEAD}${body} ${EMPTY_STILL_TAIL}`
   }
   return `${SCENE_STILL_LEAD}${body} ${SCENE_STILL_TAIL}`
+}
+
+/** Video starts are scene stills. Never mint another lookbook as an i2v frame. */
+export function sceneStillPromptForVideo(prompt: string): string {
+  const trimmed = prompt.trim()
+  if (!trimmed || isLookbookPrompt(trimmed)) {
+    return frameIdentityImagePrompt(
+      'The referenced character in a real cinematic location matching the scene. '
+      + 'Full or three-quarter body, wardrobe from the character bible. '
+      + 'Not a studio catalog and not a cropped face.',
+    )
+  }
+  return frameIdentityImagePrompt(trimmed)
 }

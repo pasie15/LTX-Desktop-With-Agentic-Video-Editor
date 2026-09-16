@@ -197,7 +197,8 @@ describe('assembly job cap', () => {
       character: { name: 'Ken Tune', identity: 'the artist from the portrait' },
     })
     assert.equal(sheets.length, 1)
-    assert.match(sheets[0]?.prompt ?? '', /^Full-body character lookbook/)
+    assert.match(sheets[0]?.prompt ?? '', /^Full-body character reference sheet/)
+    assert.match(sheets[0]?.prompt ?? '', /T-pose front/)
     assert.match(sheets[0]?.prompt ?? '', /Character sheet/)
     assert.match(sheets[0]?.prompt ?? '', /Ken Tune/)
     assert.match(sheets[0]?.prompt ?? '', /black leather jacket/)
@@ -208,6 +209,21 @@ describe('assembly job cap', () => {
       referenceAssetId: 'ken',
       shots: [{ id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true }],
     }), [])
+  })
+
+  it('derives one full-body sheet per character ref', () => {
+    const sheets = deriveCharacterSheets({
+      shots: [{ id: 's1', prompt: 'duet on the bridge', duration: 5, showProtagonist: true }],
+      characterRefs: [
+        { id: 'ken', name: 'Ken Tune', assetId: 'ken-jpg', role: 'character' },
+        { id: 'maya', name: 'Maya', assetId: 'maya-jpg', role: 'character' },
+      ],
+    })
+    assert.equal(sheets.length, 2)
+    assert.equal(sheets[0]?.referenceAssetId, 'ken-jpg')
+    assert.equal(sheets[1]?.referenceAssetId, 'maya-jpg')
+    assert.match(sheets[0]?.prompt ?? '', /T-pose/)
+    assert.match(sheets[1]?.prompt ?? '', /Maya/)
   })
 
   it('flags more than eight generate jobs on the confirm card', () => {

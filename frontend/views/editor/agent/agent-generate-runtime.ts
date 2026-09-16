@@ -28,11 +28,13 @@ import {
 import {
   collectIdentityStillIds,
   firstIdentityStillId,
+  isCharacterSheetAsset,
   isIdentityStillId,
   isImportedStill,
+  isUsableVideoStart,
   type IdentityPreferredMedia,
 } from './agent-identity.ts'
-import { frameIdentityImagePrompt } from './agent-still-prompts.ts'
+import { frameIdentityImagePrompt, sceneStillPromptForVideo } from './agent-still-prompts.ts'
 
 export const AGENT_DEFAULT_PREVIEW_DURATION_S = 4
 export const AGENT_DEFAULT_VIDEO_MODEL = 'fast'
@@ -485,6 +487,7 @@ async function generateStill(
     asBoolean(args.identityReference)
     || isIdentityStillId(referenceAssetId ?? undefined, identityIds)
     || isImportedStill(referenceStill)
+    || isCharacterSheetAsset(referenceStill)
   )
   // Z-Image follows the start of the prompt. Identity stills must lead with a wide scene
   // or a full-body lookbook, or Turbo paints another headshot.
@@ -566,10 +569,10 @@ async function generateVideo(
   if (requestedStill && requestedStill.type !== 'image') {
     return errorResult('imageAssetId must be an image asset')
   }
-  const portraitStart = !animateSource && (
-    isIdentityStillId(requestedStillId ?? undefined, identityIds) || isImportedStill(requestedStill)
-  )
-  let imageAssetId = requestedStillId && !portraitStart ? requestedStillId : null
+  // Lookbooks and imported portraits describe identity. They are never i2v pixels.
+  const usableStart = animateSource
+    || isUsableVideoStart(requestedStillId ?? undefined, requestedStill, identityIds)
+  let imageAssetId = requestedStillId && usableStart ? requestedStillId : null
   let imagePath: string | null = requestedStill && imageAssetId ? requestedStill.path : null
   const requestedLastId = asString(args.lastImageAssetId)
   const requestedLast = requestedLastId ? assetById(state, requestedLastId) : undefined
@@ -577,10 +580,9 @@ async function generateVideo(
   if (requestedLast && requestedLast.type !== 'image') {
     return errorResult('lastImageAssetId must be an image asset')
   }
-  const lastImageAssetId = requestedLastId && !isIdentityStillId(requestedLastId, identityIds)
-    && (animateSource || !isImportedStill(requestedLast))
-    ? requestedLastId
-    : null
+  const usableLast = animateSource
+    || isUsableVideoStart(requestedLastId ?? undefined, requestedLast, identityIds)
+  const lastImageAssetId = requestedLastId && usableLast ? requestedLastId : null
   const lastImagePath = requestedLast && lastImageAssetId ? requestedLast.path : null
   const identityId = refStillId ?? firstIdentityStillId(identityIds)
   const proposal: AgentGenerateProposal = {
@@ -611,7 +613,7 @@ async function generateVideo(
   }
   if (!imageAssetId && identityId) {
     const sceneStill = await generateStill(host, jobs, {
-      prompt,
+      prompt: sceneStillPromptForVideo(prompt),
       destination: 'assets',
       confirmed: true,
       skipReview: true,
