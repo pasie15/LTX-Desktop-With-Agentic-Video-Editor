@@ -17,7 +17,6 @@ import {
   normalizeAssemblyShots,
   preferredReferenceAssetId,
   shotImpliesOnCameraVoice,
-  shotShowsProtagonist,
   stillPromptForShot,
   videoPromptForShot,
   type AgentAssemblyPreferredMedia,
@@ -53,7 +52,7 @@ import {
   type AgentSpeechActionHost,
 } from './agent-speech-runtime.ts'
 import { applyShotLipSync, type AgentLipSyncActionHost } from './agent-lipsync-runtime.ts'
-import { collectIdentityStillIds, isIdentityStillId } from './agent-identity.ts'
+import { collectIdentityStillIds, firstIdentityStillId, isIdentityStillId } from './agent-identity.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
 import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-definitions.ts'
 
@@ -610,9 +609,15 @@ function resolveShotIdentity(
   shot: AgentAssemblyShot,
   proposal: AgentAssemblyProposal,
 ): string | undefined {
-  if (!shotShowsProtagonist(shot)) return undefined
+  if (shot.showProtagonist === false) return undefined
   if (shot.refId) return host.refs?.resolveImageAssetId(shot.refId) ?? proposal.referenceAssetId
-  return proposal.referenceAssetId
+  if (proposal.referenceAssetId) return proposal.referenceAssetId
+  const preferred = host.getPreferredAssemblyMedia?.()
+  return preferredReferenceAssetId(preferred ?? {})
+    ?? firstIdentityStillId(collectIdentityStillIds({
+      preferred,
+      refs: host.refs?.list(),
+    }))
 }
 
 function addStyledTextClip(
@@ -761,12 +766,15 @@ async function generateShotStill(
   which: 'first' | 'last' = 'first',
 ): Promise<{ status: 'ready'; stillAssetId: string } | { status: 'failed' | 'cancelled'; error: string }> {
   const identityId = resolveShotIdentity(host, shot, proposal)
+  const promptShot = identityId && shot.showProtagonist !== false
+    ? { ...shot, showProtagonist: shot.showProtagonist ?? true }
+    : shot
   const still = await executeGenerateTool(host, 'generate_image', {
-    prompt: stillPromptForShot(shot, which),
+    prompt: stillPromptForShot(promptShot, which),
     destination: 'assets',
     confirmed: true,
     skipReview: true,
-    ...(identityId ? { referenceAssetId: identityId } : {}),
+    ...(identityId ? { referenceAssetId: identityId, identityReference: true } : {}),
   })
   if (still.ok === false) {
     return {

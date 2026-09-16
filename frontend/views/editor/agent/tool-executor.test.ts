@@ -941,6 +941,7 @@ describe('generate tool executor', () => {
 
   it('does not use a character portrait as the video start frame', async () => {
     const refs = createMemoryRefStore()
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
     const videoPaths: Array<string | null | undefined> = []
     const host = createHost(makeState({
       clips: [],
@@ -948,6 +949,10 @@ describe('generate tool executor', () => {
     }), {
       refs,
       generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
         runVideo: async input => {
           videoPaths.push(input.imagePath)
           return { status: 'complete', path: '/tmp/cut.mp4' }
@@ -968,7 +973,8 @@ describe('generate tool executor', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(videoPaths, [null])
+    assert.deepEqual(imageRefs, [{ path: '/tmp/ken.png', strength: 0.72 }])
+    assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
   })
 
   it('generates a video and places it in the selected gap after confirm', async () => {
@@ -1415,6 +1421,38 @@ describe('refs speech and mix', () => {
     assert.ok(music)
     assert.equal(music.trackIndex, 4)
     assert.equal(music.volume, 0.25)
+  })
+
+  it('img2imgs a bound character still even when showProtagonist is omitted', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [imageAsset('hero-still')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/scene-from-hero.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+      approveAll: true,
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('assemble_shots', {
+      shots: [{ id: 's1', prompt: 'the paper boy on a stoop', duration: 4 }],
+      referenceAssetId: 'hero-still',
+      skipStills: false,
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(imageRefs, [{ path: '/tmp/hero-still.png', strength: 0.72 }])
+    assert.deepEqual(videoPaths, ['/project/image-scene-from-hero.png'])
   })
 
   it('generates speech onto A1', async () => {

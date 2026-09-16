@@ -67,7 +67,6 @@ import {
   selectSelectedClipForProperties,
   selectSelectedClipIds,
   selectSelectedSubtitleId,
-  selectShowAgentChat,
   selectShowPropertiesPanel,
   selectSnapEnabled,
   selectSubtitleTrackStyleIdx,
@@ -81,7 +80,6 @@ import {
 } from './editor-selectors'
 import { useTimelineDrag } from './useTimelineDrag'
 import { useEditorActions, useEditorStore } from './editor-store'
-import { AgentChatToggle } from './agent/AgentChatToggle'
 
 // Custom scissors cursor SVG for the blade tool (white with dark outline for contrast)
 const SCISSORS_CURSOR_SVG = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='6' cy='6' r='3'/><path d='M8.12 8.12 12 12'/><path d='M20 4 8.12 15.88'/><circle cx='6' cy='18' r='3'/><path d='M14.8 14.8 20 20'/></svg>`
@@ -229,7 +227,6 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
   const lastTrimTool = useEditorStore(selectLastTrimTool)
   const snapEnabled = useEditorStore(selectSnapEnabled)
   const showPropertiesPanel = useEditorStore(selectShowPropertiesPanel)
-  const showAgentChat = useEditorStore(selectShowAgentChat)
   const openTimelineIds = useEditorStore(selectOpenTimelineIds)
   const { renamingTimelineId, renameValue, renameSource } = useEditorStore(selectTimelineRenameState, shallow)
   const subtitleTrackStyleIdx = useEditorStore(selectSubtitleTrackStyleIdx)
@@ -281,10 +278,6 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
   const setShowPropertiesPanel = useCallback((value: React.SetStateAction<boolean>) => {
     actions.setShowPropertiesPanel(applyStateAction(value, showPropertiesPanel))
   }, [actions, showPropertiesPanel])
-
-  const setShowAgentChat = useCallback((value: React.SetStateAction<boolean>) => {
-    actions.setShowAgentChat(applyStateAction(value, showAgentChat))
-  }, [actions, showAgentChat])
 
   const setRenameValue = useCallback((value: string) => {
     actions.setTimelineRenameValue(value)
@@ -1759,13 +1752,6 @@ export function VideoEditorTimelineEditingPanel(props: VideoEditorTimelineEditin
             )}
 
             <div className="flex-1" />
-
-            <AgentChatToggle
-              open={showAgentChat}
-              shortcut={getShortcutLabel(kbLayout, 'view.agentChat')}
-              onToggle={() => setShowAgentChat(p => !p)}
-              variant="toolbar"
-            />
 
             <Tooltip content={showPropertiesPanel ? 'Hide Properties Panel' : 'Show Properties Panel'} side="right">
               <button
