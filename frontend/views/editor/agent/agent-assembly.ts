@@ -10,6 +10,8 @@ import type { AgentAskUserQuestion } from './agent-types.ts'
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 
 export type AgentAssemblyKind = 'script' | 'broll' | 'music_video' | 'narrative'
+export type AgentShotPerformance = 'singing' | 'talking' | 'dialogue' | 'silent'
+export type AgentShotAddress = 'solo' | 'to_others' | 'with_others' | 'off_camera'
 
 export interface AgentAssemblyShot {
   id: string
@@ -27,6 +29,12 @@ export interface AgentAssemblyShot {
   wardrobe?: string
   dialogue?: string
   lipSync?: boolean
+  performance?: AgentShotPerformance
+  address?: AgentShotAddress
+  performers?: string
+  others?: string
+  objects?: string
+  environment?: string
 }
 
 export interface AgentAssemblyProposal {
@@ -184,6 +192,21 @@ export function normalizeAssemblyShots(raw: unknown): AgentAssemblyShot[] | null
     const lastImageAssetId = optionalString(record.lastImageAssetId)
     const wardrobe = optionalString(record.wardrobe)
     const dialogue = optionalString(record.dialogue)
+    const performance = parseShotPerformance(record.performance)
+    const address = parseShotAddress(record.address)
+    const performers = optionalString(record.performers)
+    const others = optionalString(record.others)
+    const objects = optionalString(record.objects)
+    const environment = optionalString(record.environment)
+    const lipSync = record.lipSync === true
+      || (record.lipSync !== false && shotImpliesOnCameraVoice({
+        performance,
+        address,
+        showProtagonist: record.showProtagonist === true || record.showProtagonist === false
+          ? record.showProtagonist
+          : undefined,
+        refId,
+      }))
     shots.push({
       id,
       prompt: prompt || `Place ${assetId}`,
@@ -201,7 +224,13 @@ export function normalizeAssemblyShots(raw: unknown): AgentAssemblyShot[] | null
         : {}),
       ...(wardrobe ? { wardrobe } : {}),
       ...(dialogue ? { dialogue } : {}),
-      ...(record.lipSync === true ? { lipSync: true } : {}),
+      ...(lipSync ? { lipSync: true } : {}),
+      ...(performance ? { performance } : {}),
+      ...(address ? { address } : {}),
+      ...(performers ? { performers } : {}),
+      ...(others ? { others } : {}),
+      ...(objects ? { objects } : {}),
+      ...(environment ? { environment } : {}),
     })
   }
   return shots
@@ -375,22 +404,78 @@ export function stillPromptForShot(shot: AgentAssemblyShot, which: 'first' | 'la
   const base = which === 'last'
     ? (shot.lastFramePrompt ?? shot.prompt)
     : (shot.firstFramePrompt ?? shot.prompt)
-  const extras: string[] = []
-  if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
-  if (shot.showProtagonist === false) extras.push('Do not show the protagonist. Environment, extras, or objects only.')
-  else if (shotShowsProtagonist(shot)) extras.push('Match the registered character identity; stage this beat, do not copy the reference portrait as the frame.')
-  if (shot.dialogue && which === 'first') extras.push(shot.lipSync ? 'Mouth beginning the spoken line.' : 'No on-camera speech.')
-  return extras.length > 0 ? `${base} ${extras.join(' ')}` : base
+  return withScenePromptExtras(base, shot, which)
 }
 
 export function videoPromptForShot(shot: AgentAssemblyShot): string {
+  return withScenePromptExtras(shot.prompt, shot, 'video')
+}
+
+export function shotImpliesOnCameraVoice(shot: Pick<AgentAssemblyShot, 'performance' | 'address' | 'showProtagonist' | 'refId' | 'lipSync'>): boolean {
+  if (shot.lipSync === true) return true
+  if (shot.address === 'off_camera' || shot.showProtagonist === false) return false
+  return shot.performance === 'singing' || shot.performance === 'talking' || shot.performance === 'dialogue'
+}
+
+function parseShotPerformance(value: unknown): AgentShotPerformance | undefined {
+  if (value === 'singing' || value === 'talking' || value === 'dialogue' || value === 'silent') return value
+  return undefined
+}
+
+function parseShotAddress(value: unknown): AgentShotAddress | undefined {
+  if (value === 'solo' || value === 'to_others' || value === 'with_others' || value === 'off_camera') return value
+  return undefined
+}
+
+function withScenePromptExtras(
+  base: string,
+  shot: AgentAssemblyShot,
+  which: 'first' | 'last' | 'video',
+): string {
   const extras: string[] = []
+  if (shot.environment) extras.push(`Setting: ${shot.environment}`)
+  if (shot.objects) extras.push(`Stage objects: ${shot.objects}`)
   if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
-  if (shot.showProtagonist === false) extras.push('Do not show the protagonist.')
-  if (shot.dialogue) {
-    extras.push(shot.lipSync
-      ? `On-camera speech with lip sync: "${shot.dialogue}"`
-      : `Spoken/off-camera line (no lip sync): "${shot.dialogue}"`)
+  if (shot.showProtagonist === false) extras.push('Do not show the protagonist. Environment, extras, or objects only.')
+  else if (shotShowsProtagonist(shot)) extras.push('Match the registered character identity; stage this beat, do not copy the reference portrait as the frame.')
+  if (shot.performers) extras.push(`On camera: ${shot.performers}`)
+  if (shot.others) extras.push(`Others in the scene: ${shot.others}`)
+  const performance = scenePerformanceLine(shot, which)
+  if (performance) extras.push(performance)
+  return extras.length > 0 ? `${base} ${extras.join(' ')}` : base
+}
+
+function scenePerformanceLine(shot: AgentAssemblyShot, which: 'first' | 'last' | 'video'): string | undefined {
+  const onCamera = shotImpliesOnCameraVoice(shot)
+  const who = shot.performers || (shotShowsProtagonist(shot) ? 'the protagonist' : 'the performer')
+  const toward = shot.others
+    ? (shot.address === 'with_others' ? `with ${shot.others}` : `to ${shot.others}`)
+    : shot.address === 'to_others' || shot.address === 'with_others'
+      ? 'to someone else in the scene'
+      : 'alone'
+  if (shot.performance === 'silent' || (!shot.performance && !shot.dialogue && !onCamera)) {
+    if (shot.showProtagonist === false) return undefined
+    return 'No singing or talking. Faces closed; action and environment carry the beat.'
   }
-  return extras.length > 0 ? `${shot.prompt} ${extras.join(' ')}` : shot.prompt
+  if (shot.performance === 'singing') {
+    if (which !== 'video') return onCamera ? `Mouth beginning to sing ${toward}.` : 'No on-camera singing; environment or listener reaction.'
+    return onCamera
+      ? `On-camera singing with lip sync ${toward}: ${shot.dialogue ? `"${shot.dialogue}"` : who}`
+      : `Off-camera singing ${toward}${shot.dialogue ? `: "${shot.dialogue}"` : ''}`
+  }
+  if (shot.performance === 'dialogue') {
+    if (which !== 'video') return onCamera ? `Mouth beginning a conversation ${toward}.` : 'Listen / react; do not speak on camera.'
+    return onCamera
+      ? `On-camera dialogue with lip sync ${toward}: ${shot.dialogue ? `"${shot.dialogue}"` : who}`
+      : `Off-camera dialogue ${toward}${shot.dialogue ? `: "${shot.dialogue}"` : ''}`
+  }
+  if (shot.performance === 'talking' || shot.dialogue) {
+    if (which !== 'video') {
+      return onCamera ? 'Mouth beginning the spoken line.' : 'No on-camera speech.'
+    }
+    return onCamera
+      ? `On-camera speech with lip sync ${toward}: ${shot.dialogue ? `"${shot.dialogue}"` : who}`
+      : `Spoken/off-camera line (no lip sync)${shot.dialogue ? `: "${shot.dialogue}"` : ''}`
+  }
+  return undefined
 }

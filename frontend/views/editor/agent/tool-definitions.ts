@@ -963,7 +963,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first with a scene script (Approve all does not skip planning). Picture on V1, designed text on V2, voiceover on A1, music on A2, dialogue captions on the subtitle track. An @ portrait is character identity (referenceAssetId / refId), not the first frame. Generate first-frame and last-frame stills from the script, then image-to-video. Per shot: duration, showProtagonist, wardrobe, setting, dialogue, lipSync. Pass lyrics or overlays for on-screen text. Pass musicAssetId for a score.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first with a fully reasoned scene script (Approve all does not skip planning). Per shot decide: who is on camera (artist, one protagonist, several); whether they are singing, talking, in dialogue, or silent; solo vs to/with others vs off-camera; objects and environment; wardrobe; first/last frames. Picture on V1, designed text on V2/V3, VO on A1, music on A2. An @ portrait is character identity, not the first frame.',
     parameters: {
       type: 'object',
       properties: {
@@ -988,7 +988,13 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               showProtagonist: { type: 'boolean', description: 'Whether this scene shows the referenced character' },
               wardrobe: { type: 'string', description: 'Costume for this scene; same as the portrait or a new look from the story' },
               dialogue: { type: 'string', description: 'Spoken or sung line, if any' },
-              lipSync: { type: 'boolean', description: 'On-camera speech; turns audio on and asks the video model to mouth the line' },
+              lipSync: { type: 'boolean', description: 'On-camera speech; turns audio on and asks the video model to mouth the line. Inferred when performance is singing/talking/dialogue and address is not off_camera.' },
+              performance: { type: 'string', enum: ['singing', 'talking', 'dialogue', 'silent'], description: 'Is the artist or protagonist singing, talking, in a two-way dialogue, or silent?' },
+              address: { type: 'string', enum: ['solo', 'to_others', 'with_others', 'off_camera'], description: 'Alone, singing/talking to others, with others, or off-camera' },
+              performers: { type: 'string', description: 'Who is performing: artist, protagonist A, both leads, extras, etc.' },
+              others: { type: 'string', description: 'Who they sing/talk to or with' },
+              objects: { type: 'string', description: 'Props and objects that belong in this beat' },
+              environment: { type: 'string', description: 'Location, weather, light, and other environmental elements' },
             },
           },
         },
@@ -1095,7 +1101,7 @@ export const SPEECH_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'plan_edit',
-    description: 'Internal plan-then-execute step. Write a scene script first: for each shot decide duration, first/last frame, whether the protagonist appears, wardrobe, setting, dialogue, and lip-sync. Then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots / multi-shot generate. Approve all does not skip this — it only skips asking the user. Does not mutate the timeline.',
+    description: 'Internal plan-then-execute step. Write a scene script first and fully reason each beat: duration; first/last frame; who appears (one or several protagonists, the artist, extras); singing vs talking vs dialogue vs silent; solo / to others / with others / off-camera; wardrobe; objects; environment. Then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots. Approve all does not skip this. Does not mutate the timeline.',
     parameters: {
       type: 'object',
       required: ['goal'],
@@ -1117,6 +1123,12 @@ export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               wardrobe: { type: 'string' },
               dialogue: { type: 'string' },
               lipSync: { type: 'boolean' },
+              performance: { type: 'string', enum: ['singing', 'talking', 'dialogue', 'silent'] },
+              address: { type: 'string', enum: ['solo', 'to_others', 'with_others', 'off_camera'] },
+              performers: { type: 'string' },
+              others: { type: 'string' },
+              objects: { type: 'string' },
+              environment: { type: 'string' },
             },
           },
         },

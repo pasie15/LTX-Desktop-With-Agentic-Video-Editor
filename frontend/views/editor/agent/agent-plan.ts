@@ -11,6 +11,12 @@ export interface AgentEditPlanShot {
   wardrobe?: string
   dialogue?: string
   lipSync?: boolean
+  performance?: 'singing' | 'talking' | 'dialogue' | 'silent'
+  address?: 'solo' | 'to_others' | 'with_others' | 'off_camera'
+  performers?: string
+  others?: string
+  objects?: string
+  environment?: string
 }
 
 export interface AgentEditPlan {
@@ -53,6 +59,16 @@ function asShotList(raw: unknown): AgentEditPlanShot[] {
     if (typeof record.wardrobe === 'string' && record.wardrobe.trim()) shot.wardrobe = record.wardrobe.trim()
     if (typeof record.dialogue === 'string' && record.dialogue.trim()) shot.dialogue = record.dialogue.trim()
     if (record.lipSync === true) shot.lipSync = true
+    if (record.performance === 'singing' || record.performance === 'talking' || record.performance === 'dialogue' || record.performance === 'silent') {
+      shot.performance = record.performance
+    }
+    if (record.address === 'solo' || record.address === 'to_others' || record.address === 'with_others' || record.address === 'off_camera') {
+      shot.address = record.address
+    }
+    if (typeof record.performers === 'string' && record.performers.trim()) shot.performers = record.performers.trim()
+    if (typeof record.others === 'string' && record.others.trim()) shot.others = record.others.trim()
+    if (typeof record.objects === 'string' && record.objects.trim()) shot.objects = record.objects.trim()
+    if (typeof record.environment === 'string' && record.environment.trim()) shot.environment = record.environment.trim()
     if (shot.id || shot.prompt || shot.title) shots.push(shot)
   }
   return shots
@@ -86,6 +102,12 @@ export function planFromAssembly(input: {
     wardrobe?: string
     dialogue?: string
     lipSync?: boolean
+    performance?: 'singing' | 'talking' | 'dialogue' | 'silent'
+    address?: 'solo' | 'to_others' | 'with_others' | 'off_camera'
+    performers?: string
+    others?: string
+    objects?: string
+    environment?: string
   }>
   voiceover?: string
   voiceoverAssetId?: string
@@ -108,6 +130,12 @@ export function planFromAssembly(input: {
       ...(shot.wardrobe ? { wardrobe: shot.wardrobe } : {}),
       ...(shot.dialogue ? { dialogue: shot.dialogue } : {}),
       ...(shot.lipSync ? { lipSync: true } : {}),
+      ...(shot.performance ? { performance: shot.performance } : {}),
+      ...(shot.address ? { address: shot.address } : {}),
+      ...(shot.performers ? { performers: shot.performers } : {}),
+      ...(shot.others ? { others: shot.others } : {}),
+      ...(shot.objects ? { objects: shot.objects } : {}),
+      ...(shot.environment ? { environment: shot.environment } : {}),
     })),
     voStrategy: input.voiceover
       ? `ElevenLabs: ${input.voiceover.slice(0, 120)}`

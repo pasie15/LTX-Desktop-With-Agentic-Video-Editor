@@ -134,6 +134,31 @@ describe('assembly job cap', () => {
     })
     assert.match(talking, /lip sync/)
     assert.match(talking, /Midnight by the river/)
+    const duet = videoPromptForShot({
+      id: 's4',
+      prompt: 'Ken on the bridge',
+      duration: 5,
+      performance: 'singing',
+      address: 'with_others',
+      performers: 'both protagonists',
+      others: 'the second lead',
+      objects: 'streetlamp, wet railing',
+      environment: 'midnight river fog, sodium light',
+      dialogue: 'Midnight by the river',
+    })
+    assert.match(duet, /singing/)
+    assert.match(duet, /second lead/)
+    assert.match(duet, /streetlamp/)
+    assert.match(duet, /fog/)
+    const parsed = normalizeAssemblyShots([{
+      prompt: 'duet on the bridge',
+      duration: 4,
+      performance: 'singing',
+      address: 'with_others',
+      performers: 'both protagonists',
+    }])
+    assert.equal(parsed?.[0]?.lipSync, true)
+    assert.equal(parsed?.[0]?.performance, 'singing')
   })
 
   it('flags more than eight generate jobs on the confirm card', () => {
