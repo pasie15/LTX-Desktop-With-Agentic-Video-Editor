@@ -307,6 +307,7 @@ function fakeActions(): AgentEditorActions {
             padding: 0,
             borderRadius: 0,
             opacity: 100,
+            ...params.style,
           },
         },
       ],
@@ -862,6 +863,22 @@ describe('edit tool executor', () => {
     assert.ok(textClip)
     assert.equal(textClip.textStyle?.text, 'HELLO')
     assert.equal(textClip.duration, 3)
+    assert.equal(textClip.textStyle?.fontSize, 72)
+    assert.equal(textClip.textStyle?.positionY, 50)
+
+    const lyrics = await executor.execute('add_text', {
+      text: 'Midnight by the river',
+      role: 'lyrics',
+      startTime: 3,
+      duration: 4,
+    })
+    assert.equal(lyrics.ok, true)
+    assert.equal(lyrics.role, 'lyrics')
+    const lyricClip = activeClips(host.getState()).find(item => item.textStyle?.text === 'Midnight by the river')
+    assert.ok(lyricClip)
+    assert.equal(lyricClip.trackIndex, 2)
+    assert.equal(lyricClip.textStyle?.positionY, 82)
+    assert.equal(lyricClip.textStyle?.fontSize, 40)
 
     const subtitle = await executor.execute('add_subtitle', { text: 'Hi', startTime: 0, endTime: 2 })
     assert.equal(subtitle.ok, true)
@@ -1281,6 +1298,7 @@ describe('refs speech and mix', () => {
           showProtagonist: false,
         },
       ],
+      lyrics: '[0s] Midnight by the river\n[5s] I keep walking',
       confirmed: true,
     })
     assert.equal(result.ok, true)
@@ -1298,6 +1316,10 @@ describe('refs speech and mix', () => {
     const music = clips.find(item => item.assetId === 'midnight-river')
     assert.ok(music)
     assert.equal(music.trackIndex, 4)
+    const lyricLines = clips.filter(item => item.textStyle?.positionY === 82)
+    assert.equal(lyricLines.length, 2)
+    assert.ok(lyricLines.every(item => item.trackIndex === 2))
+    assert.ok(lyricLines.some(item => item.textStyle?.text === 'Midnight by the river'))
   })
 
   it('registers a still and resolves it on assemble', async () => {
@@ -1345,7 +1367,12 @@ describe('refs speech and mix', () => {
     assert.equal(imageCalls, 1)
     assert.deepEqual(videoPaths, ['/project/image-still-from-ref.png'])
     const clips = activeClips(host.getState())
-    assert.ok(clips.some(item => item.type === 'text'))
+    const opening = clips.find(item => item.textStyle?.text === 'Before Sunrise')
+    assert.ok(opening)
+    assert.equal(opening.trackIndex, 1)
+    assert.equal(opening.textStyle?.positionY, 50)
+    assert.equal(opening.textStyle?.fontSize, 72)
+    assert.equal(opening.duration, 3)
     const music = clips.find(item => item.assetId === 'theme')
     assert.ok(music)
     assert.equal(music.trackIndex, 4)

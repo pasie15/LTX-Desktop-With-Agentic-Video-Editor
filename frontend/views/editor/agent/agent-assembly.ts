@@ -4,6 +4,7 @@ import {
   AGENT_DEFAULT_VIDEO_RESOLUTION,
   type AgentGenerateDestination,
 } from './agent-generate-runtime.ts'
+import { normalizeTextOverlays, type AgentTextOverlay } from './agent-text.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
@@ -46,6 +47,7 @@ export interface AgentAssemblyProposal {
   musicAssetId?: string
   openingTitle?: string
   referenceAssetId?: string
+  overlays?: AgentTextOverlay[]
 }
 
 const SLUG_PREFIX = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.|SCENE\b|#\s+)/i
@@ -108,6 +110,7 @@ export function bindAssemblyUserMedia(
     musicAssetId,
     openingTitle: proposal.openingTitle,
     referenceAssetId,
+    overlays: proposal.overlays,
   })
 }
 
@@ -231,12 +234,18 @@ export function buildAssemblyProposal(input: {
   openingTitle?: unknown
   title?: unknown
   referenceAssetId?: unknown
+  overlays?: unknown
+  lyrics?: unknown
 }): AgentAssemblyProposal {
   const kind = parseAssemblyKind(input.kind)
   const destination = parseDestination(input.destination, kind === 'broll' ? 'after_last' : 'playhead')
   const skipStills = input.skipStills === true
   const jobCount = countAssemblyGenerateJobs(input.shots, skipStills)
   const openingTitle = optionalString(input.openingTitle) ?? optionalString(input.title)
+  const overlays = [
+    ...normalizeTextOverlays(input.overlays),
+    ...normalizeTextOverlays(input.lyrics),
+  ]
   return {
     tool: 'assemble_shots',
     kind,
@@ -263,6 +272,7 @@ export function buildAssemblyProposal(input: {
     ...(optionalString(input.musicAssetId) ? { musicAssetId: optionalString(input.musicAssetId) } : {}),
     ...(openingTitle ? { openingTitle } : {}),
     ...(optionalString(input.referenceAssetId) ? { referenceAssetId: optionalString(input.referenceAssetId) } : {}),
+    ...(overlays.length > 0 ? { overlays } : {}),
   }
 }
 
@@ -271,6 +281,8 @@ export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): Agent
     proposal.voiceover || proposal.voiceoverAssetId ? 'VO on A1' : null,
     proposal.musicAssetId ? 'music on A2' : null,
     proposal.openingTitle ? 'opening title' : null,
+    proposal.overlays?.some(item => item.role === 'lyrics') ? 'lyrics on V2' : null,
+    proposal.overlays?.some(item => item.role !== 'lyrics') ? 'text overlays' : null,
   ].filter(Boolean)
   const extraLabel = extras.length > 0 ? `; ${extras.join(', ')}` : ''
   const jobLabel = `${proposal.shots.length} shot${proposal.shots.length === 1 ? '' : 's'}, ${proposal.jobCount} generate job${proposal.jobCount === 1 ? '' : 's'}${extraLabel}`

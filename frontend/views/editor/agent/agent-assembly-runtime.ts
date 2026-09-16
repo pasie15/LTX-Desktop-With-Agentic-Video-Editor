@@ -1,4 +1,4 @@
-import type { Asset } from '../../../types/project-model.ts'
+import type { Asset, TextOverlayStyle } from '../../../types/project-model.ts'
 import type { EditorState } from '../editor-state.ts'
 import { applyNarrationSync, scaleShotsToCoverDuration } from './agent-cut.ts'
 import { planFromAssembly, type AgentEditPlan } from './agent-plan.ts'
@@ -32,11 +32,19 @@ import {
 import {
   AGENT_MUSIC_MIX_LEVEL,
   AGENT_MUSIC_TRACK_INDEX,
+  AGENT_OPENING_TITLE_DURATION_S,
   AGENT_TITLE_TRACK_INDEX,
   AGENT_VOICEOVER_MIX_LEVEL,
   AGENT_VOICEOVER_TRACK_INDEX,
   firstUnlockedTrackIndex,
 } from './agent-mix.ts'
+import {
+  AGENT_SHOT_TITLE_DURATION_S,
+  preferredTrackForTextRole,
+  styleForTextRole,
+  type AgentTextOverlay,
+  type AgentTextRole,
+} from './agent-text.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import {
   importSpeechAsset,
@@ -49,7 +57,7 @@ import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-d
 export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentSpeechActionHost {
   actions: AgentGenerateActionHost['actions'] & AgentSpeechActionHost['actions'] & {
     addTextClip: (state: EditorState, params: {
-      style?: { text?: string }
+      style?: Partial<TextOverlayStyle>
       startTime?: number
       trackIndex?: number
       duration?: number
@@ -161,6 +169,8 @@ function resolveProposal(
       openingTitle: args.openingTitle,
       title: args.title,
       referenceAssetId: args.referenceAssetId,
+      overlays: args.overlays,
+      lyrics: args.lyrics,
     })
     memory.setProposal(proposal)
     return { ok: true, proposal }
@@ -197,6 +207,7 @@ export function rememberAssemblyAcceptance(
         musicAssetId: current?.musicAssetId,
         openingTitle: current?.openingTitle,
         referenceAssetId: current?.referenceAssetId,
+        overlays: current?.overlays,
       }))
     }
   }
@@ -589,21 +600,38 @@ function resolveShotIdentity(
   return proposal.referenceAssetId
 }
 
-function addTitleClip(
+function addStyledTextClip(
   host: AgentAssemblyActionHost,
-  text: string,
-  startTime: number,
-  trackIndex: number,
+  input: {
+    text: string
+    role: AgentTextRole
+    startTime: number
+    duration: number
+    trackIndex: number
+    style?: Partial<TextOverlayStyle>
+  },
 ): string | undefined {
   const beforeIds = new Set(
     (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
       ?? host.getState().editorModel.timelines[0])?.clips.map(item => item.id) ?? [],
   )
-  host.applyWithHistory(prev => host.actions.addTextClip(prev, {
-    style: { text },
-    startTime,
-    trackIndex,
-  }))
+  host.applyWithHistory(prev => {
+    let current = host.actions.addTextClip(prev, {
+      style: styleForTextRole(input.role, input.text, input.style),
+      startTime: input.startTime,
+      trackIndex: input.trackIndex,
+    })
+    const created = (current.editorModel.timelines.find(item => item.id === current.editorModel.activeTimelineId)
+      ?? current.editorModel.timelines[0])?.clips.find(item => !beforeIds.has(item.id))
+    if (created && input.duration !== created.duration) {
+      current = host.actions.resizeClip(current, {
+        clipId: created.id,
+        edge: 'end',
+        deltaTime: input.duration - created.duration,
+      })
+    }
+    return current
+  })
   return (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
     ?? host.getState().editorModel.timelines[0])?.clips.find(item => !beforeIds.has(item.id))?.id
 }
@@ -625,14 +653,18 @@ function placeAssemblyMix(
     ?? host.getState().editorModel.timelines[0]
   const extras: Record<string, unknown> = {}
 
+  const titleTrack = firstUnlockedTrackIndex(timeline?.tracks, 'video', AGENT_TITLE_TRACK_INDEX)
   if (proposal.openingTitle) {
-    extras.openingTitleClipId = addTitleClip(
-      host,
-      proposal.openingTitle,
-      start,
-      firstUnlockedTrackIndex(timeline?.tracks, 'video', AGENT_TITLE_TRACK_INDEX),
-    )
+    extras.openingTitleClipId = addStyledTextClip(host, {
+      text: proposal.openingTitle,
+      role: 'title',
+      startTime: start,
+      duration: AGENT_OPENING_TITLE_DURATION_S,
+      trackIndex: titleTrack,
+    })
   }
+
+  extras.overlayClipIds = placeAssemblyOverlays(host, proposal, placed, start, timeline?.tracks)
 
   if (voiceoverAsset) {
     const placedVo = placeAudioAsset(host, voiceoverAsset, {
@@ -661,6 +693,50 @@ function placeAssemblyMix(
   extras.pictureStart = start
   extras.pictureEnd = pictureEnd
   return extras
+}
+
+function placeAssemblyOverlays(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+  placed: AgentAssemblyShotResult[],
+  pictureStart: number,
+  tracks: Array<{ kind?: string; locked?: boolean }> | undefined,
+): string[] {
+  const ids: string[] = []
+  const overlays = assemblyOverlays(proposal, placed)
+  for (const overlay of overlays) {
+    const id = addStyledTextClip(host, {
+      text: overlay.text,
+      role: overlay.role,
+      startTime: pictureStart + overlay.startTime,
+      duration: overlay.duration,
+      trackIndex: firstUnlockedTrackIndex(tracks, 'video', preferredTrackForTextRole(overlay.role)),
+      style: overlay.style,
+    })
+    if (id) ids.push(id)
+  }
+  return ids
+}
+
+function assemblyOverlays(
+  proposal: AgentAssemblyProposal,
+  placed: AgentAssemblyShotResult[],
+): AgentTextOverlay[] {
+  if (proposal.overlays && proposal.overlays.length > 0) return proposal.overlays
+  if (proposal.kind !== 'music_video') return []
+  const lyrics: AgentTextOverlay[] = []
+  for (const [index, shot] of proposal.shots.entries()) {
+    if (!shot.dialogue) continue
+    const placedShot = placed[index]
+    lyrics.push({
+      text: shot.dialogue,
+      role: 'lyrics',
+      startTime: Math.max(0, (placedShot?.start ?? 0) - (placed[0]?.start ?? 0)),
+      duration: placedShot?.duration ?? shot.duration,
+      style: {},
+    })
+  }
+  return lyrics
 }
 
 async function generateShotStill(
@@ -796,17 +872,18 @@ async function generateAndPlaceShot(
   let titleClipId: string | undefined
 
   if (shot.title) {
-    titleClipId = addTitleClip(
-      host,
-      shot.title,
-      placedStart,
-      firstUnlockedTrackIndex(
+    titleClipId = addStyledTextClip(host, {
+      text: shot.title,
+      role: 'shot_title',
+      startTime: placedStart,
+      duration: Math.min(AGENT_SHOT_TITLE_DURATION_S, placedDuration),
+      trackIndex: firstUnlockedTrackIndex(
         (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
           ?? host.getState().editorModel.timelines[0])?.tracks,
         'video',
         AGENT_TITLE_TRACK_INDEX,
       ),
-    )
+    })
   }
 
   return {
@@ -858,17 +935,18 @@ function placeExistingShot(
   let titleClipId: string | undefined
 
   if (shot.title) {
-    titleClipId = addTitleClip(
-      host,
-      shot.title,
-      placedStart,
-      firstUnlockedTrackIndex(
+    titleClipId = addStyledTextClip(host, {
+      text: shot.title,
+      role: 'shot_title',
+      startTime: placedStart,
+      duration: Math.min(AGENT_SHOT_TITLE_DURATION_S, placedDuration),
+      trackIndex: firstUnlockedTrackIndex(
         (host.getState().editorModel.timelines.find(item => item.id === host.getState().editorModel.activeTimelineId)
           ?? host.getState().editorModel.timelines[0])?.tracks,
         'video',
         AGENT_TITLE_TRACK_INDEX,
       ),
-    )
+    })
   }
 
   return {
