@@ -135,10 +135,11 @@ describe('assembly job cap', () => {
       dialogue: 'I keep walking',
       lipSync: true,
     })
+    assert.match(hero, /^Cinematic 16:9 production still/)
     assert.match(hero, /Ken on a wet street/)
     assert.match(hero, /black leather jacket/)
     assert.match(hero, /referenced person is inside this location/)
-    assert.match(hero, /not a copy of the reference photograph/)
+    assert.match(hero, /Not a copy of a reference portrait/)
     assert.match(hero, /Mouth beginning/)
     const broll = stillPromptForShot({
       id: 's2',
@@ -194,11 +195,12 @@ describe('assembly job cap', () => {
       character: { name: 'Ken Tune', identity: 'the artist from the portrait' },
     })
     assert.equal(sheets.length, 1)
+    assert.match(sheets[0]?.prompt ?? '', /^Full-body character lookbook/)
     assert.match(sheets[0]?.prompt ?? '', /Character sheet/)
     assert.match(sheets[0]?.prompt ?? '', /Ken Tune/)
     assert.match(sheets[0]?.prompt ?? '', /black leather jacket/)
     assert.match(sheets[0]?.prompt ?? '', /wet coat/)
-    assert.match(characterSheetPrompt({ character: { name: 'Ken' } }), /not a cropped headshot/)
+    assert.match(characterSheetPrompt({ character: { name: 'Ken' } }), /Not a cropped headshot/)
     assert.deepEqual(deriveCharacterSheets({
       skipStills: true,
       referenceAssetId: 'ken',

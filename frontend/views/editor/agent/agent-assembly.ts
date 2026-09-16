@@ -7,6 +7,7 @@ import {
 import { normalizeTextOverlays, type AgentTextOverlay } from './agent-text.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import { collectIdentityStillIds, withoutIdentityStartFrames } from './agent-identity.ts'
+import { frameIdentityImagePrompt } from './agent-still-prompts.ts'
 
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 
@@ -148,7 +149,7 @@ export function characterSheetPrompt(input: {
   shots?: readonly AgentAssemblyShot[]
   sheet?: Pick<AgentCharacterSheet, 'look' | 'wardrobe' | 'prompt'>
 }): string {
-  if (input.sheet?.prompt?.trim()) return input.sheet.prompt.trim()
+  if (input.sheet?.prompt?.trim()) return frameIdentityImagePrompt(input.sheet.prompt)
   const who = input.character?.name?.trim() || 'the referenced artist or subject'
   const identity = input.character?.identity?.trim()
   const lookNames = (input.character?.looks ?? [])
@@ -164,13 +165,12 @@ export function characterSheetPrompt(input: {
   const uniqueLooks = [...new Set(looks.map(item => item.trim()).filter(Boolean))]
   const lookLine = uniqueLooks.length > 0
     ? uniqueLooks.join('; ')
-    : 'the portrait look plus scene-appropriate costume changes from the brief'
+    : 'scene-appropriate costume changes from the brief'
   const identityLine = identity ? ` ${identity}.` : ''
-  return (
-    `Character sheet / lookbook of ${who}.${identityLine} Same face, body, and identity as the reference portrait. `
-    + `Front and three-quarter views. Wardrobe looks: ${lookLine}. Clean studio backdrop, even light. `
-    + 'Define the character and the different looks. Full-body / three-quarter lookbook on a clean studio backdrop. '
-    + 'This is a character bible, not a cropped headshot and not a copy of the reference photo.'
+  return frameIdentityImagePrompt(
+    `Character sheet / lookbook of ${who}.${identityLine} `
+    + `Same person as the referenced artist, new standing poses, not the original photo. `
+    + `Wardrobe looks: ${lookLine}.`,
   )
 }
 
@@ -586,7 +586,7 @@ export function stillPromptForShot(shot: AgentAssemblyShot, which: 'first' | 'la
   const base = which === 'last'
     ? (shot.lastFramePrompt ?? shot.prompt)
     : (shot.firstFramePrompt ?? shot.prompt)
-  return withScenePromptExtras(base, shot, which)
+  return frameIdentityImagePrompt(withScenePromptExtras(base, shot, which))
 }
 
 export function videoPromptForShot(shot: AgentAssemblyShot): string {

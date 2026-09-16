@@ -978,14 +978,14 @@ describe('generate tool executor', () => {
   })
 
   it('does not img2img an imported photo even without identity flags', async () => {
-    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const imageRefs: Array<{ path?: string | null; strength?: number; prompt?: string }> = []
     const host = createHost(makeState({
       clips: [],
       assets: [imageAsset('ken')],
     }), {
       generation: fakeJobs({
         runImage: async input => {
-          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          imageRefs.push({ path: input.imagePath, strength: input.strength, prompt: input.prompt })
           return { status: 'complete', path: '/tmp/scene-still.png' }
         },
       }),
@@ -997,7 +997,10 @@ describe('generate tool executor', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
+    assert.deepEqual(imageRefs.map(item => ({ path: item.path, strength: item.strength })), [
+      { path: undefined, strength: undefined },
+    ])
+    assert.match(imageRefs[0]?.prompt ?? '', /^Cinematic 16:9 production still/)
     assert.notEqual(result.assetId, 'ken')
   })
 
@@ -1756,7 +1759,8 @@ describe('refs speech and mix', () => {
     assert.equal(done.ok, true)
     assert.equal(order.filter(item => item === 'video').length, 2)
     assert.ok(order.indexOf('video') > 0)
-    assert.match(order[0] ?? '', /image:Character sheet/)
+    assert.match(order[0] ?? '', /image:Full-body character look/)
+    assert.ok(order.some(item => item.startsWith('image:Cinematic 16:9')))
   })
 })
 

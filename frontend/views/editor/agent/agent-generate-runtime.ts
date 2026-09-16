@@ -32,6 +32,7 @@ import {
   isImportedStill,
   type IdentityPreferredMedia,
 } from './agent-identity.ts'
+import { frameIdentityImagePrompt } from './agent-still-prompts.ts'
 
 export const AGENT_DEFAULT_PREVIEW_DURATION_S = 4
 export const AGENT_DEFAULT_VIDEO_MODEL = 'fast'
@@ -458,33 +459,11 @@ async function generateStill(
   jobs: AgentGenerationJobs,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const prompt = asString(args.prompt)
-  if (!prompt) return errorResult('Missing prompt')
+  const rawPrompt = asString(args.prompt)
+  if (!rawPrompt) return errorResult('Missing prompt')
   const destination = parseDestination(args.destination, 'assets')
   const gap = destination === 'gap' ? resolveGap(host.getState(), args, host.getSelectedGap) : null
   const settings = settingsFromArgs(args, defaultSettings())
-  const proposal: AgentGenerateProposal = {
-    tool: 'generate_image',
-    prompt,
-    model: 'z-image',
-    resolution: settings.imageResolution,
-    destination,
-  }
-  if (!isConfirmed(host, args)) {
-    return needsConfirmResult(
-      proposal,
-      'Generation needs confirmation. Use ask_user with prompt, resolution, and destination, then retry with confirmed=true.',
-    )
-  }
-  if (destination === 'gap' && !gap) {
-    return errorResult('No selected gap. Select a gap or pass trackIndex, start, and end.')
-  }
-  if (destination !== 'assets') {
-    const trackIndex = asNumber(args.trackIndex) ?? gap?.trackIndex ?? 0
-    if (trackLocked(host.getState(), destination === 'gap' && gap ? gap.trackIndex : trackIndex)) {
-      return errorResult('Track is locked')
-    }
-  }
   const refStillId = asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null
   const identityIds = collectIdentityStillIds({
     preferred: host.getPreferredAssemblyMedia?.(),
@@ -507,6 +486,31 @@ async function generateStill(
     || isIdentityStillId(referenceAssetId ?? undefined, identityIds)
     || isImportedStill(referenceStill)
   )
+  // Z-Image follows the start of the prompt. Identity stills must lead with a wide scene
+  // or a full-body lookbook, or Turbo paints another headshot.
+  const prompt = identityRef ? frameIdentityImagePrompt(rawPrompt) : rawPrompt
+  const proposal: AgentGenerateProposal = {
+    tool: 'generate_image',
+    prompt,
+    model: 'z-image',
+    resolution: settings.imageResolution,
+    destination,
+  }
+  if (!isConfirmed(host, args)) {
+    return needsConfirmResult(
+      proposal,
+      'Generation needs confirmation. Use ask_user with prompt, resolution, and destination, then retry with confirmed=true.',
+    )
+  }
+  if (destination === 'gap' && !gap) {
+    return errorResult('No selected gap. Select a gap or pass trackIndex, start, and end.')
+  }
+  if (destination !== 'assets') {
+    const trackIndex = asNumber(args.trackIndex) ?? gap?.trackIndex ?? 0
+    if (trackLocked(host.getState(), destination === 'gap' && gap ? gap.trackIndex : trackIndex)) {
+      return errorResult('Track is locked')
+    }
+  }
   // Z-Image imagePath is img2img *edit* of those pixels. An imported portrait in → the
   // same headshot out. Identity stills are new text-to-image scenes. Only pass imagePath
   // to restyle an already-generated scene still, or when the user asked to animate this photo.
