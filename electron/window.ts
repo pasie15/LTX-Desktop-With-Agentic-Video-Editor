@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { isDev, getCurrentDir } from './config'
 import { logger } from './logger'
+import { attachTextEditContextMenu } from './text-edit-context-menu'
 
 const DEV_RENDERER_URLS = ['http://127.0.0.1:5173/', 'http://localhost:5173/'] as const
 const DEV_LOAD_RETRIES = 40
@@ -102,6 +103,8 @@ export function createWindow(): BrowserWindow {
       mainWindow?.show()
     })
   }
+
+  attachTextEditContextMenu(mainWindow)
 
   mainWindow.on('closed', () => {
     mainWindow = null

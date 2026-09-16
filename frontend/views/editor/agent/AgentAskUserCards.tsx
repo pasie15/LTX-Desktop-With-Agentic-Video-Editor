@@ -41,7 +41,7 @@ export function AgentAskUserCards(props: {
   return (
     <div className="flex flex-col gap-2 px-3 py-2 border-t border-zinc-800 bg-zinc-950">
       {props.questions.map(question => (
-        <div key={question.id} className="flex flex-col gap-1.5">
+        <div key={question.id} data-agent-copy className="flex flex-col gap-1.5">
           <p className="text-[12px] text-zinc-300 whitespace-pre-wrap">{question.prompt}</p>
           {question.preview && (
             <img

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { resolveAction, type ActionId } from '../../lib/keyboard-shortcuts'
+import { shouldIgnoreEditorShortcut } from '../../lib/text-editing-context'
 import type { EditorState } from './editor-state'
 import type { SourceKeyboardAction } from './VideoEditorSourceMonitor'
 import {
@@ -60,7 +61,6 @@ export function useEditorKeyboard(params: UseEditorKeyboardParams) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (refs.isKbEditorOpenRef.current) return
 
       const context = contextRef.current
@@ -72,6 +72,7 @@ export function useEditorKeyboard(params: UseEditorKeyboardParams) {
 
       const action: ActionId | null = resolveAction(refs.kbLayoutRef.current, e)
       if (!action) return
+      if (shouldIgnoreEditorShortcut(e, action)) return
 
       e.preventDefault()
       const editorActions = actionsRef.current
