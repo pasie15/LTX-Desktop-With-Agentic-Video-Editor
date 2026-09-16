@@ -78,6 +78,7 @@ export interface AgentGenerationJobs {
   runVideo: (input: {
     prompt: string
     imagePath: string | null
+    lastImagePath?: string | null
     settings: AgentGenerateSettings
     signal?: AbortSignal
     onProgress?: (progress: { percent: number; status: string }) => void
@@ -121,6 +122,7 @@ export interface AgentGenerateProposal {
   audio?: boolean
   destination?: AgentGenerateDestination
   imageAssetId?: string
+  lastImageAssetId?: string
   clipId?: string
   assetId?: string
 }
@@ -530,6 +532,14 @@ async function generateVideo(
     if (still.type !== 'image') return errorResult('imageAssetId must be an image asset')
     imagePath = still.path
   }
+  const lastImageAssetId = asString(args.lastImageAssetId)
+  let lastImagePath: string | null = null
+  if (lastImageAssetId) {
+    const lastStill = assetById(state, lastImageAssetId)
+    if (!lastStill) return errorResult(`Asset not found: ${lastImageAssetId}`)
+    if (lastStill.type !== 'image') return errorResult('lastImageAssetId must be an image asset')
+    lastImagePath = lastStill.path
+  }
   const proposal: AgentGenerateProposal = {
     tool: 'generate_video',
     prompt,
@@ -539,6 +549,7 @@ async function generateVideo(
     audio: settings.audio,
     destination,
     ...(imageAssetId ? { imageAssetId } : {}),
+    ...(lastImageAssetId ? { lastImageAssetId } : {}),
   }
   if (!isConfirmed(host, args)) {
     return needsConfirmResult(
@@ -563,6 +574,7 @@ async function generateVideo(
   const job = await jobs.runVideo({
     prompt,
     imagePath,
+    lastImagePath,
     settings,
     signal: host.getAbortSignal?.() ?? undefined,
     onProgress: progress => host.onProgress?.({ toolName: 'generate_video', ...progress }),
@@ -576,6 +588,7 @@ async function generateVideo(
     settings,
     generationParamsFor(imagePath ? 'image-to-video' : 'text-to-video', prompt, settings, {
       inputImageUrl: imagePath ?? undefined,
+      ...(lastImagePath ? { inputLastImageUrl: lastImagePath } : {}),
     }),
   )
   const placed = placeAsset(host, asset, destination, args, gap)

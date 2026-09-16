@@ -198,7 +198,7 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
   generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'skipReview'],
-  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'skipReview'],
+  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'lastImageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'skipReview'],
   fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
   regenerate_clip: ['clipId', 'assetId', 'confirmed'],
   enhance_prompt: ['prompt', 'mediaType'],
@@ -223,6 +223,7 @@ export const ASSEMBLY_TOOL_ALLOWED_KEYS: Record<AgentAssemblyToolName, readonly 
     'musicAssetId',
     'openingTitle',
     'title',
+    'referenceAssetId',
   ],
 }
 
@@ -850,7 +851,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
   {
     name: 'generate_video',
-    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a start still via imageAssetId (image-to-video). Waits for the GPU slot instead of returning busy.',
+    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a generated first-frame still via imageAssetId (image-to-video), and lastImageAssetId when the scene has a destination frame. Do not pass an @ portrait as imageAssetId. Waits for the GPU slot instead of returning busy.',
     parameters: {
       type: 'object',
       required: ['prompt'],
@@ -860,8 +861,9 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         duration: { type: 'number', description: 'Seconds. Default selected gap or 4.' },
         resolution: { type: 'string', description: 'Video resolution, default 540p preview' },
         audio: { type: 'boolean' },
-        imageAssetId: { type: 'string', description: 'Exact still asset id for image-to-video' },
-        refId: { type: 'string', description: 'Named character/object ref used as the i2v start still' },
+        imageAssetId: { type: 'string', description: 'Generated first-frame still for this shot (not the @ character portrait)' },
+        lastImageAssetId: { type: 'string', description: 'Generated last-frame still for first-to-last interpolation' },
+        refId: { type: 'string', description: 'Named ref used as i2v start only for a single-shot generate; assemble_shots uses it as identity instead' },
         destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
@@ -918,7 +920,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, or pasted script. Call plan_edit first (Approve all does not skip planning). Picture on V1, titles on V2, voiceover on A1, music on A2. Voiceover duration drives picture: shots are sized to cover VO, then sync_narration / check_cut after place. Still-then-video with a review pause after each still unless approveAll. When the user already supplied a subject still or song, pass imageAssetId / musicAssetId — do not generate replacement stills. Pass voiceover text or voiceoverAssetId / musicAssetId. Use refId or imageAssetId for continuity.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first with a scene script (Approve all does not skip planning). Picture on V1, titles on V2, voiceover on A1, music on A2. An @ portrait is character identity (referenceAssetId / refId), not the first frame. Generate first-frame and last-frame stills from the script, then image-to-video. Per shot: duration, showProtagonist, wardrobe, setting, dialogue, lipSync. Pass musicAssetId for a score. Voiceover duration drives picture when VO is present.',
     parameters: {
       type: 'object',
       properties: {
@@ -930,13 +932,20 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
             required: ['prompt'],
             properties: {
               id: { type: 'string' },
-              prompt: { type: 'string' },
-              duration: { type: 'number' },
+              prompt: { type: 'string', description: 'Action and camera for this scene' },
+              duration: { type: 'number', description: 'Scene length in seconds' },
               title: { type: 'string', description: 'Scene slug; placed as a text clip' },
-              imageAssetId: { type: 'string', description: 'Reuse an existing still instead of generating one' },
-              refId: { type: 'string', description: 'Named ref; img2img then i2v from the new still' },
+              firstFramePrompt: { type: 'string', description: 'Opening still for this scene; not the @ portrait' },
+              lastFramePrompt: { type: 'string', description: 'Closing still when the action needs a destination frame' },
+              imageAssetId: { type: 'string', description: 'Already-generated first-frame still for this shot — never the @ portrait' },
+              lastImageAssetId: { type: 'string', description: 'Already-generated last-frame still' },
+              refId: { type: 'string', description: 'Character identity for img2img stills when the protagonist appears' },
               assetId: { type: 'string', description: 'Place this existing image, video, or audio asset instead of generating' },
               skipStill: { type: 'boolean' },
+              showProtagonist: { type: 'boolean', description: 'Whether this scene shows the referenced character' },
+              wardrobe: { type: 'string', description: 'Costume for this scene; same as the portrait or a new look from the story' },
+              dialogue: { type: 'string', description: 'Spoken or sung line, if any' },
+              lipSync: { type: 'boolean', description: 'On-camera speech; turns audio on and asks the video model to mouth the line' },
             },
           },
         },
@@ -955,6 +964,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         musicAssetId: { type: 'string', description: 'Existing music asset to place on A2 at 0.25 volume' },
         openingTitle: { type: 'string', description: 'Opening title on V2' },
         title: { type: 'string', description: 'Alias for openingTitle' },
+        referenceAssetId: { type: 'string', description: '@ portrait or character still used as identity for showProtagonist shots, not as every start frame' },
       },
     },
   },
@@ -1016,7 +1026,7 @@ export const SPEECH_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'plan_edit',
-    description: 'Internal plan-then-execute step. Analyze the brief, timeline, assets, refs, and selection, then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots / multi-shot generate. Approve all does not skip this — it only skips asking the user. Does not mutate the timeline.',
+    description: 'Internal plan-then-execute step. Write a scene script first: for each shot decide duration, first/last frame, whether the protagonist appears, wardrobe, setting, dialogue, and lip-sync. Then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots / multi-shot generate. Approve all does not skip this — it only skips asking the user. Does not mutate the timeline.',
     parameters: {
       type: 'object',
       required: ['goal'],
@@ -1032,6 +1042,12 @@ export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               prompt: { type: 'string' },
               duration: { type: 'number' },
               title: { type: 'string' },
+              firstFramePrompt: { type: 'string' },
+              lastFramePrompt: { type: 'string' },
+              showProtagonist: { type: 'boolean' },
+              wardrobe: { type: 'string' },
+              dialogue: { type: 'string' },
+              lipSync: { type: 'boolean' },
             },
           },
         },

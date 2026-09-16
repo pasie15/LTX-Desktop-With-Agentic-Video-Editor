@@ -15,6 +15,10 @@ import {
   isAssemblyProceedChoice,
   MAX_ASSEMBLY_GENERATE_JOBS,
   normalizeAssemblyShots,
+  preferredReferenceAssetId,
+  shotShowsProtagonist,
+  stillPromptForShot,
+  videoPromptForShot,
   type AgentAssemblyPreferredMedia,
   type AgentAssemblyProposal,
   type AgentAssemblyShot,
@@ -156,6 +160,7 @@ function resolveProposal(
       musicAssetId: args.musicAssetId,
       openingTitle: args.openingTitle,
       title: args.title,
+      referenceAssetId: args.referenceAssetId,
     })
     memory.setProposal(proposal)
     return { ok: true, proposal }
@@ -191,6 +196,7 @@ export function rememberAssemblyAcceptance(
         voiceoverAssetId: current?.voiceoverAssetId,
         musicAssetId: current?.musicAssetId,
         openingTitle: current?.openingTitle,
+        referenceAssetId: current?.referenceAssetId,
       }))
     }
   }
@@ -224,6 +230,7 @@ export async function executeAssemblyTool(
       voiceoverAssetId: proposal.voiceoverAssetId,
       musicAssetId: proposal.musicAssetId,
       openingTitle: proposal.openingTitle,
+      referenceAssetId: proposal.referenceAssetId,
     }))
   }
 
@@ -360,7 +367,7 @@ export async function executeAssemblyTool(
         host,
         `${index + 1}/${total} still`,
         Math.round((index / total) * 100),
-        () => generateShotStill(host, shot, lastStillId),
+        () => generateShotStill(host, proposal, shot),
       )
       if (stillResult.status !== 'ready') {
         checklist[index] = {
@@ -499,8 +506,11 @@ function bindUserMediaIntoProposal(
   )
   const preferred = host.getPreferredAssemblyMedia?.() ?? {}
   const musicAssetId = preferred.musicAssetId ?? inferred.musicAssetId
+  const referenceAssetId = preferredReferenceAssetId(preferred) ?? inferred.referenceAssetId
   return bindAssemblyUserMedia(proposal, {
-    imageAssetId: preferred.imageAssetId ?? inferred.imageAssetId,
+    ...(referenceAssetId && !usedShotAssetIds.has(referenceAssetId)
+      ? { referenceAssetId }
+      : {}),
     ...(musicAssetId && musicAssetId !== proposal.voiceoverAssetId && !usedShotAssetIds.has(musicAssetId)
       ? { musicAssetId }
       : {}),
@@ -563,12 +573,20 @@ function placeAssemblyMusic(
 }
 
 function resolveShotStillId(
-  host: AgentAssemblyActionHost,
+  _host: AgentAssemblyActionHost,
   shot: AgentAssemblyShot,
 ): string | undefined {
-  if (shot.imageAssetId) return shot.imageAssetId
-  if (shot.refId) return host.refs?.resolveImageAssetId(shot.refId) ?? undefined
-  return undefined
+  return shot.imageAssetId
+}
+
+function resolveShotIdentity(
+  host: AgentAssemblyActionHost,
+  shot: AgentAssemblyShot,
+  proposal: AgentAssemblyProposal,
+): string | undefined {
+  if (!shotShowsProtagonist(shot)) return undefined
+  if (shot.refId) return host.refs?.resolveImageAssetId(shot.refId) ?? proposal.referenceAssetId
+  return proposal.referenceAssetId
 }
 
 function addTitleClip(
@@ -647,17 +665,17 @@ function placeAssemblyMix(
 
 async function generateShotStill(
   host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
   shot: AgentAssemblyShot,
-  previousStillId?: string,
+  which: 'first' | 'last' = 'first',
 ): Promise<{ status: 'ready'; stillAssetId: string } | { status: 'failed' | 'cancelled'; error: string }> {
-  const attachedStillId = resolveShotStillId(host, shot)
-  const referenceAssetId = attachedStillId ?? previousStillId
+  const identityId = resolveShotIdentity(host, shot, proposal)
   const still = await executeGenerateTool(host, 'generate_image', {
-    prompt: shot.prompt,
+    prompt: stillPromptForShot(shot, which),
     destination: 'assets',
     confirmed: true,
     skipReview: true,
-    ...(referenceAssetId ? { referenceAssetId } : {}),
+    ...(identityId ? { referenceAssetId: identityId } : {}),
   })
   if (still.ok === false) {
     return {
@@ -710,7 +728,7 @@ async function generateAndPlaceShot(
   shot: AgentAssemblyShot,
   startTime: number,
   isFirst: boolean,
-  previousStillId?: string,
+  _previousStillId?: string,
   approvedStillId?: string,
 ): Promise<AgentAssemblyShotResult> {
   if (shot.assetId) {
@@ -719,38 +737,36 @@ async function generateAndPlaceShot(
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
   const attachedStillId = resolveShotStillId(host, shot)
-  let imageAssetId = approvedStillId
-    ?? attachedStillId
-    ?? (shot.skipStill || proposal.skipStills ? previousStillId : undefined)
-  const wantStill = !proposal.skipStills && !shot.skipStill && !approvedStillId && !attachedStillId
-  const referenceAssetId = attachedStillId ?? previousStillId
+  let imageAssetId = approvedStillId ?? attachedStillId
+  const wantStill = !proposal.skipStills && !shot.skipStill && !imageAssetId
 
   if (wantStill) {
-    const still = await executeGenerateTool(host, 'generate_image', {
-      prompt: shot.prompt,
-      destination: 'assets',
-      confirmed: true,
-      skipReview: true,
-      ...(referenceAssetId ? { referenceAssetId } : {}),
-    })
-    if (still.ok === false) {
+    const still = await generateShotStill(host, proposal, shot, 'first')
+    if (still.status !== 'ready') {
       return {
         id: shot.id,
         ...(shot.title ? { title: shot.title } : {}),
-        status: String(still.error) === 'Generation cancelled' ? 'cancelled' : 'failed',
-        error: String(still.error ?? 'Image generation failed'),
+        status: still.status,
+        error: still.error,
       }
     }
-    if (typeof still.assetId === 'string') imageAssetId = still.assetId
+    imageAssetId = still.stillAssetId
+  }
+
+  let lastImageAssetId = shot.lastImageAssetId
+  if (!lastImageAssetId && shot.lastFramePrompt && !proposal.skipStills) {
+    const lastStill = await generateShotStill(host, proposal, shot, 'last')
+    if (lastStill.status === 'ready') lastImageAssetId = lastStill.stillAssetId
   }
 
   const video = await executeGenerateTool(host, 'generate_video', {
-    prompt: shot.prompt,
+    prompt: videoPromptForShot(shot),
     model: proposal.model,
     duration: Math.max(shot.duration, 5),
     resolution: proposal.resolution,
-    audio: proposal.audio,
+    audio: proposal.audio || Boolean(shot.lipSync && shot.dialogue),
     ...(imageAssetId ? { imageAssetId } : {}),
+    ...(lastImageAssetId ? { lastImageAssetId } : {}),
     destination,
     trackIndex: proposal.trackIndex,
     startTime,

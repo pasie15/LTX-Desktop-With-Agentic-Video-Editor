@@ -12,6 +12,9 @@ import {
   normalizeAssemblyShots,
   parseScriptToShots,
   serializeAssemblyShots,
+  shotShowsProtagonist,
+  stillPromptForShot,
+  videoPromptForShot,
 } from './agent-assembly.ts'
 
 describe('script to shot list', () => {
@@ -68,11 +71,11 @@ describe('assembly job cap', () => {
     ], true), 2)
   })
 
-  it('binds a single project still and song onto shots that omit them', () => {
+  it('binds a portrait as character identity, not every shot start frame', () => {
     assert.deepEqual(inferAssemblyMediaFromAssets([
       { id: 'ken', type: 'image' },
       { id: 'river', type: 'audio' },
-    ]), { imageAssetId: 'ken', musicAssetId: 'river' })
+    ]), { referenceAssetId: 'ken', musicAssetId: 'river' })
     const proposal = bindAssemblyUserMedia(
       buildAssemblyProposal({
         kind: 'music_video',
@@ -85,9 +88,52 @@ describe('assembly job cap', () => {
       { imageAssetId: 'ken', musicAssetId: 'river' },
     )
     assert.equal(proposal.musicAssetId, 'river')
-    assert.equal(proposal.jobCount, 8)
-    assert.equal(proposal.exceedsJobCap, false)
-    assert.ok(proposal.shots.every(shot => shot.imageAssetId === 'ken' && shot.skipStill === true))
+    assert.equal(proposal.referenceAssetId, 'ken')
+    assert.equal(proposal.jobCount, 16)
+    assert.equal(proposal.exceedsJobCap, true)
+    assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
+  })
+
+  it('counts a last-frame still as an extra generate job', () => {
+    assert.equal(countAssemblyGenerateJobs([
+      { id: 'a', prompt: 'one', duration: 4, lastFramePrompt: 'end pose' },
+    ], false), 3)
+  })
+
+  it('builds scene still and video prompts from wardrobe, identity, and dialogue', () => {
+    assert.equal(shotShowsProtagonist({ showProtagonist: false }), false)
+    assert.equal(shotShowsProtagonist({ showProtagonist: true }), true)
+    assert.equal(shotShowsProtagonist({ refId: 'hero' }), true)
+    const hero = stillPromptForShot({
+      id: 's1',
+      prompt: 'stage light',
+      duration: 5,
+      firstFramePrompt: 'Ken on a wet street at night',
+      showProtagonist: true,
+      wardrobe: 'black leather jacket, not the portrait tee',
+      dialogue: 'I keep walking',
+      lipSync: true,
+    })
+    assert.match(hero, /Ken on a wet street/)
+    assert.match(hero, /black leather jacket/)
+    assert.match(hero, /character identity/)
+    assert.match(hero, /Mouth beginning/)
+    const broll = stillPromptForShot({
+      id: 's2',
+      prompt: 'empty bridge',
+      duration: 4,
+      showProtagonist: false,
+    })
+    assert.match(broll, /Do not show the protagonist/)
+    const talking = videoPromptForShot({
+      id: 's3',
+      prompt: 'close-up singing',
+      duration: 6,
+      dialogue: 'Midnight by the river',
+      lipSync: true,
+    })
+    assert.match(talking, /lip sync/)
+    assert.match(talking, /Midnight by the river/)
   })
 
   it('flags more than eight generate jobs on the confirm card', () => {

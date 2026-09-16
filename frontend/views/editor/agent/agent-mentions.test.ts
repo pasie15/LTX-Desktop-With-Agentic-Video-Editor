@@ -67,7 +67,7 @@ describe('agent mentions', () => {
       }],
     }])
     assert.deepEqual(preferredAssemblyMediaFromMentions(mentions, [still, music]), {
-      imageAssetId: 'img-1',
+      referenceAssetId: 'img-1',
       musicAssetId: 'aud-1',
     })
   })

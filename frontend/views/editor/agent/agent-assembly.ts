@@ -15,10 +15,17 @@ export interface AgentAssemblyShot {
   prompt: string
   duration: number
   title?: string
+  firstFramePrompt?: string
+  lastFramePrompt?: string
   imageAssetId?: string
+  lastImageAssetId?: string
   refId?: string
   assetId?: string
   skipStill?: boolean
+  showProtagonist?: boolean
+  wardrobe?: string
+  dialogue?: string
+  lipSync?: boolean
 }
 
 export interface AgentAssemblyProposal {
@@ -38,6 +45,7 @@ export interface AgentAssemblyProposal {
   voiceoverAssetId?: string
   musicAssetId?: string
   openingTitle?: string
+  referenceAssetId?: string
 }
 
 const SLUG_PREFIX = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.|SCENE\b|#\s+)/i
@@ -45,7 +53,9 @@ const NUMBERED_LINE = /^\d+[\.\)]\s+/
 const DURATION_SUFFIX = /\s*[\[(](\d+(?:\.\d+)?)s[\])]\s*$/i
 
 export interface AgentAssemblyPreferredMedia {
+  /** @deprecated Portrait stills are character refs, not start frames. Use referenceAssetId. */
   imageAssetId?: string
+  referenceAssetId?: string
   musicAssetId?: string
 }
 
@@ -62,9 +72,19 @@ export function inferAssemblyMediaFromAssets(
   ))
   const audios = assets.filter(asset => asset.type === 'audio' && !asset.generationParams)
   return {
-    ...(images.length === 1 && images[0] ? { imageAssetId: images[0].id } : {}),
+    ...(images.length === 1 && images[0] ? { referenceAssetId: images[0].id } : {}),
     ...(audios.length === 1 && audios[0] ? { musicAssetId: audios[0].id } : {}),
   }
+}
+
+export function preferredReferenceAssetId(media: AgentAssemblyPreferredMedia): string | undefined {
+  return media.referenceAssetId ?? media.imageAssetId
+}
+
+export function shotShowsProtagonist(shot: Pick<AgentAssemblyShot, 'showProtagonist' | 'refId'>): boolean {
+  if (shot.showProtagonist === false) return false
+  if (shot.showProtagonist === true || shot.refId) return true
+  return false
 }
 
 export function bindAssemblyUserMedia(
@@ -72,12 +92,8 @@ export function bindAssemblyUserMedia(
   media: AgentAssemblyPreferredMedia,
 ): AgentAssemblyProposal {
   const musicAssetId = proposal.musicAssetId ?? media.musicAssetId
-  const subjectId = media.imageAssetId
-  const shots = proposal.shots.map(shot => {
-    if (shot.assetId || shot.imageAssetId || shot.refId || !subjectId) return shot
-    return { ...shot, imageAssetId: subjectId, skipStill: true }
-  })
-  const next = buildAssemblyProposal({
+  const referenceAssetId = proposal.referenceAssetId ?? preferredReferenceAssetId(media)
+  return buildAssemblyProposal({
     kind: proposal.kind,
     destination: proposal.destination,
     trackIndex: proposal.trackIndex,
@@ -86,13 +102,13 @@ export function bindAssemblyUserMedia(
     resolution: proposal.resolution,
     audio: proposal.audio,
     skipStills: proposal.skipStills,
-    shots,
+    shots: proposal.shots,
     voiceover: proposal.voiceover,
     voiceoverAssetId: proposal.voiceoverAssetId,
     musicAssetId,
     openingTitle: proposal.openingTitle,
+    referenceAssetId,
   })
-  return next
 }
 
 export function countAssemblyGenerateJobs(
@@ -101,8 +117,9 @@ export function countAssemblyGenerateJobs(
 ): number {
   return shots.reduce((total, shot) => {
     if (shot.assetId) return total
-    const still = !skipStills && !shot.skipStill && !shot.imageAssetId
-    return total + (still ? 2 : 1)
+    const first = !skipStills && !shot.skipStill && !shot.imageAssetId
+    const last = !skipStills && Boolean(shot.lastFramePrompt) && !shot.lastImageAssetId
+    return total + (first ? 1 : 0) + (last ? 1 : 0) + 1
   }, 0)
 }
 
@@ -159,15 +176,29 @@ export function normalizeAssemblyShots(raw: unknown): AgentAssemblyShot[] | null
     const refId = typeof record.refId === 'string' && record.refId.trim()
       ? record.refId.trim()
       : undefined
+    const firstFramePrompt = optionalString(record.firstFramePrompt)
+    const lastFramePrompt = optionalString(record.lastFramePrompt)
+    const lastImageAssetId = optionalString(record.lastImageAssetId)
+    const wardrobe = optionalString(record.wardrobe)
+    const dialogue = optionalString(record.dialogue)
     shots.push({
       id,
       prompt: prompt || `Place ${assetId}`,
       duration,
       ...(title ? { title } : {}),
+      ...(firstFramePrompt ? { firstFramePrompt } : {}),
+      ...(lastFramePrompt ? { lastFramePrompt } : {}),
       ...(imageAssetId ? { imageAssetId } : {}),
+      ...(lastImageAssetId ? { lastImageAssetId } : {}),
       ...(refId ? { refId } : {}),
       ...(assetId ? { assetId } : {}),
       ...(record.skipStill === true ? { skipStill: true } : {}),
+      ...(record.showProtagonist === true || record.showProtagonist === false
+        ? { showProtagonist: record.showProtagonist }
+        : {}),
+      ...(wardrobe ? { wardrobe } : {}),
+      ...(dialogue ? { dialogue } : {}),
+      ...(record.lipSync === true ? { lipSync: true } : {}),
     })
   }
   return shots
@@ -199,6 +230,7 @@ export function buildAssemblyProposal(input: {
   musicAssetId?: unknown
   openingTitle?: unknown
   title?: unknown
+  referenceAssetId?: unknown
 }): AgentAssemblyProposal {
   const kind = parseAssemblyKind(input.kind)
   const destination = parseDestination(input.destination, kind === 'broll' ? 'after_last' : 'playhead')
@@ -230,6 +262,7 @@ export function buildAssemblyProposal(input: {
     ...(optionalString(input.voiceoverAssetId) ? { voiceoverAssetId: optionalString(input.voiceoverAssetId) } : {}),
     ...(optionalString(input.musicAssetId) ? { musicAssetId: optionalString(input.musicAssetId) } : {}),
     ...(openingTitle ? { openingTitle } : {}),
+    ...(optionalString(input.referenceAssetId) ? { referenceAssetId: optionalString(input.referenceAssetId) } : {}),
   }
 }
 
@@ -324,4 +357,28 @@ function shotFromBlock(index: number, lines: string[]): AgentAssemblyShot {
     return shotFromPrompt(index, titleFromSlug(first), titleFromSlug(first))
   }
   return shotFromPrompt(index, lines.join(' '))
+}
+
+export function stillPromptForShot(shot: AgentAssemblyShot, which: 'first' | 'last' = 'first'): string {
+  const base = which === 'last'
+    ? (shot.lastFramePrompt ?? shot.prompt)
+    : (shot.firstFramePrompt ?? shot.prompt)
+  const extras: string[] = []
+  if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
+  if (shot.showProtagonist === false) extras.push('Do not show the protagonist. Environment, extras, or objects only.')
+  else if (shotShowsProtagonist(shot)) extras.push('Match the registered character identity; stage this beat, do not copy the reference portrait as the frame.')
+  if (shot.dialogue && which === 'first') extras.push(shot.lipSync ? 'Mouth beginning the spoken line.' : 'No on-camera speech.')
+  return extras.length > 0 ? `${base} ${extras.join(' ')}` : base
+}
+
+export function videoPromptForShot(shot: AgentAssemblyShot): string {
+  const extras: string[] = []
+  if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
+  if (shot.showProtagonist === false) extras.push('Do not show the protagonist.')
+  if (shot.dialogue) {
+    extras.push(shot.lipSync
+      ? `On-camera speech with lip sync: "${shot.dialogue}"`
+      : `Spoken/off-camera line (no lip sync): "${shot.dialogue}"`)
+  }
+  return extras.length > 0 ? `${shot.prompt} ${extras.join(' ')}` : shot.prompt
 }

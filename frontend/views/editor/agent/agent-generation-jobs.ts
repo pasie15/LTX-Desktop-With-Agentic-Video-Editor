@@ -200,7 +200,7 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
     }
   }
 
-  const runVideo: AgentGenerationJobs['runVideo'] = async ({ prompt, imagePath, settings, signal, onProgress }) => {
+  const runVideo: AgentGenerationJobs['runVideo'] = async ({ prompt, imagePath, lastImagePath, settings, signal, onProgress }) => {
     const waited = await waitForSlot({
       signal,
       onWaiting: () => onProgress?.({ percent: 0, status: GENERATION_SLOT_WAIT_STATUS }),
@@ -229,7 +229,7 @@ export function createAgentGenerationJobs(input: CreateAgentGenerationJobsInput)
         ...buildGenerateVideoImageInputs({
           mode: 'video',
           imagePath,
-          lastImagePath: null,
+          lastImagePath: lastImagePath ?? null,
           keyframes: [],
         }),
       }
