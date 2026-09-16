@@ -5,7 +5,7 @@ import {
   nextStepForCheckpoint,
   type AgentReviewPreview,
 } from './agent-approvals.ts'
-import { AGENT_DEFAULT_REF_STRENGTH } from './agent-mix.ts'
+import { AGENT_DEFAULT_REF_STRENGTH, AGENT_IDENTITY_REF_STRENGTH } from './agent-mix.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import {
@@ -25,7 +25,12 @@ import {
   GENERATE_TOOL_ALLOWED_KEYS,
   type AgentGenerateToolName,
 } from './tool-definitions.ts'
-import { collectIdentityStillIds, isIdentityStillId, type IdentityPreferredMedia } from './agent-identity.ts'
+import {
+  collectIdentityStillIds,
+  firstIdentityStillId,
+  isIdentityStillId,
+  type IdentityPreferredMedia,
+} from './agent-identity.ts'
 
 export const AGENT_DEFAULT_PREVIEW_DURATION_S = 4
 export const AGENT_DEFAULT_VIDEO_MODEL = 'fast'
@@ -479,8 +484,13 @@ async function generateStill(
       return errorResult('Track is locked')
     }
   }
-  const referenceAssetId = asString(args.referenceAssetId)
-    ?? (asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null)
+  const refStillId = asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null
+  const identityIds = collectIdentityStillIds({
+    preferred: host.getPreferredAssemblyMedia?.(),
+    refs: host.refs?.list(),
+  })
+  if (refStillId) identityIds.add(refStillId)
+  const referenceAssetId = asString(args.referenceAssetId) ?? refStillId
   let referencePath: string | null = null
   if (referenceAssetId) {
     const still = assetById(host.getState(), referenceAssetId)
@@ -488,11 +498,15 @@ async function generateStill(
     if (still.type !== 'image') return errorResult('referenceAssetId must be an image asset')
     referencePath = still.path
   }
+  const refStrength = asBoolean(args.identityReference)
+    || isIdentityStillId(referenceAssetId ?? undefined, identityIds)
+    ? AGENT_IDENTITY_REF_STRENGTH
+    : AGENT_DEFAULT_REF_STRENGTH
   host.onProgress?.({ toolName: 'generate_image', percent: 0, status: 'Generating image...' })
   const job = await jobs.runImage({
     prompt,
     settings,
-    ...(referencePath ? { imagePath: referencePath, strength: AGENT_DEFAULT_REF_STRENGTH } : {}),
+    ...(referencePath ? { imagePath: referencePath, strength: refStrength } : {}),
     signal: host.getAbortSignal?.() ?? undefined,
     onProgress: progress => host.onProgress?.({ toolName: 'generate_image', ...progress }),
   })
@@ -532,7 +546,7 @@ async function generateVideo(
     refs: host.refs?.list(),
   })
   if (refStillId) identityIds.add(refStillId)
-  const imageAssetId = requestedStillId && !isIdentityStillId(requestedStillId, identityIds)
+  let imageAssetId = requestedStillId && !isIdentityStillId(requestedStillId, identityIds)
     ? requestedStillId
     : null
   let imagePath: string | null = null
@@ -553,6 +567,7 @@ async function generateVideo(
     if (lastStill.type !== 'image') return errorResult('lastImageAssetId must be an image asset')
     lastImagePath = lastStill.path
   }
+  const identityId = refStillId ?? firstIdentityStillId(identityIds)
   const proposal: AgentGenerateProposal = {
     tool: 'generate_video',
     prompt,
@@ -577,6 +592,21 @@ async function generateVideo(
     const trackIndex = asNumber(args.trackIndex) ?? gap?.trackIndex ?? 0
     if (trackLocked(state, destination === 'gap' && gap ? gap.trackIndex : trackIndex)) {
       return errorResult('Track is locked')
+    }
+  }
+  if (!imageAssetId && identityId) {
+    const sceneStill = await generateStill(host, jobs, {
+      prompt,
+      destination: 'assets',
+      confirmed: true,
+      skipReview: true,
+      referenceAssetId: identityId,
+      identityReference: true,
+    })
+    if (sceneStill.ok === false) return sceneStill
+    if (typeof sceneStill.assetId === 'string') {
+      imageAssetId = sceneStill.assetId
+      imagePath = assetById(host.getState(), imageAssetId)?.path ?? null
     }
   }
   host.onProgress?.({

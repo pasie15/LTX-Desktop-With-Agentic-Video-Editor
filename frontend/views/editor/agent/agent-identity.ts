@@ -34,6 +34,10 @@ export function isIdentityStillId(assetId: string | undefined, identityIds: Set<
   return Boolean(assetId && identityIds.has(assetId))
 }
 
+export function firstIdentityStillId(identityIds: Set<string>): string | undefined {
+  return identityIds.values().next().value
+}
+
 export function withoutIdentityStartFrames<T extends IdentityShotFields>(
   shot: T,
   identityIds: Set<string>,

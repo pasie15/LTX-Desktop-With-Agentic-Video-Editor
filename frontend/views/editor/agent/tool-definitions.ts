@@ -229,7 +229,7 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
 }
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
-  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'skipReview'],
+  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'identityReference', 'skipReview'],
   generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'lastImageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'skipReview'],
   fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
   regenerate_clip: ['clipId', 'assetId', 'confirmed'],
@@ -932,7 +932,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         audio: { type: 'boolean' },
         imageAssetId: { type: 'string', description: 'Generated first-frame still for this shot (not the @ character portrait)' },
         lastImageAssetId: { type: 'string', description: 'Generated last-frame still for first-to-last interpolation' },
-        refId: { type: 'string', description: 'Character identity only. Never used as the video start frame. Generate a scene still first and pass that as imageAssetId.' },
+        refId: { type: 'string', description: 'Character identity only. Never used as the video start frame. The runtime generates a scene still from this ref and uses that still as imageAssetId.' },
         destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
