@@ -13,6 +13,26 @@ export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 export type AgentAssemblyKind = 'script' | 'broll' | 'music_video' | 'narrative'
 export type AgentShotPerformance = 'singing' | 'talking' | 'dialogue' | 'silent'
 export type AgentShotAddress = 'solo' | 'to_others' | 'with_others' | 'off_camera'
+export type AgentAssemblyStage = 'character_sheet' | 'still' | 'video'
+
+export interface AgentCharacterLook {
+  name?: string
+  wardrobe?: string
+  prompt?: string
+}
+
+export interface AgentCharacterBible {
+  name?: string
+  identity?: string
+  looks?: AgentCharacterLook[]
+}
+
+export interface AgentCharacterSheet {
+  id: string
+  prompt: string
+  look?: string
+  wardrobe?: string
+}
 
 export interface AgentAssemblyShot {
   id: string
@@ -56,6 +76,8 @@ export interface AgentAssemblyProposal {
   musicAssetId?: string
   openingTitle?: string
   referenceAssetId?: string
+  character?: AgentCharacterBible
+  characterSheets?: AgentCharacterSheet[]
   overlays?: AgentTextOverlay[]
 }
 
@@ -98,6 +120,137 @@ export function shotShowsProtagonist(shot: Pick<AgentAssemblyShot, 'showProtagon
   return false
 }
 
+export function shotNeedsIdentity(
+  shot: Pick<AgentAssemblyShot, 'showProtagonist' | 'refId' | 'assetId'>,
+  hasReference: boolean,
+): boolean {
+  if (shot.assetId || shot.showProtagonist === false) return false
+  return Boolean(shot.refId || shot.showProtagonist === true || hasReference)
+}
+
+export function looksFromShots(shots: readonly AgentAssemblyShot[]): string[] {
+  const looks: string[] = []
+  const seen = new Set<string>()
+  for (const shot of shots) {
+    if (shot.showProtagonist === false) continue
+    const wardrobe = shot.wardrobe?.trim()
+    if (!wardrobe) continue
+    const key = wardrobe.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    looks.push(wardrobe)
+  }
+  return looks
+}
+
+export function characterSheetPrompt(input: {
+  character?: AgentCharacterBible
+  shots?: readonly AgentAssemblyShot[]
+  sheet?: Pick<AgentCharacterSheet, 'look' | 'wardrobe' | 'prompt'>
+}): string {
+  if (input.sheet?.prompt?.trim()) return input.sheet.prompt.trim()
+  const who = input.character?.name?.trim() || 'the referenced artist or subject'
+  const identity = input.character?.identity?.trim()
+  const lookNames = (input.character?.looks ?? [])
+    .map(look => look.name?.trim() || look.wardrobe?.trim() || look.prompt?.trim())
+    .filter((value): value is string => Boolean(value))
+  const wardrobes = looksFromShots(input.shots ?? [])
+  const looks = [
+    ...(input.sheet?.look ? [input.sheet.look] : []),
+    ...(input.sheet?.wardrobe ? [input.sheet.wardrobe] : []),
+    ...lookNames,
+    ...wardrobes,
+  ]
+  const uniqueLooks = [...new Set(looks.map(item => item.trim()).filter(Boolean))]
+  const lookLine = uniqueLooks.length > 0
+    ? uniqueLooks.join('; ')
+    : 'the portrait look plus scene-appropriate costume changes from the brief'
+  const identityLine = identity ? ` ${identity}.` : ''
+  return (
+    `Character sheet / lookbook of ${who}.${identityLine} Same face, body, and identity as the reference portrait. `
+    + `Front and three-quarter views. Wardrobe looks: ${lookLine}. Clean studio backdrop, even light. `
+    + 'Define the character and the different looks. This is a character bible, not a scene and not a music-video frame. '
+    + 'Do not copy the reference photo as a single hero still.'
+  )
+}
+
+export function parseCharacterBible(raw: unknown): AgentCharacterBible | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const record = raw as Record<string, unknown>
+  const looks: AgentCharacterLook[] = []
+  if (Array.isArray(record.looks)) {
+    for (const item of record.looks) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+      const look = item as Record<string, unknown>
+      const parsed: AgentCharacterLook = {}
+      if (typeof look.name === 'string' && look.name.trim()) parsed.name = look.name.trim()
+      if (typeof look.wardrobe === 'string' && look.wardrobe.trim()) parsed.wardrobe = look.wardrobe.trim()
+      if (typeof look.prompt === 'string' && look.prompt.trim()) parsed.prompt = look.prompt.trim()
+      if (parsed.name || parsed.wardrobe || parsed.prompt) looks.push(parsed)
+    }
+  }
+  const bible: AgentCharacterBible = {}
+  if (typeof record.name === 'string' && record.name.trim()) bible.name = record.name.trim()
+  if (typeof record.identity === 'string' && record.identity.trim()) bible.identity = record.identity.trim()
+  if (looks.length > 0) bible.looks = looks
+  if (!bible.name && !bible.identity && !bible.looks) return undefined
+  return bible
+}
+
+export function parseCharacterSheets(raw: unknown): AgentCharacterSheet[] {
+  if (!Array.isArray(raw)) return []
+  const sheets: AgentCharacterSheet[] = []
+  for (const [index, item] of raw.entries()) {
+    if (typeof item === 'string' && item.trim()) {
+      sheets.push({ id: `sheet-${index + 1}`, prompt: item.trim() })
+      continue
+    }
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    const prompt = typeof record.prompt === 'string' && record.prompt.trim()
+      ? record.prompt.trim()
+      : undefined
+    const look = typeof record.look === 'string' && record.look.trim() ? record.look.trim() : undefined
+    const wardrobe = typeof record.wardrobe === 'string' && record.wardrobe.trim()
+      ? record.wardrobe.trim()
+      : undefined
+    if (!prompt && !look && !wardrobe) continue
+    sheets.push({
+      id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `sheet-${index + 1}`,
+      prompt: prompt ?? '',
+      ...(look ? { look } : {}),
+      ...(wardrobe ? { wardrobe } : {}),
+    })
+  }
+  return sheets
+}
+
+export function deriveCharacterSheets(input: {
+  skipStills?: boolean
+  referenceAssetId?: string
+  shots: readonly AgentAssemblyShot[]
+  character?: AgentCharacterBible
+  characterSheets?: AgentCharacterSheet[]
+}): AgentCharacterSheet[] {
+  if (input.skipStills) return []
+  const hasReference = Boolean(input.referenceAssetId) || input.shots.some(shot => Boolean(shot.refId))
+  if (!hasReference) return []
+  if (!input.shots.some(shot => shotNeedsIdentity(shot, Boolean(input.referenceAssetId)))) return []
+  const provided = (input.characterSheets ?? []).filter(sheet => sheet.prompt.trim() || sheet.look || sheet.wardrobe)
+  if (provided.length > 0) {
+    return provided.map((sheet, index) => ({
+      id: sheet.id || `sheet-${index + 1}`,
+      prompt: characterSheetPrompt({ character: input.character, shots: input.shots, sheet }),
+      ...(sheet.look ? { look: sheet.look } : {}),
+      ...(sheet.wardrobe ? { wardrobe: sheet.wardrobe } : {}),
+    }))
+  }
+  return [{
+    id: 'sheet-1',
+    prompt: characterSheetPrompt({ character: input.character, shots: input.shots }),
+  }]
+}
+
 export function bindAssemblyUserMedia(
   proposal: AgentAssemblyProposal,
   media: AgentAssemblyPreferredMedia,
@@ -123,6 +276,8 @@ export function bindAssemblyUserMedia(
     musicAssetId,
     openingTitle: proposal.openingTitle,
     referenceAssetId,
+    character: proposal.character,
+    characterSheets: proposal.characterSheets,
     overlays: proposal.overlays,
   })
 }
@@ -130,13 +285,15 @@ export function bindAssemblyUserMedia(
 export function countAssemblyGenerateJobs(
   shots: readonly AgentAssemblyShot[],
   skipStills: boolean,
+  characterSheetCount = 0,
 ): number {
-  return shots.reduce((total, shot) => {
+  const shotJobs = shots.reduce((total, shot) => {
     if (shot.assetId) return total
     const first = !skipStills && !shot.skipStill && !shot.imageAssetId
     const last = !skipStills && Boolean(shot.lastFramePrompt) && !shot.lastImageAssetId
     return total + (first ? 1 : 0) + (last ? 1 : 0) + 1
   }, 0)
+  return shotJobs + (skipStills ? 0 : characterSheetCount)
 }
 
 export function serializeAssemblyShots(shots: readonly AgentAssemblyShot[]): string {
@@ -268,13 +425,24 @@ export function buildAssemblyProposal(input: {
   openingTitle?: unknown
   title?: unknown
   referenceAssetId?: unknown
+  character?: unknown
+  characterSheets?: unknown
   overlays?: unknown
   lyrics?: unknown
 }): AgentAssemblyProposal {
   const kind = parseAssemblyKind(input.kind)
   const destination = parseDestination(input.destination, kind === 'broll' ? 'after_last' : 'playhead')
   const skipStills = input.skipStills === true
-  const jobCount = countAssemblyGenerateJobs(input.shots, skipStills)
+  const character = parseCharacterBible(input.character)
+  const referenceAssetId = optionalString(input.referenceAssetId)
+  const characterSheets = deriveCharacterSheets({
+    skipStills,
+    ...(referenceAssetId ? { referenceAssetId } : {}),
+    shots: input.shots,
+    ...(character ? { character } : {}),
+    characterSheets: parseCharacterSheets(input.characterSheets),
+  })
+  const jobCount = countAssemblyGenerateJobs(input.shots, skipStills, characterSheets.length)
   const openingTitle = optionalString(input.openingTitle) ?? optionalString(input.title)
   const overlays = [
     ...normalizeTextOverlays(input.overlays),
@@ -305,13 +473,18 @@ export function buildAssemblyProposal(input: {
     ...(optionalString(input.voiceoverAssetId) ? { voiceoverAssetId: optionalString(input.voiceoverAssetId) } : {}),
     ...(optionalString(input.musicAssetId) ? { musicAssetId: optionalString(input.musicAssetId) } : {}),
     ...(openingTitle ? { openingTitle } : {}),
-    ...(optionalString(input.referenceAssetId) ? { referenceAssetId: optionalString(input.referenceAssetId) } : {}),
+    ...(referenceAssetId ? { referenceAssetId } : {}),
+    ...(character ? { character } : {}),
+    ...(characterSheets.length > 0 ? { characterSheets } : {}),
     ...(overlays.length > 0 ? { overlays } : {}),
   }
 }
 
 export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): AgentAskUserQuestion[] {
   const extras = [
+    proposal.characterSheets?.length
+      ? `${proposal.characterSheets.length} character sheet${proposal.characterSheets.length === 1 ? '' : 's'} first`
+      : null,
     proposal.voiceover || proposal.voiceoverAssetId ? 'VO on A1' : null,
     proposal.musicAssetId ? 'music on A2' : null,
     proposal.openingTitle ? 'opening title' : null,
@@ -335,6 +508,8 @@ export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): Agent
       duration: shot.duration,
       ...(shot.title ? { title: shot.title } : {}),
       ...(shot.assetId ? { assetId: shot.assetId } : {}),
+      ...(shot.wardrobe ? { wardrobe: shot.wardrobe } : {}),
+      ...(shot.firstFramePrompt ? { firstFramePrompt: shot.firstFramePrompt } : {}),
     })),
   }]
 }

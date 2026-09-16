@@ -138,12 +138,19 @@ export function reviewQuestionsFromResult(result: Record<string, unknown>): Agen
 
 export function nextStepForCheckpoint(checkpoint: AgentReviewCheckpoint): string {
   switch (checkpoint) {
+    case 'character_sheet':
+      return 'scene start frames'
+    case 'scene_sheet':
+    case 'still':
+      return 'the next start frame or video'
+    case 'last_frame':
+      return 'the next start frame or video'
     case 'video':
-      return 'placing on the timeline / the next shot'
+      return 'the next video'
     case 'place':
     case 'next_shot':
-      return 'the next shot'
+      return 'the next video'
     default:
-      return 'video'
+      return 'the next start frame'
   }
 }

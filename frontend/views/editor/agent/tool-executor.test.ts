@@ -1130,7 +1130,7 @@ describe('assembly tool executor', () => {
     assert.equal(titles.length, 2)
     assert.equal(videos[0]?.startTime, 0)
     assert.equal(videos[1]?.startTime, 5)
-    assert.ok(progress.some(status => status.includes('1/2 generating')))
+    assert.ok(progress.some(status => status.includes('1/2 video')))
   })
 
   it('waits for a busy slot then assembles every shot', async () => {
@@ -1346,15 +1346,15 @@ describe('refs speech and mix', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 9)
-    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 8)
+    assert.equal(imageCalls, 10)
+    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 9)
     assert.equal(imageRefs.filter(path => path == null).length, 1)
     assert.equal(videoPaths.length, 8)
     assert.ok(videoPaths.every(path => path !== '/tmp/ken-tune.png'))
     assert.ok(videoPaths.every(path => typeof path === 'string' && path.startsWith('/project/image-')))
-    assert.equal(lastVideoPaths[0], '/project/image-scene-2.png')
+    assert.equal(lastVideoPaths[0], '/project/image-scene-3.png')
     assert.ok(lastVideoPaths.slice(1).every(path => path == null || path === undefined))
-    assert.equal(result.jobCount, 17)
+    assert.equal(result.jobCount, 18)
     const clips = activeClips(host.getState())
     assert.equal(clips.filter(item => item.type === 'video').length, 8)
     const music = clips.find(item => item.assetId === 'midnight-river')
@@ -1408,7 +1408,7 @@ describe('refs speech and mix', () => {
       musicAssetId: 'theme',
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 1)
+    assert.equal(imageCalls, 2)
     assert.deepEqual(videoPaths, ['/project/image-still-from-ref.png'])
     const clips = activeClips(host.getState())
     const opening = clips.find(item => item.textStyle?.text === 'Before Sunrise')
@@ -1451,7 +1451,10 @@ describe('refs speech and mix', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: '/tmp/hero-still.png', strength: 0.72 }])
+    assert.deepEqual(imageRefs, [
+      { path: '/tmp/hero-still.png', strength: 0.72 },
+      { path: '/tmp/hero-still.png', strength: 0.72 },
+    ])
     assert.deepEqual(videoPaths, ['/project/image-scene-from-hero.png'])
   })
 
@@ -1595,20 +1598,77 @@ describe('refs speech and mix', () => {
     assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
 
     executor.rememberAssemblyAcceptance({ review: 'Approve' })
-    const afterVideo = await executor.execute('assemble_shots', { confirmed: true })
-    assert.equal(afterVideo.needsReview, true)
-    assert.equal(afterVideo.checkpoint, 'next_shot')
-    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
+    const secondStill = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(secondStill.needsReview, true)
+    assert.equal(secondStill.checkpoint, 'still')
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
 
     executor.rememberAssemblyAcceptance({ review: 'Approve' })
-    const secondStill = await executor.execute('assemble_shots', { confirmed: true })
-    assert.equal(secondStill.checkpoint, 'still')
+    const afterVideo = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(afterVideo.checkpoint, 'video')
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
 
     executor.rememberAssemblyAcceptance({ review: 'Approve' })
     const done = await executor.execute('assemble_shots', { confirmed: true })
     assert.equal(done.ok, true)
     assert.equal(done.needsReview, undefined)
     assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 2)
+  })
+
+  it('presents the character sheet then every start frame for approval before any video', async () => {
+    const order: string[] = []
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [imageAsset('ken-tune')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          order.push(`image:${input.prompt.slice(0, 24)}`)
+          return { status: 'complete', path: `/tmp/${order.length}.png` }
+        },
+        runVideo: async () => {
+          order.push('video')
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+      approveAll: false,
+    })
+    const executor = new AgentToolExecutor(host)
+    const sheet = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'Ken on a wet street', duration: 5, wardrobe: 'leather jacket', showProtagonist: true },
+        { id: 's2', prompt: 'Ken at the river', duration: 5, wardrobe: 'wet coat', showProtagonist: true },
+      ],
+      referenceAssetId: 'ken-tune',
+      confirmed: true,
+    })
+    assert.equal(sheet.checkpoint, 'character_sheet')
+    assert.equal(sheet.needsReview, true)
+    assert.ok(!order.includes('video'))
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const start1 = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(start1.checkpoint, 'still')
+    assert.ok(!order.includes('video'))
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const start2 = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(start2.checkpoint, 'still')
+    assert.ok(!order.includes('video'))
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const video1 = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(video1.checkpoint, 'video')
+    assert.equal(order.filter(item => item === 'video').length, 1)
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const done = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(done.ok, true)
+    assert.equal(order.filter(item => item === 'video').length, 2)
+    assert.ok(order.indexOf('video') > 0)
+    assert.match(order[0] ?? '', /image:Character sheet/)
   })
 })
 
@@ -1618,7 +1678,8 @@ describe('plan cut and nle tools', () => {
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('plan_edit', {
       goal: 'Short film about a paper boy',
-      shots: [{ id: 's1', prompt: 'stoop at dawn', duration: 5, title: 'STOOP' }],
+      shots: [{ id: 's1', prompt: 'stoop at dawn', duration: 5, title: 'STOOP', wardrobe: 'newsboy cap' }],
+      character: { name: 'Paper boy', identity: 'the portrait kid', looks: [{ wardrobe: 'newsboy cap' }] },
       voStrategy: 'ElevenLabs narration',
       timing: 'VO drives picture',
       checks: ['check_cut'],
@@ -1626,6 +1687,7 @@ describe('plan cut and nle tools', () => {
     assert.equal(result.ok, true)
     assert.equal((result.plan as { goal: string }).goal, 'Short film about a paper boy')
     assert.equal(executor.getLastPlan()?.timing, 'VO drives picture')
+    assert.equal(executor.getLastPlan()?.character?.name, 'Paper boy')
     assert.equal(activeClips(host.getState()).length, 1)
   })
 

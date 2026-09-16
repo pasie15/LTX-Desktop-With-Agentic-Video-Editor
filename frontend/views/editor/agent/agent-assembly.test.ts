@@ -15,6 +15,8 @@ import {
   shotShowsProtagonist,
   stillPromptForShot,
   videoPromptForShot,
+  characterSheetPrompt,
+  deriveCharacterSheets,
 } from './agent-assembly.ts'
 
 describe('script to shot list', () => {
@@ -89,7 +91,8 @@ describe('assembly job cap', () => {
     )
     assert.equal(proposal.musicAssetId, 'river')
     assert.equal(proposal.referenceAssetId, 'ken')
-    assert.equal(proposal.jobCount, 16)
+    assert.equal(proposal.characterSheets?.length, 1)
+    assert.equal(proposal.jobCount, 17)
     assert.equal(proposal.exceedsJobCap, true)
     assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
   })
@@ -108,7 +111,8 @@ describe('assembly job cap', () => {
     )
     assert.equal(proposal.referenceAssetId, 'ken')
     assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
-    assert.equal(proposal.jobCount, 4)
+    assert.equal(proposal.characterSheets?.length, 1)
+    assert.equal(proposal.jobCount, 5)
   })
 
   it('counts a last-frame still as an extra generate job', () => {
@@ -176,6 +180,29 @@ describe('assembly job cap', () => {
     }])
     assert.equal(parsed?.[0]?.lipSync, true)
     assert.equal(parsed?.[0]?.performance, 'singing')
+  })
+
+  it('derives a character sheet lookbook from the portrait and wardrobe looks', () => {
+    const sheets = deriveCharacterSheets({
+      referenceAssetId: 'ken',
+      shots: [
+        { id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true, wardrobe: 'black leather jacket' },
+        { id: 's2', prompt: 'river', duration: 5, showProtagonist: true, wardrobe: 'wet coat' },
+        { id: 's3', prompt: 'empty street', duration: 4, showProtagonist: false },
+      ],
+      character: { name: 'Ken Tune', identity: 'the artist from the portrait' },
+    })
+    assert.equal(sheets.length, 1)
+    assert.match(sheets[0]?.prompt ?? '', /Character sheet/)
+    assert.match(sheets[0]?.prompt ?? '', /Ken Tune/)
+    assert.match(sheets[0]?.prompt ?? '', /black leather jacket/)
+    assert.match(sheets[0]?.prompt ?? '', /wet coat/)
+    assert.match(characterSheetPrompt({ character: { name: 'Ken' } }), /not a scene/)
+    assert.deepEqual(deriveCharacterSheets({
+      skipStills: true,
+      referenceAssetId: 'ken',
+      shots: [{ id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true }],
+    }), [])
   })
 
   it('flags more than eight generate jobs on the confirm card', () => {

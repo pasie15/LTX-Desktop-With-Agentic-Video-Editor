@@ -256,6 +256,8 @@ export const ASSEMBLY_TOOL_ALLOWED_KEYS: Record<AgentAssemblyToolName, readonly 
     'openingTitle',
     'title',
     'referenceAssetId',
+    'character',
+    'characterSheets',
     'overlays',
     'lyrics',
   ],
@@ -300,7 +302,7 @@ export const LIPSYNC_TOOL_ALLOWED_KEYS: Record<AgentLipSyncToolName, readonly st
 }
 
 export const NARRATIVE_TOOL_ALLOWED_KEYS: Record<AgentNarrativeToolName, readonly string[]> = {
-  plan_edit: ['goal', 'brief', 'shots', 'voStrategy', 'voiceover', 'refs', 'titles', 'mix', 'timing', 'checks'],
+  plan_edit: ['goal', 'brief', 'shots', 'voStrategy', 'voiceover', 'refs', 'titles', 'mix', 'timing', 'checks', 'character', 'characterSheets'],
   check_cut: [],
   sync_narration: [],
 }
@@ -989,7 +991,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first with a fully reasoned scene script (Approve all does not skip planning). Per shot decide: who is on camera (artist, one protagonist, several); whether they are singing, talking, in dialogue, or silent; solo vs to/with others vs off-camera; objects and environment; wardrobe; first/last frames. Picture on V1, designed text on V2/V3, VO on A1, music on A2. An @ portrait is character identity, not the first frame.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first (character bible, looks, scene start frames). Runtime order: character sheet from the @ portrait as reference, then a new start frame per scene, then videos from those stills. Pauses for approval on the sheet, each start/last frame, and each video unless Approve all. An @ portrait is character identity, never a video start frame.',
     parameters: {
       type: 'object',
       properties: {
@@ -1039,7 +1041,39 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         musicAssetId: { type: 'string', description: 'Existing music asset to place on A2 at 0.25 volume' },
         openingTitle: { type: 'string', description: 'Centered opening title on V2 (title preset, ~3s)' },
         title: { type: 'string', description: 'Alias for openingTitle' },
-        referenceAssetId: { type: 'string', description: '@ portrait or character still used as identity for showProtagonist shots, not as every start frame' },
+        referenceAssetId: { type: 'string', description: '@ portrait or character still used as identity for sheets and start frames, not as a video start frame' },
+        character: {
+          type: 'object',
+          description: 'Character bible: who they are and the looks to put on the character sheet before any video.',
+          properties: {
+            name: { type: 'string' },
+            identity: { type: 'string' },
+            looks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  wardrobe: { type: 'string' },
+                  prompt: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        characterSheets: {
+          type: 'array',
+          description: 'Optional explicit character-sheet prompts. If omitted and a character ref exists, assemble generates one lookbook sheet first.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              prompt: { type: 'string' },
+              look: { type: 'string' },
+              wardrobe: { type: 'string' },
+            },
+          },
+        },
         lyrics: {
           type: 'string',
           description: 'Music-video lyrics. String with optional [0s] timestamps, or pass overlays instead. Placed as lyrics-role text on V2 (bottom, readable stroke), not subtitle-track cues.',
@@ -1148,7 +1182,7 @@ export const LIPSYNC_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'plan_edit',
-    description: 'Internal plan-then-execute step. Write a scene script first and fully reason each beat: duration; first/last frame; who appears (one or several protagonists, the artist, extras); singing vs talking vs dialogue vs silent; solo / to others / with others / off-camera; wardrobe; objects; environment. Then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots. Approve all does not skip this. Does not mutate the timeline.',
+    description: 'Pre-production only. Reason like an editor before any video: character bible (name, identity, looks), character sheets, then a scene script with per-beat first-frame prompts and wardrobe. Record goal, character, characterSheets, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots. Approve all does not skip this. Does not mutate the timeline.',
     parameters: {
       type: 'object',
       required: ['goal'],
@@ -1186,6 +1220,37 @@ export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         mix: { type: 'string' },
         timing: { type: 'string', description: 'How VO duration will drive or be driven by picture' },
         checks: { type: 'array', items: { type: 'string' } },
+        character: {
+          type: 'object',
+          description: 'Character bible used to build the lookbook before any video.',
+          properties: {
+            name: { type: 'string' },
+            identity: { type: 'string' },
+            looks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  wardrobe: { type: 'string' },
+                  prompt: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        characterSheets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              prompt: { type: 'string' },
+              look: { type: 'string' },
+              wardrobe: { type: 'string' },
+            },
+          },
+        },
       },
     },
   },

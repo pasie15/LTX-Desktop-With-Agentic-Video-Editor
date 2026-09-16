@@ -24,6 +24,8 @@ export interface AgentAskUserShot {
   duration: number
   title?: string
   assetId?: string
+  wardrobe?: string
+  firstFramePrompt?: string
 }
 
 export interface AgentAskUserPreview {
