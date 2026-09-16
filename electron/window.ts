@@ -4,7 +4,7 @@ import fs from 'fs'
 import { isDev, getCurrentDir } from './config'
 import { logger } from './logger'
 
-const DEV_RENDERER_URL = 'http://127.0.0.1:5173/'
+const DEV_RENDERER_URLS = ['http://127.0.0.1:5173/', 'http://localhost:5173/'] as const
 const DEV_LOAD_RETRIES = 40
 const DEV_LOAD_RETRY_MS = 500
 /** Chromium net::ERR_CONNECTION_REFUSED — Vite is not listening yet. */
@@ -62,13 +62,14 @@ export function createWindow(): BrowserWindow {
 
     const loadDevRenderer = (): void => {
       if (!mainWindow || mainWindow.isDestroyed()) return
+      const url = DEV_RENDERER_URLS[loadAttempts % DEV_RENDERER_URLS.length]
       loadAttempts += 1
-      logger.info(`[window] Loading ${DEV_RENDERER_URL} (attempt ${loadAttempts}/${DEV_LOAD_RETRIES})`)
-      void mainWindow.loadURL(DEV_RENDERER_URL)
+      logger.info(`[window] Loading ${url} (attempt ${loadAttempts}/${DEV_LOAD_RETRIES})`)
+      void mainWindow.loadURL(url)
     }
 
     mainWindow.webContents.on('did-finish-load', () => {
-      logger.info(`[window] Renderer loaded ${DEV_RENDERER_URL}`)
+      logger.info('[window] Renderer loaded')
       showWindow()
     })
 

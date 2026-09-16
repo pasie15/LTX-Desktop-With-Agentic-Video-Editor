@@ -2,7 +2,41 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
+import net from 'net'
 import path from 'path'
+
+const DEV_HOST = '127.0.0.1'
+const DEV_PORT = 5173
+
+function startElectron(startup: (args?: string[]) => void): void {
+  if (process.env.ELECTRON_DEBUG) {
+    // --inspect and --remote-debugging-port must come before '.' (the app path)
+    startup(['--inspect=9229', '--remote-debugging-port=9222', '.', '--no-sandbox'])
+    return
+  }
+  startup()
+}
+
+function waitForPort(host: string, port: number, timeoutMs = 30_000): Promise<void> {
+  const startedAt = Date.now()
+  return new Promise((resolve, reject) => {
+    const tryOnce = (): void => {
+      const socket = net.connect({ host, port }, () => {
+        socket.end()
+        resolve()
+      })
+      socket.on('error', () => {
+        socket.destroy()
+        if (Date.now() - startedAt > timeoutMs) {
+          reject(new Error(`Vite did not listen on ${host}:${port}`))
+          return
+        }
+        setTimeout(tryOnce, 250)
+      })
+    }
+    tryOnce()
+  })
+}
 
 export default defineConfig({
   plugins: [
@@ -11,12 +45,13 @@ export default defineConfig({
       {
         entry: 'electron/main.ts',
         onstart(options) {
-          if (process.env.ELECTRON_DEBUG) {
-            // --inspect and --remote-debugging-port must come before '.' (the app path)
-            options.startup(['--inspect=9229', '--remote-debugging-port=9222', '.', '--no-sandbox'])
-          } else {
-            options.startup()
-          }
+          void waitForPort(DEV_HOST, DEV_PORT)
+            .catch((error: unknown) => {
+              console.error(error)
+            })
+            .finally(() => {
+              startElectron(options.startup)
+            })
         },
         vite: {
           build: {
@@ -54,10 +89,10 @@ export default defineConfig({
     }
   },
   base: './',  // Use relative paths for Electron file:// protocol
-  // Pin IPv4 so Electron's loadURL matches the socket Vite actually binds on Windows.
+  // Bind IPv4 (0.0.0.0) so both localhost and 127.0.0.1 work on Windows.
   server: {
-    host: '127.0.0.1',
-    port: 5173,
+    host: true,
+    port: DEV_PORT,
     strictPort: true,
   },
   build: {
