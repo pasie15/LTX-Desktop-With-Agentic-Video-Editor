@@ -52,11 +52,12 @@ import {
   placeAudioAsset,
   type AgentSpeechActionHost,
 } from './agent-speech-runtime.ts'
+import { applyShotLipSync, type AgentLipSyncActionHost } from './agent-lipsync-runtime.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
 import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-definitions.ts'
 
-export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentSpeechActionHost {
-  actions: AgentGenerateActionHost['actions'] & AgentSpeechActionHost['actions'] & {
+export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentSpeechActionHost, AgentLipSyncActionHost {
+  actions: AgentGenerateActionHost['actions'] & AgentSpeechActionHost['actions'] & AgentLipSyncActionHost['actions'] & {
     addTextClip: (state: EditorState, params: {
       style?: Partial<TextOverlayStyle>
       startTime?: number
@@ -104,6 +105,11 @@ export interface AgentAssemblyShotResult {
   duration?: number
   titleClipId?: string
   error?: string
+  lipSyncProvider?: string
+  lipSyncAssetId?: string
+  lipSyncSkipped?: string
+  lipSyncError?: string
+  lipSyncFallbackReason?: string
 }
 
 function errorResult(message: string): Record<string, unknown> {
@@ -887,7 +893,7 @@ async function generateAndPlaceShot(
     })
   }
 
-  return {
+  const placed: AgentAssemblyShotResult = {
     id: shot.id,
     ...(shot.title ? { title: shot.title } : {}),
     status: 'placed',
@@ -898,14 +904,15 @@ async function generateAndPlaceShot(
     duration: placedDuration,
     ...(titleClipId ? { titleClipId } : {}),
   }
+  return applyShotLipSync(host, shot, placed)
 }
 
-function placeExistingShot(
+async function placeExistingShot(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
   shot: AgentAssemblyShot,
   startTime: number,
-): AgentAssemblyShotResult {
+): Promise<AgentAssemblyShotResult> {
   const asset = host.getState().editorModel.assets.find(item => item.id === shot.assetId)
   if (!asset) {
     return {
@@ -950,7 +957,7 @@ function placeExistingShot(
     })
   }
 
-  return {
+  const placed: AgentAssemblyShotResult = {
     id: shot.id,
     ...(shot.title ? { title: shot.title } : {}),
     status: 'placed',
@@ -960,6 +967,7 @@ function placeExistingShot(
     duration: placedDuration,
     ...(titleClipId ? { titleClipId } : {}),
   }
+  return applyShotLipSync(host, shot, placed)
 }
 
 export function assemblyConfirmQuestionsFromResult(result: Record<string, unknown>): ReturnType<typeof assemblyConfirmQuestions> | null {

@@ -7,6 +7,7 @@ import type { AgentGenerationJobs } from './agent-generate-runtime.ts'
 import type { AgentImportJobs } from './agent-import-runtime.ts'
 import { createMemoryRefStore } from './agent-refs.ts'
 import { AgentToolExecutor, type AgentEditorActions, type AgentToolExecutorHost } from './agent-edit-runtime.ts'
+import type { AgentLipSyncJobs } from './agent-lipsync-runtime.ts'
 import { listGenerationModels, validateUnknownKeys } from './agent-tool-utils.ts'
 
 function videoAsset(id: string, duration = 4): Asset {
@@ -689,6 +690,7 @@ function createHost(
     generation?: AgentGenerationJobs
     importMedia?: AgentImportJobs
     speech?: AgentToolExecutorHost['speech']
+    lipsync?: AgentLipSyncJobs
     refs?: AgentToolExecutorHost['refs']
     selectedGap?: { trackIndex: number; startTime: number; endTime: number } | null
     approveAll?: boolean
@@ -708,6 +710,7 @@ function createHost(
     generation: extras?.generation,
     importMedia: extras?.importMedia,
     speech: extras?.speech,
+    lipsync: extras?.lipsync,
     refs: extras?.refs,
     getSelectedGap: extras?.selectedGap !== undefined ? () => extras.selectedGap ?? null : undefined,
     getApproveAll: () => extras?.approveAll === true,
@@ -1399,6 +1402,81 @@ describe('refs speech and mix', () => {
     assert.equal(clips[0]?.trackIndex, 3)
     assert.equal(clips[0]?.type, 'audio')
     assert.equal(result.duration, 8)
+  })
+
+  it('applies dedicated lip-sync onto an existing clip', async () => {
+    const host = createHost(makeState({
+      clips: [clip({ id: 'talk-1', startTime: 0, duration: 5, trackIndex: 0, assetId: 'talk', type: 'video' })],
+      assets: [videoAsset('talk', 5), audioAsset('line', 5)],
+    }), {
+      importMedia: fakeImport(),
+      lipsync: {
+        apply: async (input) => {
+          assert.equal(input.videoPath, '/tmp/talk.mp4')
+          assert.equal(input.audioPath, '/tmp/line.mp3')
+          return { path: '/tmp/talk-synced.mp4', provider: 'fal', model: 'fal-ai/sync-lipsync/v3' }
+        },
+      },
+    })
+    const executor = new AgentToolExecutor(host)
+    const blocked = await executor.execute('apply_lipsync', {
+      clipId: 'talk-1',
+      audioAssetId: 'line',
+    })
+    assert.equal(blocked.ok, false)
+    const result = await executor.execute('apply_lipsync', {
+      clipId: 'talk-1',
+      audioAssetId: 'line',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.replaced, true)
+    assert.equal(result.provider, 'fal')
+    const talk = host.getState().editorModel.assets.find(item => item.id === 'talk')
+    assert.equal(talk?.path, '/project/talk-synced.mp4')
+  })
+
+  it('lip-syncs an on-camera talking shot during assemble', async () => {
+    let lipsyncCalls = 0
+    const host = createHost(makeState({ clips: [], playhead: 0 }), {
+      generation: fakeJobs(),
+      importMedia: fakeImport(),
+      approveAll: true,
+      speech: {
+        synthesize: async (input) => {
+          assert.match(input.text, /stoop/)
+          return { path: '/tmp/line.mp3' }
+        },
+      },
+      lipsync: {
+        apply: async (input) => {
+          lipsyncCalls += 1
+          assert.ok(input.videoPath)
+          assert.equal(input.audioPath, '/tmp/line.mp3')
+          return { path: '/tmp/synced.mp4', provider: 'sync', model: 'lipsync-2' }
+        },
+      },
+    })
+    const executor = new AgentToolExecutor(host)
+    await executor.execute('plan_edit', { goal: 'Talking beat' })
+    const result = await executor.execute('assemble_shots', {
+      shots: [{
+        id: 's1',
+        prompt: 'paper boy on a stoop',
+        duration: 5,
+        dialogue: 'The paper boy waits on the stoop.',
+        performance: 'talking',
+        address: 'solo',
+        lipSync: true,
+        skipStill: true,
+      }],
+      skipStills: true,
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(lipsyncCalls, 1)
+    const placed = (result.placed as Array<{ lipSyncProvider?: string }>)[0]
+    assert.equal(placed?.lipSyncProvider, 'sync')
   })
 
   it('sets clip volume for a basic mix', async () => {

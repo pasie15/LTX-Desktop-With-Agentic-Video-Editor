@@ -95,6 +95,12 @@ export const SPEECH_TOOL_NAMES = [
 
 export type AgentSpeechToolName = (typeof SPEECH_TOOL_NAMES)[number]
 
+export const LIPSYNC_TOOL_NAMES = [
+  'apply_lipsync',
+] as const
+
+export type AgentLipSyncToolName = (typeof LIPSYNC_TOOL_NAMES)[number]
+
 export const NARRATIVE_TOOL_NAMES = [
   'plan_edit',
   'check_cut',
@@ -111,6 +117,7 @@ export type AgentToolName =
   | AgentImportToolName
   | AgentRefToolName
   | AgentSpeechToolName
+  | AgentLipSyncToolName
   | AgentNarrativeToolName
 
 export function isGenerateToolName(name: string): name is AgentGenerateToolName {
@@ -131,6 +138,10 @@ export function isRefToolName(name: string): name is AgentRefToolName {
 
 export function isSpeechToolName(name: string): name is AgentSpeechToolName {
   return (SPEECH_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function isLipSyncToolName(name: string): name is AgentLipSyncToolName {
+  return (LIPSYNC_TOOL_NAMES as readonly string[]).includes(name)
 }
 
 export function isNarrativeToolName(name: string): name is AgentNarrativeToolName {
@@ -274,6 +285,20 @@ export const SPEECH_TOOL_ALLOWED_KEYS: Record<AgentSpeechToolName, readonly stri
   generate_speech: ['text', 'voiceId', 'modelId', 'destination', 'trackIndex', 'startTime', 'confirmed'],
 }
 
+export const LIPSYNC_TOOL_ALLOWED_KEYS: Record<AgentLipSyncToolName, readonly string[]> = {
+  apply_lipsync: [
+    'clipId',
+    'videoAssetId',
+    'audioAssetId',
+    'imageAssetId',
+    'text',
+    'provider',
+    'model',
+    'destination',
+    'confirmed',
+  ],
+}
+
 export const NARRATIVE_TOOL_ALLOWED_KEYS: Record<AgentNarrativeToolName, readonly string[]> = {
   plan_edit: ['goal', 'brief', 'shots', 'voStrategy', 'voiceover', 'refs', 'titles', 'mix', 'timing', 'checks'],
   check_cut: [],
@@ -288,6 +313,7 @@ export const AGENT_TOOL_ALLOWED_KEYS: Record<AgentToolName, readonly string[]> =
   ...IMPORT_TOOL_ALLOWED_KEYS,
   ...REF_TOOL_ALLOWED_KEYS,
   ...SPEECH_TOOL_ALLOWED_KEYS,
+  ...LIPSYNC_TOOL_ALLOWED_KEYS,
   ...NARRATIVE_TOOL_ALLOWED_KEYS,
 }
 
@@ -988,7 +1014,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               showProtagonist: { type: 'boolean', description: 'Whether this scene shows the referenced character' },
               wardrobe: { type: 'string', description: 'Costume for this scene; same as the portrait or a new look from the story' },
               dialogue: { type: 'string', description: 'Spoken or sung line, if any' },
-              lipSync: { type: 'boolean', description: 'On-camera speech; turns audio on and asks the video model to mouth the line. Inferred when performance is singing/talking/dialogue and address is not off_camera.' },
+              lipSync: { type: 'boolean', description: 'On-camera speech. Infer when singing/talking/dialogue is not off-camera. After the shot is generated, assemble_shots runs dedicated Fal/Sync.so lip-sync when a key is set.' },
               performance: { type: 'string', enum: ['singing', 'talking', 'dialogue', 'silent'], description: 'Is the artist or protagonist singing, talking, in a two-way dialogue, or silent?' },
               address: { type: 'string', enum: ['solo', 'to_others', 'with_others', 'off_camera'], description: 'Alone, singing/talking to others, with others, or off-camera' },
               performers: { type: 'string', description: 'Who is performing: artist, protagonist A, both leads, extras, etc.' },
@@ -1098,6 +1124,27 @@ export const SPEECH_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   },
 ]
 
+export const LIPSYNC_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
+  {
+    name: 'apply_lipsync',
+    description: 'Dedicated mouth sync via Fal Sync lipsync v3 or native Sync.so. Runway official API has no lip-sync endpoint — if provider=runway, Fal/Sync is used with that reason. Pass a video (or still for Fal image-to-video) plus audioAssetId or text (ElevenLabs). assemble_shots already does this for on-camera singing/talking shots. Confirm first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        clipId: { type: 'string' },
+        videoAssetId: { type: 'string' },
+        audioAssetId: { type: 'string' },
+        imageAssetId: { type: 'string', description: 'Still for Fal image-to-video lip-sync when there is no video yet' },
+        text: { type: 'string', description: 'Sung or spoken line; synthesized with ElevenLabs when audioAssetId is omitted' },
+        provider: { type: 'string', enum: ['auto', 'fal', 'sync', 'runway'] },
+        model: { type: 'string', description: 'Sync.so model override (default lipsync-2)' },
+        destination: { type: 'string', enum: ['replace', 'assets', 'playhead'] },
+        confirmed: { type: 'boolean' },
+      },
+    },
+  },
+]
+
 export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'plan_edit',
@@ -1183,6 +1230,7 @@ export const AGENT_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   ...IMPORT_TOOL_DEFINITIONS,
   ...REF_TOOL_DEFINITIONS,
   ...SPEECH_TOOL_DEFINITIONS,
+  ...LIPSYNC_TOOL_DEFINITIONS,
   ...NARRATIVE_TOOL_DEFINITIONS,
 ]
 
@@ -1276,6 +1324,8 @@ export function toolRowLabel(name: string, args?: Record<string, unknown>): stri
       return 'Forget ref'
     case 'generate_speech':
       return 'Generate speech'
+    case 'apply_lipsync':
+      return 'Apply lip-sync'
     case 'plan_edit':
       return 'Plan edit'
     case 'check_cut':

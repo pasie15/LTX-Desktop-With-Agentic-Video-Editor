@@ -6,6 +6,7 @@ import { executeImportTool, type AgentImportJobs } from './agent-import-runtime.
 import type { AgentRefStore } from './agent-refs.ts'
 import { executeRefTool } from './agent-refs-runtime.ts'
 import { executeSpeechTool, type AgentSpeechJobs } from './agent-speech-runtime.ts'
+import { executeLipSyncTool, type AgentLipSyncJobs } from './agent-lipsync-runtime.ts'
 import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice.ts'
 import {
   asBoolean,
@@ -40,6 +41,7 @@ import {
   isImportToolName,
   isNarrativeToolName,
   isRefToolName,
+  isLipSyncToolName,
   isSpeechToolName,
   type AgentEditToolName,
   type AgentNarrativeToolName,
@@ -111,6 +113,7 @@ export interface AgentToolExecutorHost {
   generation?: AgentGenerationJobs
   importMedia?: AgentImportJobs
   speech?: AgentSpeechJobs
+  lipsync?: AgentLipSyncJobs
   refs?: AgentRefStore
   getSelectedGap?: () => TimelineGapSelection | null
   projectId?: string
@@ -326,6 +329,17 @@ export class AgentToolExecutor {
     if (isSpeechToolName(name)) {
       const before = undoSnapshot(this.host.getState())
       const result = await executeSpeechTool(this.host, name, args)
+      if (result.ok !== false) {
+        const after = undoSnapshot(this.host.getState())
+        if (!sameUndoSnapshot(before, after)) {
+          this.assistantUndo.push({ name, after })
+        }
+      }
+      return result
+    }
+    if (isLipSyncToolName(name)) {
+      const before = undoSnapshot(this.host.getState())
+      const result = await executeLipSyncTool(this.host, name, args)
       if (result.ok !== false) {
         const after = undoSnapshot(this.host.getState())
         if (!sameUndoSnapshot(before, after)) {

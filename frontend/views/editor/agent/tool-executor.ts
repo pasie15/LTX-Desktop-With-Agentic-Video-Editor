@@ -19,7 +19,8 @@ import { collectTimelineGaps, timelineDuration } from './agent-timeline-slice'
 import { asNumber, asString, listGenerationModels, toolErrorResult, validateUnknownKeys } from './agent-tool-utils'
 import { getProjectRefStore, type AgentRefStore } from './agent-refs'
 import { synthesizeSpeechWithBackend, type AgentSpeechJobs } from './agent-speech-runtime'
-import { ASSEMBLY_TOOL_ALLOWED_KEYS, EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, IMPORT_TOOL_ALLOWED_KEYS, NARRATIVE_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, REF_TOOL_ALLOWED_KEYS, SPEECH_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
+import { applyLipSyncWithBackend, type AgentLipSyncJobs } from './agent-lipsync-runtime'
+import { ASSEMBLY_TOOL_ALLOWED_KEYS, EDIT_TOOL_ALLOWED_KEYS, GENERATE_TOOL_ALLOWED_KEYS, IMPORT_TOOL_ALLOWED_KEYS, LIPSYNC_TOOL_ALLOWED_KEYS, NARRATIVE_TOOL_ALLOWED_KEYS, READ_TOOL_ALLOWED_KEYS, REF_TOOL_ALLOWED_KEYS, SPEECH_TOOL_ALLOWED_KEYS, type AgentReadToolName } from './tool-definitions'
 
 export { AgentToolExecutor, DELETE_MANY_THRESHOLD } from './agent-edit-runtime'
 export type { AgentEditorActions, AgentToolExecutorHost } from './agent-edit-runtime'
@@ -41,6 +42,7 @@ export interface CreateAgentToolExecutorInput {
   generation?: AgentGenerationJobs
   importMedia?: AgentImportJobs
   speech?: AgentSpeechJobs
+  lipsync?: AgentLipSyncJobs
   refs?: AgentRefStore
   getSelectedGap?: () => TimelineGapSelection | null
   projectId?: string
@@ -82,6 +84,9 @@ export function createAgentToolExecutor(input: CreateAgentToolExecutorInput): Ag
     speech: input.speech ?? {
       synthesize: payload => synthesizeSpeechWithBackend(payload),
     },
+    lipsync: input.lipsync ?? {
+      apply: payload => applyLipSyncWithBackend(payload),
+    },
     refs: input.refs ?? (input.projectId ? getProjectRefStore(input.projectId) : undefined),
     getSelectedGap: input.getSelectedGap,
     projectId: input.projectId,
@@ -115,6 +120,7 @@ export async function executeAgentTool(
     || Object.prototype.hasOwnProperty.call(IMPORT_TOOL_ALLOWED_KEYS, name)
     || Object.prototype.hasOwnProperty.call(REF_TOOL_ALLOWED_KEYS, name)
     || Object.prototype.hasOwnProperty.call(SPEECH_TOOL_ALLOWED_KEYS, name)
+    || Object.prototype.hasOwnProperty.call(LIPSYNC_TOOL_ALLOWED_KEYS, name)
     || Object.prototype.hasOwnProperty.call(NARRATIVE_TOOL_ALLOWED_KEYS, name)
   ) {
     return executor.execute(name, args)

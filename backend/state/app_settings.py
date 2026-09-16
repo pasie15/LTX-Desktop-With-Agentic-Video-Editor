@@ -124,6 +124,8 @@ class AppSettings(SettingsBaseModel):
     fal_api_key: str = ""
     user_prefers_fal_api_image_generations: bool = False
     elevenlabs_api_key: str = ""
+    sync_api_key: str = ""
+    runway_api_key: str = ""
     use_local_text_encoder: bool = False
     prompt_cache_size: int = 100
     prompt_enhancer_enabled_t2v: bool = True
@@ -212,6 +214,8 @@ class SettingsResponse(SettingsBaseModel):
     user_prefers_ltx_api_video_generations: bool = False
     has_fal_api_key: bool = False
     has_elevenlabs_api_key: bool = False
+    has_sync_api_key: bool = False
+    has_runway_api_key: bool = False
     user_prefers_fal_api_image_generations: bool = False
     use_local_text_encoder: bool = False
     prompt_cache_size: int = 100
@@ -273,11 +277,15 @@ def to_settings_response(settings: AppSettings) -> SettingsResponse:
     ltx_key = data.pop("ltx_api_key", "")
     fal_key = data.pop("fal_api_key", "")
     elevenlabs_key = data.pop("elevenlabs_api_key", "")
+    sync_key = data.pop("sync_api_key", "")
+    runway_key = data.pop("runway_api_key", "")
     gemini_key = data.pop("gemini_api_key", "")
     providers = data.pop("agent_llm_providers", [])
     data["has_ltx_api_key"] = bool(ltx_key)
     data["has_fal_api_key"] = bool(fal_key)
     data["has_elevenlabs_api_key"] = bool(elevenlabs_key)
+    data["has_sync_api_key"] = bool(sync_key)
+    data["has_runway_api_key"] = bool(runway_key)
     data["has_gemini_api_key"] = bool(gemini_key)
     data["has_agent_llm_key"] = has_usable_agent_llm_key(settings)
     data["use_conv_vae"] = resolved_use_conv_vae(settings)

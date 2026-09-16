@@ -11,6 +11,7 @@ from handlers import (
     AgentLlmOAuthHandler,
     DownloadHandler,
     ElevenLabsHandler,
+    LipSyncHandler,
     GenerationHandler,
     HealthHandler,
     HuggingFaceAuthHandler,
@@ -228,6 +229,13 @@ class AppHandler:
         )
 
         self.elevenlabs = ElevenLabsHandler(
+            state=self.state,
+            lock=self._lock,
+            config=config,
+            http=http,
+        )
+
+        self.lipsync = LipSyncHandler(
             state=self.state,
             lock=self._lock,
             config=config,
