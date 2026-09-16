@@ -85,6 +85,19 @@ export function createWindow(): BrowserWindow {
       showWindow()
     })
 
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      const prefix = `[renderer] ${sourceId}:${line}`
+      if (level >= 2) {
+        logger.warn(`${prefix} ${message}`)
+        return
+      }
+      logger.info(`${prefix} ${message}`)
+    })
+
+    if (process.env.ELECTRON_DEBUG) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
+
     loadDevRenderer()
   } else {
     void mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'))
