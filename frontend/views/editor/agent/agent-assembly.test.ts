@@ -15,6 +15,8 @@ import {
   shotShowsProtagonist,
   stillPromptForShot,
   videoPromptForShot,
+  characterSheetPrompt,
+  deriveCharacterSheets,
 } from './agent-assembly.ts'
 
 describe('script to shot list', () => {
@@ -89,7 +91,8 @@ describe('assembly job cap', () => {
     )
     assert.equal(proposal.musicAssetId, 'river')
     assert.equal(proposal.referenceAssetId, 'ken')
-    assert.equal(proposal.jobCount, 16)
+    assert.equal(proposal.characterSheets?.length, 1)
+    assert.equal(proposal.jobCount, 17)
     assert.equal(proposal.exceedsJobCap, true)
     assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
   })
@@ -108,7 +111,8 @@ describe('assembly job cap', () => {
     )
     assert.equal(proposal.referenceAssetId, 'ken')
     assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
-    assert.equal(proposal.jobCount, 4)
+    assert.equal(proposal.characterSheets?.length, 1)
+    assert.equal(proposal.jobCount, 5)
   })
 
   it('counts a last-frame still as an extra generate job', () => {
@@ -131,9 +135,11 @@ describe('assembly job cap', () => {
       dialogue: 'I keep walking',
       lipSync: true,
     })
+    assert.match(hero, /^Cinematic 16:9 production still/)
     assert.match(hero, /Ken on a wet street/)
     assert.match(hero, /black leather jacket/)
-    assert.match(hero, /character identity/)
+    assert.match(hero, /referenced person is inside this location/)
+    assert.match(hero, /Not a copy of a reference portrait/)
     assert.match(hero, /Mouth beginning/)
     const broll = stillPromptForShot({
       id: 's2',
@@ -142,6 +148,8 @@ describe('assembly job cap', () => {
       showProtagonist: false,
     })
     assert.match(broll, /Do not show the protagonist/)
+    assert.match(broll, /wide establishing shot/)
+    assert.doesNotMatch(broll, /A person stands or walks/)
     const talking = videoPromptForShot({
       id: 's3',
       prompt: 'close-up singing',
@@ -176,6 +184,46 @@ describe('assembly job cap', () => {
     }])
     assert.equal(parsed?.[0]?.lipSync, true)
     assert.equal(parsed?.[0]?.performance, 'singing')
+  })
+
+  it('derives a character sheet lookbook from the portrait and wardrobe looks', () => {
+    const sheets = deriveCharacterSheets({
+      referenceAssetId: 'ken',
+      shots: [
+        { id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true, wardrobe: 'black leather jacket' },
+        { id: 's2', prompt: 'river', duration: 5, showProtagonist: true, wardrobe: 'wet coat' },
+        { id: 's3', prompt: 'empty street', duration: 4, showProtagonist: false },
+      ],
+      character: { name: 'Ken Tune', identity: 'the artist from the portrait' },
+    })
+    assert.equal(sheets.length, 1)
+    assert.match(sheets[0]?.prompt ?? '', /^Full-body character reference sheet/)
+    assert.match(sheets[0]?.prompt ?? '', /T-pose front/)
+    assert.match(sheets[0]?.prompt ?? '', /Character sheet/)
+    assert.match(sheets[0]?.prompt ?? '', /Ken Tune/)
+    assert.match(sheets[0]?.prompt ?? '', /black leather jacket/)
+    assert.match(sheets[0]?.prompt ?? '', /wet coat/)
+    assert.match(characterSheetPrompt({ character: { name: 'Ken' } }), /Not a cropped headshot/)
+    assert.deepEqual(deriveCharacterSheets({
+      skipStills: true,
+      referenceAssetId: 'ken',
+      shots: [{ id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true }],
+    }), [])
+  })
+
+  it('derives one full-body sheet per character ref', () => {
+    const sheets = deriveCharacterSheets({
+      shots: [{ id: 's1', prompt: 'duet on the bridge', duration: 5, showProtagonist: true }],
+      characterRefs: [
+        { id: 'ken', name: 'Ken Tune', assetId: 'ken-jpg', role: 'character' },
+        { id: 'maya', name: 'Maya', assetId: 'maya-jpg', role: 'character' },
+      ],
+    })
+    assert.equal(sheets.length, 2)
+    assert.equal(sheets[0]?.referenceAssetId, 'ken-jpg')
+    assert.equal(sheets[1]?.referenceAssetId, 'maya-jpg')
+    assert.match(sheets[0]?.prompt ?? '', /T-pose/)
+    assert.match(sheets[1]?.prompt ?? '', /Maya/)
   })
 
   it('flags more than eight generate jobs on the confirm card', () => {

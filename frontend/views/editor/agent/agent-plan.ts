@@ -1,3 +1,9 @@
+import {
+  parseCharacterBible,
+  parseCharacterSheets,
+  type AgentCharacterBible,
+  type AgentCharacterSheet,
+} from './agent-assembly.ts'
 import { asString, asStringArray } from './agent-tool-utils.ts'
 
 export interface AgentEditPlanShot {
@@ -28,6 +34,8 @@ export interface AgentEditPlan {
   mix: string
   timing: string
   checks: string[]
+  character?: AgentCharacterBible
+  characterSheets?: AgentCharacterSheet[]
 }
 
 function asShotList(raw: unknown): AgentEditPlanShot[] {
@@ -77,6 +85,8 @@ function asShotList(raw: unknown): AgentEditPlanShot[] {
 export function normalizeEditPlan(args: Record<string, unknown>): AgentEditPlan | { error: string } {
   const goal = asString(args.goal) ?? asString(args.brief)
   if (!goal) return { error: 'Missing goal' }
+  const character = parseCharacterBible(args.character)
+  const characterSheets = parseCharacterSheets(args.characterSheets)
   return {
     goal,
     shots: asShotList(args.shots),
@@ -86,6 +96,8 @@ export function normalizeEditPlan(args: Record<string, unknown>): AgentEditPlan 
     mix: asString(args.mix) ?? '',
     timing: asString(args.timing) ?? '',
     checks: asStringArray(args.checks) ?? [],
+    ...(character ? { character } : {}),
+    ...(characterSheets.length > 0 ? { characterSheets } : {}),
   }
 }
 
@@ -114,6 +126,8 @@ export function planFromAssembly(input: {
   musicAssetId?: string
   openingTitle?: string
   referenceAssetId?: string
+  character?: AgentCharacterBible
+  characterSheets?: AgentCharacterSheet[]
 }): AgentEditPlan {
   return {
     goal: input.goal || 'Assemble the brief onto the timeline',
@@ -145,7 +159,11 @@ export function planFromAssembly(input: {
     refs: input.referenceAssetId ? [input.referenceAssetId] : [],
     titles: input.openingTitle ?? '',
     mix: input.musicAssetId ? `Music ${input.musicAssetId} on A2 at 0.25` : 'VO on A1 if present',
-    timing: 'VO duration drives picture; check_cut after place',
+    timing: 'Character sheet and start frames first; videos last. VO duration drives picture; check_cut after place',
     checks: ['check_cut', 'get_timeline'],
+    ...(input.character ? { character: input.character } : {}),
+    ...(input.characterSheets && input.characterSheets.length > 0
+      ? { characterSheets: input.characterSheets }
+      : {}),
   }
 }

@@ -229,8 +229,8 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
 }
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
-  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'identityReference', 'skipReview'],
-  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'lastImageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'skipReview'],
+  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'identityReference', 'animateSource', 'skipReview'],
+  generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'lastImageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'animateSource', 'skipReview'],
   fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
   regenerate_clip: ['clipId', 'assetId', 'confirmed'],
   enhance_prompt: ['prompt', 'mediaType'],
@@ -256,6 +256,8 @@ export const ASSEMBLY_TOOL_ALLOWED_KEYS: Record<AgentAssemblyToolName, readonly 
     'openingTitle',
     'title',
     'referenceAssetId',
+    'character',
+    'characterSheets',
     'overlays',
     'lyrics',
   ],
@@ -300,7 +302,7 @@ export const LIPSYNC_TOOL_ALLOWED_KEYS: Record<AgentLipSyncToolName, readonly st
 }
 
 export const NARRATIVE_TOOL_ALLOWED_KEYS: Record<AgentNarrativeToolName, readonly string[]> = {
-  plan_edit: ['goal', 'brief', 'shots', 'voStrategy', 'voiceover', 'refs', 'titles', 'mix', 'timing', 'checks'],
+  plan_edit: ['goal', 'brief', 'shots', 'voStrategy', 'voiceover', 'refs', 'titles', 'mix', 'timing', 'checks', 'character', 'characterSheets'],
   check_cut: [],
   sync_narration: [],
 }
@@ -913,14 +915,16 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
         confirmed: { type: 'boolean' },
-        referenceAssetId: { type: 'string', description: 'Existing still for img2img / IC-LoRA-style continuity' },
-        refId: { type: 'string', description: 'Named ref from list_refs; resolved to an image asset' },
+        referenceAssetId: { type: 'string', description: 'Generated scene still to restyle (img2img). An imported portrait is identity only and is never edited. The runtime generates a new text-to-image scene instead.' },
+        refId: { type: 'string', description: 'Named ref from list_refs; resolved to an image asset. Identity only, never img2img.' },
+        identityReference: { type: 'boolean', description: 'Force text-to-image identity (no imagePath). Implied for imported photos.' },
+        animateSource: { type: 'boolean', description: 'Only if the user said animate this exact photo. Then the imported image may be img2img / i2v source.' },
       },
     },
   },
   {
     name: 'generate_video',
-    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a generated first-frame still via imageAssetId (image-to-video), and lastImageAssetId when the scene has a destination frame. Do not pass an @ portrait as imageAssetId. Waits for the GPU slot instead of returning busy.',
+    description: 'Generate an LTX video and add it to the project. Confirm first. Prefer a generated scene start-frame still via imageAssetId (image-to-video), and lastImageAssetId when the scene has a destination frame. Do not pass an @ portrait or a character sheet / lookbook as imageAssetId — those are identity only. The runtime strips them and generates a new scene still first. Waits for the GPU slot instead of returning busy.',
     parameters: {
       type: 'object',
       required: ['prompt'],
@@ -930,9 +934,10 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         duration: { type: 'number', description: 'Seconds. Default selected gap or 4.' },
         resolution: { type: 'string', description: 'Video resolution, default 540p preview' },
         audio: { type: 'boolean' },
-        imageAssetId: { type: 'string', description: 'Generated first-frame still for this shot (not the @ character portrait)' },
+        imageAssetId: { type: 'string', description: 'Approved scene start-frame still for this shot. Imported portraits and character sheets / T-pose lookbooks are stripped and replaced with a new scene still.' },
         lastImageAssetId: { type: 'string', description: 'Generated last-frame still for first-to-last interpolation' },
         refId: { type: 'string', description: 'Character identity only. Never used as the video start frame. The runtime generates a scene still from this ref and uses that still as imageAssetId.' },
+        animateSource: { type: 'boolean', description: 'Only if the user said animate this exact photo. Otherwise imported images are never the start frame.' },
         destination: { type: 'string', enum: ['assets', 'playhead', 'gap', 'after_last'] },
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
@@ -989,7 +994,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'assemble_shots',
-    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first with a fully reasoned scene script (Approve all does not skip planning). Per shot decide: who is on camera (artist, one protagonist, several); whether they are singing, talking, in dialogue, or silent; solo vs to/with others vs off-camera; objects and environment; wardrobe; first/last frames. Picture on V1, designed text on V2/V3, VO on A1, music on A2. An @ portrait is character identity, not the first frame.',
+    description: 'Default path for a short film, music video, narrative, commercial, montage, B-roll, anime, cartoon, or pasted script. Call plan_edit first (character bible, looks, scene start frames). Runtime order: full-body character sheet per @ character (T-pose / look bible, never a clip), then a new scene start frame per shot, then videos from those scene stills only. Pauses for approval on the sheet, each start/last frame, and each video unless Approve all. Portraits and sheets are identity, never video start frames.',
     parameters: {
       type: 'object',
       properties: {
@@ -1006,7 +1011,7 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
               title: { type: 'string', description: 'Scene slug; placed as a small top shot_title overlay, not a full-screen title' },
               firstFramePrompt: { type: 'string', description: 'Opening still for this scene; not the @ portrait' },
               lastFramePrompt: { type: 'string', description: 'Closing still when the action needs a destination frame' },
-              imageAssetId: { type: 'string', description: 'Already-generated first-frame still for this shot — never the @ portrait' },
+              imageAssetId: { type: 'string', description: 'Already-generated scene start frame for this shot — never the @ portrait and never a character sheet' },
               lastImageAssetId: { type: 'string', description: 'Already-generated last-frame still' },
               refId: { type: 'string', description: 'Character identity for img2img stills when the protagonist appears' },
               assetId: { type: 'string', description: 'Place this existing image, video, or audio asset instead of generating' },
@@ -1039,7 +1044,40 @@ export const ASSEMBLY_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         musicAssetId: { type: 'string', description: 'Existing music asset to place on A2 at 0.25 volume' },
         openingTitle: { type: 'string', description: 'Centered opening title on V2 (title preset, ~3s)' },
         title: { type: 'string', description: 'Alias for openingTitle' },
-        referenceAssetId: { type: 'string', description: '@ portrait or character still used as identity for showProtagonist shots, not as every start frame' },
+        referenceAssetId: { type: 'string', description: '@ portrait or character still used as identity for sheets and start frames, not as a video start frame' },
+        character: {
+          type: 'object',
+          description: 'Character bible: who they are and the looks to put on the character sheet before any video.',
+          properties: {
+            name: { type: 'string' },
+            identity: { type: 'string' },
+            looks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  wardrobe: { type: 'string' },
+                  prompt: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        characterSheets: {
+          type: 'array',
+          description: 'Optional explicit full-body character-sheet prompts (T-pose / costume bible). If omitted, assemble generates one lookbook per character ref. Sheets are identity only — never video starts.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              prompt: { type: 'string' },
+              look: { type: 'string' },
+              wardrobe: { type: 'string' },
+              referenceAssetId: { type: 'string', description: 'Portrait this sheet describes. Identity only.' },
+            },
+          },
+        },
         lyrics: {
           type: 'string',
           description: 'Music-video lyrics. String with optional [0s] timestamps, or pass overlays instead. Placed as lyrics-role text on V2 (bottom, readable stroke), not subtitle-track cues.',
@@ -1148,7 +1186,7 @@ export const LIPSYNC_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
 export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
   {
     name: 'plan_edit',
-    description: 'Internal plan-then-execute step. Write a scene script first and fully reason each beat: duration; first/last frame; who appears (one or several protagonists, the artist, extras); singing vs talking vs dialogue vs silent; solo / to others / with others / off-camera; wardrobe; objects; environment. Then record goal, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots. Approve all does not skip this. Does not mutate the timeline.',
+    description: 'Pre-production only. Reason like an editor before any video: character bible (name, identity, looks), character sheets, then a scene script with per-beat first-frame prompts and wardrobe. Record goal, character, characterSheets, shots, voStrategy, refs, titles, mix, timing, and checks. Required before assemble_shots. Approve all does not skip this. Does not mutate the timeline.',
     parameters: {
       type: 'object',
       required: ['goal'],
@@ -1186,6 +1224,38 @@ export const NARRATIVE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         mix: { type: 'string' },
         timing: { type: 'string', description: 'How VO duration will drive or be driven by picture' },
         checks: { type: 'array', items: { type: 'string' } },
+        character: {
+          type: 'object',
+          description: 'Character bible used to build the lookbook before any video.',
+          properties: {
+            name: { type: 'string' },
+            identity: { type: 'string' },
+            looks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  wardrobe: { type: 'string' },
+                  prompt: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        characterSheets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              prompt: { type: 'string' },
+              look: { type: 'string' },
+              wardrobe: { type: 'string' },
+              referenceAssetId: { type: 'string' },
+            },
+          },
+        },
       },
     },
   },

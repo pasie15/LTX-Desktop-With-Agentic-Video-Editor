@@ -7,12 +7,34 @@ import {
 import { normalizeTextOverlays, type AgentTextOverlay } from './agent-text.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import { collectIdentityStillIds, withoutIdentityStartFrames } from './agent-identity.ts'
+import { frameIdentityImagePrompt } from './agent-still-prompts.ts'
 
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 
 export type AgentAssemblyKind = 'script' | 'broll' | 'music_video' | 'narrative'
 export type AgentShotPerformance = 'singing' | 'talking' | 'dialogue' | 'silent'
 export type AgentShotAddress = 'solo' | 'to_others' | 'with_others' | 'off_camera'
+export type AgentAssemblyStage = 'character_sheet' | 'still' | 'video'
+
+export interface AgentCharacterLook {
+  name?: string
+  wardrobe?: string
+  prompt?: string
+}
+
+export interface AgentCharacterBible {
+  name?: string
+  identity?: string
+  looks?: AgentCharacterLook[]
+}
+
+export interface AgentCharacterSheet {
+  id: string
+  prompt: string
+  look?: string
+  wardrobe?: string
+  referenceAssetId?: string
+}
 
 export interface AgentAssemblyShot {
   id: string
@@ -56,6 +78,8 @@ export interface AgentAssemblyProposal {
   musicAssetId?: string
   openingTitle?: string
   referenceAssetId?: string
+  character?: AgentCharacterBible
+  characterSheets?: AgentCharacterSheet[]
   overlays?: AgentTextOverlay[]
 }
 
@@ -98,15 +122,182 @@ export function shotShowsProtagonist(shot: Pick<AgentAssemblyShot, 'showProtagon
   return false
 }
 
+export function shotNeedsIdentity(
+  shot: Pick<AgentAssemblyShot, 'showProtagonist' | 'refId' | 'assetId'>,
+  hasReference: boolean,
+): boolean {
+  if (shot.assetId || shot.showProtagonist === false) return false
+  return Boolean(shot.refId || shot.showProtagonist === true || hasReference)
+}
+
+export function looksFromShots(shots: readonly AgentAssemblyShot[]): string[] {
+  const looks: string[] = []
+  const seen = new Set<string>()
+  for (const shot of shots) {
+    if (shot.showProtagonist === false) continue
+    const wardrobe = shot.wardrobe?.trim()
+    if (!wardrobe) continue
+    const key = wardrobe.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    looks.push(wardrobe)
+  }
+  return looks
+}
+
+export function characterSheetPrompt(input: {
+  character?: AgentCharacterBible
+  shots?: readonly AgentAssemblyShot[]
+  sheet?: Partial<Pick<AgentCharacterSheet, 'look' | 'wardrobe' | 'prompt' | 'referenceAssetId'>>
+}): string {
+  if (input.sheet?.prompt?.trim()) return frameIdentityImagePrompt(input.sheet.prompt)
+  const who = input.character?.name?.trim() || 'the referenced artist or subject'
+  const identity = input.character?.identity?.trim()
+  const lookNames = (input.character?.looks ?? [])
+    .map(look => look.name?.trim() || look.wardrobe?.trim() || look.prompt?.trim())
+    .filter((value): value is string => Boolean(value))
+  const wardrobes = looksFromShots(input.shots ?? [])
+  const looks = [
+    ...(input.sheet?.look ? [input.sheet.look] : []),
+    ...(input.sheet?.wardrobe ? [input.sheet.wardrobe] : []),
+    ...lookNames,
+    ...wardrobes,
+  ]
+  const uniqueLooks = [...new Set(looks.map(item => item.trim()).filter(Boolean))]
+  const lookLine = uniqueLooks.length > 0
+    ? uniqueLooks.join('; ')
+    : 'scene-appropriate costume changes from the brief'
+  const identityLine = identity ? ` ${identity}.` : ''
+  return frameIdentityImagePrompt(
+    `Character sheet / lookbook of ${who}.${identityLine} `
+    + `T-pose front and back, three-quarter, and side. Full body, hair to shoes. `
+    + `Same person as the referenced artist, new poses, not the original photo. `
+    + `Costume variants: ${lookLine}. Use this bible only to describe the character for later scene stills.`,
+  )
+}
+
+export function parseCharacterBible(raw: unknown): AgentCharacterBible | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const record = raw as Record<string, unknown>
+  const looks: AgentCharacterLook[] = []
+  if (Array.isArray(record.looks)) {
+    for (const item of record.looks) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+      const look = item as Record<string, unknown>
+      const parsed: AgentCharacterLook = {}
+      if (typeof look.name === 'string' && look.name.trim()) parsed.name = look.name.trim()
+      if (typeof look.wardrobe === 'string' && look.wardrobe.trim()) parsed.wardrobe = look.wardrobe.trim()
+      if (typeof look.prompt === 'string' && look.prompt.trim()) parsed.prompt = look.prompt.trim()
+      if (parsed.name || parsed.wardrobe || parsed.prompt) looks.push(parsed)
+    }
+  }
+  const bible: AgentCharacterBible = {}
+  if (typeof record.name === 'string' && record.name.trim()) bible.name = record.name.trim()
+  if (typeof record.identity === 'string' && record.identity.trim()) bible.identity = record.identity.trim()
+  if (looks.length > 0) bible.looks = looks
+  if (!bible.name && !bible.identity && !bible.looks) return undefined
+  return bible
+}
+
+export function parseCharacterSheets(raw: unknown): AgentCharacterSheet[] {
+  if (!Array.isArray(raw)) return []
+  const sheets: AgentCharacterSheet[] = []
+  for (const [index, item] of raw.entries()) {
+    if (typeof item === 'string' && item.trim()) {
+      sheets.push({ id: `sheet-${index + 1}`, prompt: item.trim() })
+      continue
+    }
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    const prompt = typeof record.prompt === 'string' && record.prompt.trim()
+      ? record.prompt.trim()
+      : undefined
+    const look = typeof record.look === 'string' && record.look.trim() ? record.look.trim() : undefined
+    const wardrobe = typeof record.wardrobe === 'string' && record.wardrobe.trim()
+      ? record.wardrobe.trim()
+      : undefined
+    const referenceAssetId = typeof record.referenceAssetId === 'string' && record.referenceAssetId.trim()
+      ? record.referenceAssetId.trim()
+      : undefined
+    if (!prompt && !look && !wardrobe && !referenceAssetId) continue
+    sheets.push({
+      id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `sheet-${index + 1}`,
+      prompt: prompt ?? '',
+      ...(look ? { look } : {}),
+      ...(wardrobe ? { wardrobe } : {}),
+      ...(referenceAssetId ? { referenceAssetId } : {}),
+    })
+  }
+  return sheets
+}
+
+export function deriveCharacterSheets(input: {
+  skipStills?: boolean
+  referenceAssetId?: string
+  shots: readonly AgentAssemblyShot[]
+  character?: AgentCharacterBible
+  characterSheets?: AgentCharacterSheet[]
+  characterRefs?: ReadonlyArray<{ id?: string; name?: string; assetId: string; role?: string }>
+}): AgentCharacterSheet[] {
+  if (input.skipStills) return []
+  const characterRefs = (input.characterRefs ?? []).filter(ref => (
+    ref.assetId && (ref.role == null || ref.role === 'character')
+  ))
+  const hasReference = Boolean(input.referenceAssetId)
+    || input.shots.some(shot => Boolean(shot.refId))
+    || characterRefs.length > 0
+  if (!hasReference) return []
+  if (!input.shots.some(shot => shotNeedsIdentity(shot, Boolean(input.referenceAssetId) || characterRefs.length > 0))) {
+    return []
+  }
+  const provided = (input.characterSheets ?? []).filter(sheet => (
+    sheet.prompt.trim() || sheet.look || sheet.wardrobe || sheet.referenceAssetId
+  ))
+  if (provided.length > 0) {
+    return provided.map((sheet, index) => ({
+      id: sheet.id || `sheet-${index + 1}`,
+      prompt: characterSheetPrompt({ character: input.character, shots: input.shots, sheet }),
+      ...(sheet.look ? { look: sheet.look } : {}),
+      ...(sheet.wardrobe ? { wardrobe: sheet.wardrobe } : {}),
+      ...(sheet.referenceAssetId ? { referenceAssetId: sheet.referenceAssetId } : {}),
+    }))
+  }
+  if (characterRefs.length > 1) {
+    return characterRefs.map((ref, index) => ({
+      id: `sheet-${ref.id || index + 1}`,
+      prompt: characterSheetPrompt({
+        character: {
+          ...(input.character ?? {}),
+          name: ref.name?.trim() || input.character?.name,
+        },
+        shots: input.shots,
+        sheet: { look: ref.name?.trim() || `character ${index + 1}` },
+      }),
+      look: ref.name?.trim() || `character ${index + 1}`,
+      referenceAssetId: ref.assetId,
+    }))
+  }
+  return [{
+    id: 'sheet-1',
+    prompt: characterSheetPrompt({ character: input.character, shots: input.shots }),
+    ...(input.referenceAssetId ? { referenceAssetId: input.referenceAssetId } : {}),
+    ...(characterRefs[0]?.assetId && !input.referenceAssetId
+      ? { referenceAssetId: characterRefs[0].assetId }
+      : {}),
+  }]
+}
+
 export function bindAssemblyUserMedia(
   proposal: AgentAssemblyProposal,
   media: AgentAssemblyPreferredMedia,
+  assets?: ReadonlyArray<{ id: string; type: string; generationParams?: unknown }>,
 ): AgentAssemblyProposal {
   const musicAssetId = proposal.musicAssetId ?? media.musicAssetId
   const referenceAssetId = proposal.referenceAssetId ?? preferredReferenceAssetId(media)
   const identityIds = collectIdentityStillIds({
     referenceAssetId,
     preferred: media,
+    assets,
   })
   return buildAssemblyProposal({
     kind: proposal.kind,
@@ -123,6 +314,8 @@ export function bindAssemblyUserMedia(
     musicAssetId,
     openingTitle: proposal.openingTitle,
     referenceAssetId,
+    character: proposal.character,
+    characterSheets: proposal.characterSheets,
     overlays: proposal.overlays,
   })
 }
@@ -130,13 +323,15 @@ export function bindAssemblyUserMedia(
 export function countAssemblyGenerateJobs(
   shots: readonly AgentAssemblyShot[],
   skipStills: boolean,
+  characterSheetCount = 0,
 ): number {
-  return shots.reduce((total, shot) => {
+  const shotJobs = shots.reduce((total, shot) => {
     if (shot.assetId) return total
     const first = !skipStills && !shot.skipStill && !shot.imageAssetId
     const last = !skipStills && Boolean(shot.lastFramePrompt) && !shot.lastImageAssetId
     return total + (first ? 1 : 0) + (last ? 1 : 0) + 1
   }, 0)
+  return shotJobs + (skipStills ? 0 : characterSheetCount)
 }
 
 export function serializeAssemblyShots(shots: readonly AgentAssemblyShot[]): string {
@@ -268,13 +463,24 @@ export function buildAssemblyProposal(input: {
   openingTitle?: unknown
   title?: unknown
   referenceAssetId?: unknown
+  character?: unknown
+  characterSheets?: unknown
   overlays?: unknown
   lyrics?: unknown
 }): AgentAssemblyProposal {
   const kind = parseAssemblyKind(input.kind)
   const destination = parseDestination(input.destination, kind === 'broll' ? 'after_last' : 'playhead')
   const skipStills = input.skipStills === true
-  const jobCount = countAssemblyGenerateJobs(input.shots, skipStills)
+  const character = parseCharacterBible(input.character)
+  const referenceAssetId = optionalString(input.referenceAssetId)
+  const characterSheets = deriveCharacterSheets({
+    skipStills,
+    ...(referenceAssetId ? { referenceAssetId } : {}),
+    shots: input.shots,
+    ...(character ? { character } : {}),
+    characterSheets: parseCharacterSheets(input.characterSheets),
+  })
+  const jobCount = countAssemblyGenerateJobs(input.shots, skipStills, characterSheets.length)
   const openingTitle = optionalString(input.openingTitle) ?? optionalString(input.title)
   const overlays = [
     ...normalizeTextOverlays(input.overlays),
@@ -305,13 +511,18 @@ export function buildAssemblyProposal(input: {
     ...(optionalString(input.voiceoverAssetId) ? { voiceoverAssetId: optionalString(input.voiceoverAssetId) } : {}),
     ...(optionalString(input.musicAssetId) ? { musicAssetId: optionalString(input.musicAssetId) } : {}),
     ...(openingTitle ? { openingTitle } : {}),
-    ...(optionalString(input.referenceAssetId) ? { referenceAssetId: optionalString(input.referenceAssetId) } : {}),
+    ...(referenceAssetId ? { referenceAssetId } : {}),
+    ...(character ? { character } : {}),
+    ...(characterSheets.length > 0 ? { characterSheets } : {}),
     ...(overlays.length > 0 ? { overlays } : {}),
   }
 }
 
 export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): AgentAskUserQuestion[] {
   const extras = [
+    proposal.characterSheets?.length
+      ? `${proposal.characterSheets.length} character sheet${proposal.characterSheets.length === 1 ? '' : 's'} first`
+      : null,
     proposal.voiceover || proposal.voiceoverAssetId ? 'VO on A1' : null,
     proposal.musicAssetId ? 'music on A2' : null,
     proposal.openingTitle ? 'opening title' : null,
@@ -335,6 +546,8 @@ export function assemblyConfirmQuestions(proposal: AgentAssemblyProposal): Agent
       duration: shot.duration,
       ...(shot.title ? { title: shot.title } : {}),
       ...(shot.assetId ? { assetId: shot.assetId } : {}),
+      ...(shot.wardrobe ? { wardrobe: shot.wardrobe } : {}),
+      ...(shot.firstFramePrompt ? { firstFramePrompt: shot.firstFramePrompt } : {}),
     })),
   }]
 }
@@ -409,7 +622,7 @@ export function stillPromptForShot(shot: AgentAssemblyShot, which: 'first' | 'la
   const base = which === 'last'
     ? (shot.lastFramePrompt ?? shot.prompt)
     : (shot.firstFramePrompt ?? shot.prompt)
-  return withScenePromptExtras(base, shot, which)
+  return frameIdentityImagePrompt(withScenePromptExtras(base, shot, which))
 }
 
 export function videoPromptForShot(shot: AgentAssemblyShot): string {
@@ -442,7 +655,7 @@ function withScenePromptExtras(
   if (shot.objects) extras.push(`Stage objects: ${shot.objects}`)
   if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
   if (shot.showProtagonist === false) extras.push('Do not show the protagonist. Environment, extras, or objects only.')
-  else if (shotShowsProtagonist(shot)) extras.push('Match the registered character identity; stage this beat, do not copy the reference portrait as the frame.')
+  else if (shotShowsProtagonist(shot)) extras.push('The referenced person is inside this location, full or three-quarter body, environment filling most of the frame. New pose, wardrobe, and camera. Not a studio headshot, not a cropped face, not a copy of the reference photograph.')
   if (shot.performers) extras.push(`On camera: ${shot.performers}`)
   if (shot.others) extras.push(`Others in the scene: ${shot.others}`)
   const performance = scenePerformanceLine(shot, which)

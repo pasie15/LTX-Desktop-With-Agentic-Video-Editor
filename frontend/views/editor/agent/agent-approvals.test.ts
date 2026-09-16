@@ -5,6 +5,7 @@ import {
   detectApproveAllIntent,
   isApprovalNo,
   isApprovalYes,
+  nextStepForCheckpoint,
   reviewDecisionFromAnswers,
   reviewQuestionsFromResult,
 } from './agent-approvals.ts'
@@ -29,9 +30,18 @@ describe('agent approvals', () => {
 
   it('labels stills vs sheets vs video from the prompt', () => {
     assert.equal(checkpointFromGenerate({ prompt: 'character sheet of the paper boy' }, 'image'), 'character_sheet')
+    assert.equal(checkpointFromGenerate({ prompt: 'T-pose front and back reference sheet' }, 'image'), 'character_sheet')
+    assert.equal(checkpointFromGenerate({ prompt: 'full-body lookbook grid' }, 'image'), 'character_sheet')
     assert.equal(checkpointFromGenerate({ prompt: 'last-frame of the stoop' }, 'image'), 'last_frame')
     assert.equal(checkpointFromGenerate({ prompt: 'wide street, dusk' }, 'image'), 'still')
     assert.equal(checkpointFromGenerate({ prompt: 'rides past' }, 'video'), 'video')
+  })
+
+  it('names the next approval after a sheet or start frame', () => {
+    assert.equal(nextStepForCheckpoint('character_sheet'), 'scene start frames')
+    assert.equal(nextStepForCheckpoint('still'), 'the next start frame or video')
+    assert.equal(nextStepForCheckpoint('last_frame'), 'the next start frame or video')
+    assert.equal(nextStepForCheckpoint('video'), 'the next video')
   })
 
   it('builds an approval card from a needsReview tool result', () => {

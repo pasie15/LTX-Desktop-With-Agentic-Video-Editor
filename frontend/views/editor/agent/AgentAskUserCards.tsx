@@ -56,6 +56,8 @@ export function AgentAskUserCards(props: {
                 <li key={shot.id}>
                   <span className="text-zinc-200">{shot.title || shot.id}</span>
                   {` · ${shot.duration}s · ${shot.prompt}`}
+                  {shot.wardrobe ? ` · look: ${shot.wardrobe}` : ''}
+                  {shot.firstFramePrompt ? ` · start: ${shot.firstFramePrompt}` : ''}
                 </li>
               ))}
             </ol>

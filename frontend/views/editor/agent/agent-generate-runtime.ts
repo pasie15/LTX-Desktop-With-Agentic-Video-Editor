@@ -5,7 +5,7 @@ import {
   nextStepForCheckpoint,
   type AgentReviewPreview,
 } from './agent-approvals.ts'
-import { AGENT_DEFAULT_REF_STRENGTH, AGENT_IDENTITY_REF_STRENGTH } from './agent-mix.ts'
+import { AGENT_DEFAULT_REF_STRENGTH } from './agent-mix.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import {
@@ -28,9 +28,13 @@ import {
 import {
   collectIdentityStillIds,
   firstIdentityStillId,
+  isCharacterSheetAsset,
   isIdentityStillId,
+  isImportedStill,
+  isUsableVideoStart,
   type IdentityPreferredMedia,
 } from './agent-identity.ts'
+import { frameIdentityImagePrompt, sceneStillPromptForVideo } from './agent-still-prompts.ts'
 
 export const AGENT_DEFAULT_PREVIEW_DURATION_S = 4
 export const AGENT_DEFAULT_VIDEO_MODEL = 'fast'
@@ -457,11 +461,37 @@ async function generateStill(
   jobs: AgentGenerationJobs,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const prompt = asString(args.prompt)
-  if (!prompt) return errorResult('Missing prompt')
+  const rawPrompt = asString(args.prompt)
+  if (!rawPrompt) return errorResult('Missing prompt')
   const destination = parseDestination(args.destination, 'assets')
   const gap = destination === 'gap' ? resolveGap(host.getState(), args, host.getSelectedGap) : null
   const settings = settingsFromArgs(args, defaultSettings())
+  const refStillId = asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null
+  const identityIds = collectIdentityStillIds({
+    preferred: host.getPreferredAssemblyMedia?.(),
+    refs: host.refs?.list(),
+    assets: host.getState().editorModel.assets,
+  })
+  if (refStillId) identityIds.add(refStillId)
+  const referenceAssetId = asString(args.referenceAssetId) ?? refStillId
+  let referencePath: string | null = null
+  let referenceStill: ReturnType<typeof assetById> | undefined
+  if (referenceAssetId) {
+    referenceStill = assetById(host.getState(), referenceAssetId)
+    if (!referenceStill) return errorResult(`Asset not found: ${referenceAssetId}`)
+    if (referenceStill.type !== 'image') return errorResult('referenceAssetId must be an image asset')
+    referencePath = referenceStill.path
+  }
+  const animateSource = asBoolean(args.animateSource)
+  const identityRef = !animateSource && (
+    asBoolean(args.identityReference)
+    || isIdentityStillId(referenceAssetId ?? undefined, identityIds)
+    || isImportedStill(referenceStill)
+    || isCharacterSheetAsset(referenceStill)
+  )
+  // Z-Image follows the start of the prompt. Identity stills must lead with a wide scene
+  // or a full-body lookbook, or Turbo paints another headshot.
+  const prompt = identityRef ? frameIdentityImagePrompt(rawPrompt) : rawPrompt
   const proposal: AgentGenerateProposal = {
     tool: 'generate_image',
     prompt,
@@ -484,29 +514,15 @@ async function generateStill(
       return errorResult('Track is locked')
     }
   }
-  const refStillId = asString(args.refId) ? host.refs?.resolveImageAssetId(asString(args.refId)!) : null
-  const identityIds = collectIdentityStillIds({
-    preferred: host.getPreferredAssemblyMedia?.(),
-    refs: host.refs?.list(),
-  })
-  if (refStillId) identityIds.add(refStillId)
-  const referenceAssetId = asString(args.referenceAssetId) ?? refStillId
-  let referencePath: string | null = null
-  if (referenceAssetId) {
-    const still = assetById(host.getState(), referenceAssetId)
-    if (!still) return errorResult(`Asset not found: ${referenceAssetId}`)
-    if (still.type !== 'image') return errorResult('referenceAssetId must be an image asset')
-    referencePath = still.path
-  }
-  const refStrength = asBoolean(args.identityReference)
-    || isIdentityStillId(referenceAssetId ?? undefined, identityIds)
-    ? AGENT_IDENTITY_REF_STRENGTH
-    : AGENT_DEFAULT_REF_STRENGTH
+  // Z-Image imagePath is img2img *edit* of those pixels. An imported portrait in → the
+  // same headshot out. Identity stills are new text-to-image scenes. Only pass imagePath
+  // to restyle an already-generated scene still, or when the user asked to animate this photo.
+  const editSourcePath = identityRef ? null : referencePath
   host.onProgress?.({ toolName: 'generate_image', percent: 0, status: 'Generating image...' })
   const job = await jobs.runImage({
     prompt,
     settings,
-    ...(referencePath ? { imagePath: referencePath, strength: refStrength } : {}),
+    ...(editSourcePath ? { imagePath: editSourcePath, strength: AGENT_DEFAULT_REF_STRENGTH } : {}),
     signal: host.getAbortSignal?.() ?? undefined,
     onProgress: progress => host.onProgress?.({ toolName: 'generate_image', ...progress }),
   })
@@ -544,29 +560,30 @@ async function generateVideo(
   const identityIds = collectIdentityStillIds({
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
+    assets: state.editorModel.assets,
   })
   if (refStillId) identityIds.add(refStillId)
-  let imageAssetId = requestedStillId && !isIdentityStillId(requestedStillId, identityIds)
-    ? requestedStillId
-    : null
-  let imagePath: string | null = null
-  if (imageAssetId) {
-    const still = assetById(state, imageAssetId)
-    if (!still) return errorResult(`Asset not found: ${imageAssetId}`)
-    if (still.type !== 'image') return errorResult('imageAssetId must be an image asset')
-    imagePath = still.path
+  const animateSource = asBoolean(args.animateSource)
+  const requestedStill = requestedStillId ? assetById(state, requestedStillId) : undefined
+  if (requestedStillId && !requestedStill) return errorResult(`Asset not found: ${requestedStillId}`)
+  if (requestedStill && requestedStill.type !== 'image') {
+    return errorResult('imageAssetId must be an image asset')
   }
+  // Lookbooks and imported portraits describe identity. They are never i2v pixels.
+  const usableStart = animateSource
+    || isUsableVideoStart(requestedStillId ?? undefined, requestedStill, identityIds)
+  let imageAssetId = requestedStillId && usableStart ? requestedStillId : null
+  let imagePath: string | null = requestedStill && imageAssetId ? requestedStill.path : null
   const requestedLastId = asString(args.lastImageAssetId)
-  const lastImageAssetId = requestedLastId && !isIdentityStillId(requestedLastId, identityIds)
-    ? requestedLastId
-    : null
-  let lastImagePath: string | null = null
-  if (lastImageAssetId) {
-    const lastStill = assetById(state, lastImageAssetId)
-    if (!lastStill) return errorResult(`Asset not found: ${lastImageAssetId}`)
-    if (lastStill.type !== 'image') return errorResult('lastImageAssetId must be an image asset')
-    lastImagePath = lastStill.path
+  const requestedLast = requestedLastId ? assetById(state, requestedLastId) : undefined
+  if (requestedLastId && !requestedLast) return errorResult(`Asset not found: ${requestedLastId}`)
+  if (requestedLast && requestedLast.type !== 'image') {
+    return errorResult('lastImageAssetId must be an image asset')
   }
+  const usableLast = animateSource
+    || isUsableVideoStart(requestedLastId ?? undefined, requestedLast, identityIds)
+  const lastImageAssetId = requestedLastId && usableLast ? requestedLastId : null
+  const lastImagePath = requestedLast && lastImageAssetId ? requestedLast.path : null
   const identityId = refStillId ?? firstIdentityStillId(identityIds)
   const proposal: AgentGenerateProposal = {
     tool: 'generate_video',
@@ -596,7 +613,7 @@ async function generateVideo(
   }
   if (!imageAssetId && identityId) {
     const sceneStill = await generateStill(host, jobs, {
-      prompt,
+      prompt: sceneStillPromptForVideo(prompt),
       destination: 'assets',
       confirmed: true,
       skipReview: true,

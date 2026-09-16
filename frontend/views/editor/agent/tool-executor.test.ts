@@ -973,8 +973,144 @@ describe('generate tool executor', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: '/tmp/ken.png', strength: 0.72 }])
+    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+  })
+
+  it('does not img2img an imported photo even without identity flags', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number; prompt?: string }> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength, prompt: input.prompt })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'Ken walking a wet midnight street in a leather jacket',
+      referenceAssetId: 'ken',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(imageRefs.map(item => ({ path: item.path, strength: item.strength })), [
+      { path: undefined, strength: undefined },
+    ])
+    assert.match(imageRefs[0]?.prompt ?? '', /^Cinematic 16:9 production still/)
+    assert.notEqual(result.assetId, 'ken')
+  })
+
+  it('does not use an imported photo as a video start even without refs', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_video', {
+      prompt: 'Ken walking the wet street at night',
+      imageAssetId: 'ken',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
+    assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+  })
+
+  it('does not animate a generated character sheet', async () => {
+    const sheet = imageAsset('sheet-1')
+    sheet.prompt = 'Full-body character reference sheet, T-pose front and back of Ken'
+    sheet.generationParams = {
+      mode: 'text-to-image',
+      prompt: sheet.prompt,
+      model: 'z-image',
+      duration: 4,
+      resolution: '1080p',
+      fps: 24,
+      audio: false,
+      cameraMotion: 'none',
+    }
+    const imageRefs: Array<{ path?: string | null; prompt?: string }> = []
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      assets: [sheet, imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, prompt: input.prompt })
+          return { status: 'complete', path: '/tmp/scene-still.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_video', {
+      prompt: 'Character sheet of Ken walking, T-pose lookbook',
+      imageAssetId: 'sheet-1',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(imageRefs.length, 1)
+    assert.equal(imageRefs[0]?.path, undefined)
+    assert.match(imageRefs[0]?.prompt ?? '', /^Cinematic 16:9 production still/)
+    assert.doesNotMatch(imageRefs[0]?.prompt ?? '', /T-pose front/)
+    assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+    assert.ok(videoPaths.every(path => path !== '/tmp/sheet-1.png'))
+  })
+
+  it('can restyle a generated scene still with img2img', async () => {
+    const imageRefs: Array<{ path?: string | null; strength?: number }> = []
+    const generated = imageAsset('scene-1')
+    generated.generationParams = {
+      mode: 'text-to-image',
+      prompt: 'Ken on a wet street',
+      model: 'z-image',
+      duration: 4,
+      resolution: '1080p',
+      fps: 24,
+      audio: false,
+      cameraMotion: 'none',
+    }
+    const host = createHost(makeState({
+      clips: [],
+      assets: [generated],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          imageRefs.push({ path: input.imagePath, strength: input.strength })
+          return { status: 'complete', path: '/tmp/restyle.png' }
+        },
+      }),
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('generate_image', {
+      prompt: 'same street, warmer sodium light',
+      referenceAssetId: 'scene-1',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.equal(imageRefs[0]?.path, '/tmp/scene-1.png')
+    assert.ok(typeof imageRefs[0]?.strength === 'number')
   })
 
   it('generates a video and places it in the selected gap after confirm', async () => {
@@ -1130,7 +1266,7 @@ describe('assembly tool executor', () => {
     assert.equal(titles.length, 2)
     assert.equal(videos[0]?.startTime, 0)
     assert.equal(videos[1]?.startTime, 5)
-    assert.ok(progress.some(status => status.includes('1/2 generating')))
+    assert.ok(progress.some(status => status.includes('1/2 video')))
   })
 
   it('waits for a busy slot then assembles every shot', async () => {
@@ -1346,15 +1482,16 @@ describe('refs speech and mix', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 9)
-    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 8)
-    assert.equal(imageRefs.filter(path => path == null).length, 1)
+    assert.equal(imageCalls, 10)
+    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 0)
+    assert.ok(imageRefs.every(path => path == null))
     assert.equal(videoPaths.length, 8)
     assert.ok(videoPaths.every(path => path !== '/tmp/ken-tune.png'))
+    assert.ok(videoPaths.every(path => path !== '/project/image-scene-1.png'))
     assert.ok(videoPaths.every(path => typeof path === 'string' && path.startsWith('/project/image-')))
-    assert.equal(lastVideoPaths[0], '/project/image-scene-2.png')
+    assert.equal(lastVideoPaths[0], '/project/image-scene-3.png')
     assert.ok(lastVideoPaths.slice(1).every(path => path == null || path === undefined))
-    assert.equal(result.jobCount, 17)
+    assert.equal(result.jobCount, 18)
     const clips = activeClips(host.getState())
     assert.equal(clips.filter(item => item.type === 'video').length, 8)
     const music = clips.find(item => item.assetId === 'midnight-river')
@@ -1392,7 +1529,7 @@ describe('refs speech and mix', () => {
     host.generation = fakeJobs({
       runImage: async input => {
         imageCalls += 1
-        assert.equal(input.imagePath, '/tmp/hero-still.png')
+        assert.equal(input.imagePath, undefined)
         return { status: 'complete', path: '/tmp/still-from-ref.png' }
       },
       runVideo: async input => {
@@ -1408,7 +1545,7 @@ describe('refs speech and mix', () => {
       musicAssetId: 'theme',
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 1)
+    assert.equal(imageCalls, 2)
     assert.deepEqual(videoPaths, ['/project/image-still-from-ref.png'])
     const clips = activeClips(host.getState())
     const opening = clips.find(item => item.textStyle?.text === 'Before Sunrise')
@@ -1423,7 +1560,7 @@ describe('refs speech and mix', () => {
     assert.equal(music.volume, 0.25)
   })
 
-  it('img2imgs a bound character still even when showProtagonist is omitted', async () => {
+  it('generates a new scene still from a character ref without editing the portrait', async () => {
     const imageRefs: Array<{ path?: string | null; strength?: number }> = []
     const videoPaths: Array<string | null | undefined> = []
     const host = createHost(makeState({
@@ -1451,7 +1588,10 @@ describe('refs speech and mix', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: '/tmp/hero-still.png', strength: 0.72 }])
+    assert.deepEqual(imageRefs, [
+      { path: undefined, strength: undefined },
+      { path: undefined, strength: undefined },
+    ])
     assert.deepEqual(videoPaths, ['/project/image-scene-from-hero.png'])
   })
 
@@ -1595,20 +1735,78 @@ describe('refs speech and mix', () => {
     assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
 
     executor.rememberAssemblyAcceptance({ review: 'Approve' })
-    const afterVideo = await executor.execute('assemble_shots', { confirmed: true })
-    assert.equal(afterVideo.needsReview, true)
-    assert.equal(afterVideo.checkpoint, 'next_shot')
-    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
+    const secondStill = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(secondStill.needsReview, true)
+    assert.equal(secondStill.checkpoint, 'still')
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
 
     executor.rememberAssemblyAcceptance({ review: 'Approve' })
-    const secondStill = await executor.execute('assemble_shots', { confirmed: true })
-    assert.equal(secondStill.checkpoint, 'still')
+    const afterVideo = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(afterVideo.checkpoint, 'video')
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 1)
 
     executor.rememberAssemblyAcceptance({ review: 'Approve' })
     const done = await executor.execute('assemble_shots', { confirmed: true })
     assert.equal(done.ok, true)
     assert.equal(done.needsReview, undefined)
     assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 2)
+  })
+
+  it('presents the character sheet then every start frame for approval before any video', async () => {
+    const order: string[] = []
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [imageAsset('ken-tune')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          order.push(`image:${input.prompt.slice(0, 24)}`)
+          return { status: 'complete', path: `/tmp/${order.length}.png` }
+        },
+        runVideo: async () => {
+          order.push('video')
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+      approveAll: false,
+    })
+    const executor = new AgentToolExecutor(host)
+    const sheet = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'Ken on a wet street', duration: 5, wardrobe: 'leather jacket', showProtagonist: true },
+        { id: 's2', prompt: 'Ken at the river', duration: 5, wardrobe: 'wet coat', showProtagonist: true },
+      ],
+      referenceAssetId: 'ken-tune',
+      confirmed: true,
+    })
+    assert.equal(sheet.checkpoint, 'character_sheet')
+    assert.equal(sheet.needsReview, true)
+    assert.ok(!order.includes('video'))
+    assert.equal(activeClips(host.getState()).filter(item => item.type === 'video').length, 0)
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const start1 = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(start1.checkpoint, 'still')
+    assert.ok(!order.includes('video'))
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const start2 = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(start2.checkpoint, 'still')
+    assert.ok(!order.includes('video'))
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const video1 = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(video1.checkpoint, 'video')
+    assert.equal(order.filter(item => item === 'video').length, 1)
+
+    executor.rememberAssemblyAcceptance({ review: 'Approve' })
+    const done = await executor.execute('assemble_shots', { confirmed: true })
+    assert.equal(done.ok, true)
+    assert.equal(order.filter(item => item === 'video').length, 2)
+    assert.ok(order.indexOf('video') > 0)
+    assert.match(order[0] ?? '', /image:Full-body character/)
+    assert.ok(order.some(item => item.startsWith('image:Cinematic 16:9')))
   })
 })
 
@@ -1618,7 +1816,8 @@ describe('plan cut and nle tools', () => {
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('plan_edit', {
       goal: 'Short film about a paper boy',
-      shots: [{ id: 's1', prompt: 'stoop at dawn', duration: 5, title: 'STOOP' }],
+      shots: [{ id: 's1', prompt: 'stoop at dawn', duration: 5, title: 'STOOP', wardrobe: 'newsboy cap' }],
+      character: { name: 'Paper boy', identity: 'the portrait kid', looks: [{ wardrobe: 'newsboy cap' }] },
       voStrategy: 'ElevenLabs narration',
       timing: 'VO drives picture',
       checks: ['check_cut'],
@@ -1626,6 +1825,7 @@ describe('plan cut and nle tools', () => {
     assert.equal(result.ok, true)
     assert.equal((result.plan as { goal: string }).goal, 'Short film about a paper boy')
     assert.equal(executor.getLastPlan()?.timing, 'VO drives picture')
+    assert.equal(executor.getLastPlan()?.character?.name, 'Paper boy')
     assert.equal(activeClips(host.getState()).length, 1)
   })
 

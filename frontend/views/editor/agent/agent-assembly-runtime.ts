@@ -11,6 +11,8 @@ import {
   assemblyConfirmQuestions,
   bindAssemblyUserMedia,
   buildAssemblyProposal,
+  countAssemblyGenerateJobs,
+  deriveCharacterSheets,
   inferAssemblyMediaFromAssets,
   isAssemblyProceedChoice,
   MAX_ASSEMBLY_GENERATE_JOBS,
@@ -22,6 +24,8 @@ import {
   type AgentAssemblyPreferredMedia,
   type AgentAssemblyProposal,
   type AgentAssemblyShot,
+  type AgentAssemblyStage,
+  type AgentCharacterSheet,
 } from './agent-assembly.ts'
 import {
   executeGenerateTool,
@@ -52,7 +56,11 @@ import {
   type AgentSpeechActionHost,
 } from './agent-speech-runtime.ts'
 import { applyShotLipSync, type AgentLipSyncActionHost } from './agent-lipsync-runtime.ts'
-import { collectIdentityStillIds, firstIdentityStillId, isIdentityStillId } from './agent-identity.ts'
+import {
+  collectIdentityStillIds,
+  firstIdentityStillId,
+  isUsableVideoStart,
+} from './agent-identity.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
 import { ASSEMBLY_TOOL_ALLOWED_KEYS, type AgentAssemblyToolName } from './tool-definitions.ts'
 
@@ -73,12 +81,14 @@ export interface AgentAssemblyActionHost extends AgentGenerateActionHost, AgentS
 
 export interface AgentAssemblyProgress {
   shotIndex: number
-  stage: 'still' | 'video'
+  stage: AgentAssemblyStage
+  sheetIndex?: number
   lastStillId?: string
   cursor: number
   placed: AgentAssemblyShotResult[]
   checklist: AgentAssemblyShotResult[]
   voiceoverAssetId?: string
+  characterSheetIds?: string[]
 }
 
 export interface AgentAssemblyMemory {
@@ -160,6 +170,7 @@ function resolveProposal(
       ? normalizeAssemblyShots(args.script)
       : null
   if (fromArgs && fromArgs.length > 0) {
+    const plan = memory.getPlan?.()
     const proposal = buildAssemblyProposal({
       kind: args.kind,
       destination: args.destination,
@@ -176,6 +187,8 @@ function resolveProposal(
       openingTitle: args.openingTitle,
       title: args.title,
       referenceAssetId: args.referenceAssetId,
+      character: args.character ?? plan?.character,
+      characterSheets: args.characterSheets ?? plan?.characterSheets,
       overlays: args.overlays,
       lyrics: args.lyrics,
     })
@@ -214,6 +227,8 @@ export function rememberAssemblyAcceptance(
         musicAssetId: current?.musicAssetId,
         openingTitle: current?.openingTitle,
         referenceAssetId: current?.referenceAssetId,
+        character: current?.character,
+        characterSheets: current?.characterSheets,
         overlays: current?.overlays,
       }))
     }
@@ -238,6 +253,7 @@ export async function executeAssemblyTool(
   let proposal = shouldBindUserMedia
     ? bindUserMediaIntoProposal(host, resolved.proposal)
     : resolved.proposal
+  proposal = expandSheetsFromCharacterRefs(host, proposal)
   memory.setProposal(proposal)
   if (proposal.shots.length === 0) return errorResult('Shot list is empty')
   if (!memory.getPlan?.()) {
@@ -249,6 +265,8 @@ export async function executeAssemblyTool(
       musicAssetId: proposal.musicAssetId,
       openingTitle: proposal.openingTitle,
       referenceAssetId: proposal.referenceAssetId,
+      character: proposal.character,
+      characterSheets: proposal.characterSheets,
     }))
   }
 
@@ -278,10 +296,7 @@ export async function executeAssemblyTool(
   }
   if (decision === 'revise') {
     memory.setReviewDecision(null)
-    const progress = memory.getProgress()
-    if (progress) {
-      memory.setProgress({ ...progress, stage: 'still' })
-    }
+    const progress = rewindAssemblyReview(memory)
     return {
       ok: false,
       error: 'User asked to revise this still or sheet. Follow their notes, then retry assemble_shots with confirmed=true.',
@@ -313,7 +328,13 @@ export async function executeAssemblyTool(
   const placed: AgentAssemblyShotResult[] = existing?.placed.slice() ?? []
   let lastStillId = existing?.lastStillId
   let voiceoverAsset: Asset | undefined
-  const startIndex = existing?.shotIndex ?? 0
+  const characterSheets = proposal.characterSheets ?? []
+  let characterSheetIds = existing?.characterSheetIds?.slice() ?? []
+  let stage: AgentAssemblyStage = existing?.stage
+    ?? (characterSheets.length > 0 ? 'character_sheet' : 'still')
+  const startSheetIndex = existing?.stage === 'character_sheet' ? existing.sheetIndex ?? 0 : characterSheetIds.length
+  const startStillIndex = existing?.stage === 'still' ? existing.shotIndex : 0
+  const startVideoIndex = existing?.stage === 'video' ? existing.shotIndex : 0
 
   if (!existing) {
     if (proposal.voiceover && !proposal.voiceoverAssetId) {
@@ -349,7 +370,209 @@ export async function executeAssemblyTool(
     placeAssemblyMusic(host, proposal, cursor)
   }
 
-  for (let index = startIndex; index < proposal.shots.length; index += 1) {
+  const snapshotProgress = (next: {
+    stage: AgentAssemblyStage
+    shotIndex: number
+    sheetIndex?: number
+  }): AgentAssemblyProgress => ({
+    shotIndex: next.shotIndex,
+    stage: next.stage,
+    ...(next.sheetIndex != null ? { sheetIndex: next.sheetIndex } : {}),
+    lastStillId,
+    cursor,
+    placed,
+    checklist,
+    ...(voiceoverAsset ? { voiceoverAssetId: voiceoverAsset.id } : {}),
+    ...(characterSheetIds.length > 0 ? { characterSheetIds } : {}),
+  })
+
+  if (stage === 'character_sheet' && characterSheets.length > 0) {
+    for (let index = startSheetIndex; index < characterSheets.length; index += 1) {
+      const sheet = characterSheets[index]!
+      if (host.getAbortSignal?.()?.aborted) {
+        return {
+          ok: false,
+          error: 'Assembly cancelled',
+          cancelled: true,
+          completed: placed,
+          failedAt: sheet.id,
+          checklist,
+        }
+      }
+      reportAssemblyProgress(host, {
+        percent: Math.round((index / Math.max(characterSheets.length + proposal.shots.length, 1)) * 20),
+        status: `Character sheet ${index + 1}/${characterSheets.length}`,
+      })
+      const sheetResult = await withAssemblyProgress(
+        host,
+        `character sheet ${index + 1}/${characterSheets.length}`,
+        8,
+        () => generateCharacterSheet(host, proposal, sheet),
+      )
+      if (sheetResult.status !== 'ready') {
+        return {
+          ok: false,
+          error: sheetResult.error ?? 'Character sheet failed',
+          completed: placed,
+          failedAt: sheet.id,
+          checklist,
+        }
+      }
+      characterSheetIds.push(sheetResult.stillAssetId)
+      const moreSheets = index < characterSheets.length - 1
+      if (stepByStep) {
+        memory.setProgress(snapshotProgress({
+          stage: moreSheets ? 'character_sheet' : 'still',
+          shotIndex: 0,
+          sheetIndex: index + 1,
+        }))
+        return reviewAssemblyStep(host, {
+          checkpoint: 'character_sheet',
+          shot: { id: sheet.id, prompt: sheet.prompt, duration: 0, title: sheet.look ?? 'Character sheet' },
+          assetId: sheetResult.stillAssetId,
+          nextStep: moreSheets ? 'the next character look' : 'scene start frames',
+          placed,
+          checklist,
+          remaining: moreSheets
+            ? characterSheets.length - index - 1
+            : proposal.shots.length,
+        })
+      }
+    }
+    stage = 'still'
+  }
+
+  if (stage === 'still') {
+    for (let index = startStillIndex; index < proposal.shots.length; index += 1) {
+      const shot = proposal.shots[index]!
+      if (host.getAbortSignal?.()?.aborted) {
+        checklist[index] = { ...checklist[index]!, status: 'cancelled', error: 'cancelled' }
+        return {
+          ok: false,
+          error: 'Assembly cancelled',
+          cancelled: true,
+          completed: placed,
+          failedAt: shot.id,
+          checklist,
+        }
+      }
+      const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
+      const wantFirst = !shot.assetId && !proposal.skipStills && !shot.skipStill && !attachedStillId
+      const wantLast = !shot.assetId
+        && !proposal.skipStills
+        && Boolean(shot.lastFramePrompt)
+        && !shot.lastImageAssetId
+        && Boolean(attachedStillId)
+      reportAssemblyProgress(host, {
+        percent: 20 + Math.round((index / proposal.shots.length) * 40),
+        status: wantFirst
+          ? `Start frame ${index + 1}/${proposal.shots.length}`
+          : wantLast
+            ? `Last frame ${index + 1}/${proposal.shots.length}`
+            : `${index + 1}/${proposal.shots.length} preparing…`,
+      })
+      if (wantFirst) {
+        const stillResult = await withAssemblyProgress(
+          host,
+          `${index + 1}/${proposal.shots.length} start frame`,
+          20 + Math.round((index / proposal.shots.length) * 40),
+          () => generateShotStill(host, proposal, shot),
+        )
+        if (stillResult.status !== 'ready') {
+          checklist[index] = {
+            ...checklist[index]!,
+            status: stillResult.status,
+            error: stillResult.error,
+          }
+          return {
+            ok: false,
+            error: stillResult.error ?? 'Assembly stopped',
+            completed: placed,
+            failedAt: shot.id,
+            checklist,
+          }
+        }
+        lastStillId = stillResult.stillAssetId
+        proposal.shots[index] = { ...shot, imageAssetId: stillResult.stillAssetId }
+        checklist[index] = {
+          ...checklist[index]!,
+          stillAssetId: stillResult.stillAssetId,
+          status: 'pending',
+        }
+        memory.setProposal(proposal)
+        const needsLast = Boolean(shot.lastFramePrompt)
+        const moreStills = needsLast || proposal.shots.slice(index + 1).some(item => (
+          !item.assetId && !proposal.skipStills && !item.skipStill && !item.imageAssetId
+        ))
+        if (!stepByStep && needsLast) {
+          const lastStill = await generateShotStill(host, proposal, proposal.shots[index]!, 'last')
+          if (lastStill.status === 'ready') {
+            proposal.shots[index] = { ...proposal.shots[index]!, lastImageAssetId: lastStill.stillAssetId }
+            memory.setProposal(proposal)
+          }
+        }
+        if (stepByStep) {
+          memory.setProgress(snapshotProgress({
+            stage: moreStills || needsLast ? 'still' : 'video',
+            shotIndex: needsLast ? index : (moreStills ? index + 1 : 0),
+            sheetIndex: characterSheets.length,
+          }))
+          return reviewAssemblyStep(host, {
+            checkpoint: 'still',
+            shot,
+            assetId: stillResult.stillAssetId,
+            nextStep: needsLast ? 'the last-frame still' : moreStills ? 'the next start frame' : 'video',
+            placed,
+            checklist,
+            remaining: moreStills ? proposal.shots.length - index : proposal.shots.length,
+          })
+        }
+      } else if (wantLast) {
+        const lastStill = await withAssemblyProgress(
+          host,
+          `${index + 1}/${proposal.shots.length} last frame`,
+          20 + Math.round((index / proposal.shots.length) * 40),
+          () => generateShotStill(host, proposal, shot, 'last'),
+        )
+        if (lastStill.status !== 'ready') {
+          return {
+            ok: false,
+            error: lastStill.error ?? 'Last-frame still failed',
+            completed: placed,
+            failedAt: shot.id,
+            checklist,
+          }
+        }
+        proposal.shots[index] = { ...shot, lastImageAssetId: lastStill.stillAssetId }
+        memory.setProposal(proposal)
+        const moreStills = proposal.shots.slice(index + 1).some(item => (
+          !item.assetId && !proposal.skipStills && !item.skipStill && !item.imageAssetId
+        ))
+        if (stepByStep) {
+          memory.setProgress(snapshotProgress({
+            stage: moreStills ? 'still' : 'video',
+            shotIndex: moreStills ? index + 1 : 0,
+            sheetIndex: characterSheets.length,
+          }))
+          return reviewAssemblyStep(host, {
+            checkpoint: 'last_frame',
+            shot,
+            assetId: lastStill.stillAssetId,
+            nextStep: moreStills ? 'the next start frame' : 'video',
+            placed,
+            checklist,
+            remaining: moreStills ? proposal.shots.length - index - 1 : proposal.shots.length,
+          })
+        }
+      } else if (attachedStillId) {
+        checklist[index] = { ...checklist[index]!, stillAssetId: attachedStillId, status: 'pending' }
+        lastStillId = attachedStillId
+      }
+    }
+    stage = 'video'
+  }
+
+  for (let index = startVideoIndex; index < proposal.shots.length; index += 1) {
     const shot = proposal.shots[index]!
     if (host.getAbortSignal?.()?.aborted) {
       checklist[index] = { ...checklist[index]!, status: 'cancelled', error: 'cancelled' }
@@ -364,73 +587,19 @@ export async function executeAssemblyTool(
     }
 
     const total = proposal.shots.length
-    const resumeStage = index === startIndex ? existing?.stage ?? 'still' : 'still'
-    const attachedStillId = resolveShotStillId(host, shot, proposal)
+    const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
+      ?? checklist[index]?.stillAssetId
     reportAssemblyProgress(host, {
-      percent: Math.round((index / total) * 100),
+      percent: 60 + Math.round((index / total) * 40),
       status: shot.assetId
         ? `${index + 1}/${total} placing…`
-        : `${index + 1}/${total} generating…`,
+        : `${index + 1}/${total} video…`,
     })
-
-    if (
-      stepByStep
-      && resumeStage === 'still'
-      && !shot.assetId
-      && !proposal.skipStills
-      && !shot.skipStill
-      && !attachedStillId
-    ) {
-      const stillResult = await withAssemblyProgress(
-        host,
-        `${index + 1}/${total} still`,
-        Math.round((index / total) * 100),
-        () => generateShotStill(host, proposal, shot),
-      )
-      if (stillResult.status !== 'ready') {
-        checklist[index] = {
-          ...checklist[index]!,
-          status: stillResult.status,
-          error: stillResult.error,
-        }
-        return {
-          ok: false,
-          error: stillResult.error ?? 'Assembly stopped',
-          completed: placed,
-          failedAt: shot.id,
-          checklist,
-        }
-      }
-      lastStillId = stillResult.stillAssetId
-      checklist[index] = {
-        ...checklist[index]!,
-        stillAssetId: stillResult.stillAssetId,
-        status: 'pending',
-      }
-      memory.setProgress({
-        shotIndex: index,
-        stage: 'video',
-        lastStillId,
-        cursor,
-        placed,
-        checklist,
-        ...(voiceoverAsset ? { voiceoverAssetId: voiceoverAsset.id } : {}),
-      })
-      return reviewAssemblyStep(host, {
-        checkpoint: 'still',
-        shot,
-        assetId: stillResult.stillAssetId,
-        nextStep: 'video',
-        placed,
-        checklist,
-        remaining: total - index,
-      })
-    }
 
     const result = await withAssemblyProgress(
       host,
-      `${index + 1}/${total} ${resumeStage === 'video' ? 'video' : 'shot'}`,
-      Math.round((index / total) * 100),
+      `${index + 1}/${total} video`,
+      60 + Math.round((index / total) * 40),
       () => generateAndPlaceShot(
         host,
         proposal,
@@ -438,7 +607,8 @@ export async function executeAssemblyTool(
         cursor,
         index === 0,
         lastStillId,
-        resumeStage === 'video' ? lastStillId ?? attachedStillId : attachedStillId,
+        attachedStillId,
+        characterSheetIds,
       ),
     )
     checklist[index] = result
@@ -459,20 +629,16 @@ export async function executeAssemblyTool(
     }
 
     if (stepByStep && index < proposal.shots.length - 1) {
-      memory.setProgress({
+      memory.setProgress(snapshotProgress({
+        stage: 'video',
         shotIndex: index + 1,
-        stage: 'still',
-        lastStillId,
-        cursor,
-        placed,
-        checklist,
-        ...(voiceoverAsset ? { voiceoverAssetId: voiceoverAsset.id } : {}),
-      })
+        sheetIndex: characterSheets.length,
+      }))
       return reviewAssemblyStep(host, {
-        checkpoint: 'next_shot',
+        checkpoint: 'video',
         shot,
-        assetId: result.stillAssetId ?? result.assetId,
-        nextStep: 'the next shot',
+        assetId: result.assetId ?? result.stillAssetId,
+        nextStep: 'the next video',
         placed,
         checklist,
         remaining: total - index - 1,
@@ -510,6 +676,30 @@ export async function executeAssemblyTool(
   }
 }
 
+function expandSheetsFromCharacterRefs(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+): AgentAssemblyProposal {
+  const characterRefs = (host.refs?.list() ?? []).filter(ref => ref.role === 'character')
+  if (characterRefs.length === 0) return proposal
+  const sheets = deriveCharacterSheets({
+    skipStills: proposal.skipStills,
+    ...(proposal.referenceAssetId ? { referenceAssetId: proposal.referenceAssetId } : {}),
+    shots: proposal.shots,
+    ...(proposal.character ? { character: proposal.character } : {}),
+    characterSheets: proposal.characterSheets,
+    characterRefs,
+  })
+  if (sheets.length === 0 || sheets === proposal.characterSheets) return proposal
+  const jobCount = countAssemblyGenerateJobs(proposal.shots, proposal.skipStills, sheets.length)
+  return {
+    ...proposal,
+    characterSheets: sheets,
+    jobCount,
+    exceedsJobCap: jobCount > MAX_ASSEMBLY_GENERATE_JOBS,
+  }
+}
+
 function bindUserMediaIntoProposal(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
@@ -532,7 +722,7 @@ function bindUserMediaIntoProposal(
     ...(musicAssetId && musicAssetId !== proposal.voiceoverAssetId && !usedShotAssetIds.has(musicAssetId)
       ? { musicAssetId }
       : {}),
-  })
+  }, host.getState().editorModel.assets)
 }
 
 function reportAssemblyProgress(
@@ -594,13 +784,19 @@ function resolveShotStillId(
   host: AgentAssemblyActionHost,
   shot: AgentAssemblyShot,
   proposal: AgentAssemblyProposal,
+  characterSheetIds: readonly string[] = [],
 ): string | undefined {
   const identityIds = collectIdentityStillIds({
     referenceAssetId: proposal.referenceAssetId,
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
+    assets: host.getState().editorModel.assets,
+    extraIds: characterSheetIds,
   })
-  if (isIdentityStillId(shot.imageAssetId, identityIds)) return undefined
+  const asset = shot.imageAssetId
+    ? host.getState().editorModel.assets.find(item => item.id === shot.imageAssetId)
+    : undefined
+  if (!isUsableVideoStart(shot.imageAssetId, asset, identityIds)) return undefined
   return shot.imageAssetId
 }
 
@@ -617,6 +813,7 @@ function resolveShotIdentity(
     ?? firstIdentityStillId(collectIdentityStillIds({
       preferred,
       refs: host.refs?.list(),
+      assets: host.getState().editorModel.assets,
     }))
 }
 
@@ -759,6 +956,92 @@ function assemblyOverlays(
   return lyrics
 }
 
+function rewindAssemblyReview(memory: AgentAssemblyMemory): AgentAssemblyProgress | null {
+  const progress = memory.getProgress()
+  const proposal = memory.getProposal()
+  if (!progress) return null
+  if (progress.stage === 'character_sheet') {
+    const sheetIndex = Math.max(0, (progress.sheetIndex ?? 1) - 1)
+    const characterSheetIds = progress.characterSheetIds?.slice(0, sheetIndex) ?? []
+    const next = { ...progress, sheetIndex, characterSheetIds }
+    memory.setProgress(next)
+    return next
+  }
+  if (progress.stage === 'still') {
+    const shotIndex = Math.max(0, progress.shotIndex - 1)
+    if (proposal?.shots[shotIndex]) {
+      const shot = proposal.shots[shotIndex]!
+      proposal.shots[shotIndex] = { ...shot }
+      delete proposal.shots[shotIndex]!.imageAssetId
+      delete proposal.shots[shotIndex]!.lastImageAssetId
+      memory.setProposal(proposal)
+    }
+    const checklist = progress.checklist.slice()
+    if (checklist[shotIndex]) {
+      checklist[shotIndex] = { ...checklist[shotIndex]!, status: 'pending' }
+      delete checklist[shotIndex]!.stillAssetId
+    }
+    const next = { ...progress, shotIndex, checklist }
+    memory.setProgress(next)
+    return next
+  }
+  if (progress.stage === 'video' && progress.shotIndex === 0 && proposal) {
+    const lastStillIndex = [...proposal.shots].map((shot, index) => (
+      !shot.assetId && !proposal.skipStills && !shot.skipStill ? index : -1
+    )).filter(index => index >= 0).at(-1)
+    if (lastStillIndex != null) {
+      const shot = proposal.shots[lastStillIndex]!
+      proposal.shots[lastStillIndex] = { ...shot }
+      delete proposal.shots[lastStillIndex]!.imageAssetId
+      delete proposal.shots[lastStillIndex]!.lastImageAssetId
+      memory.setProposal(proposal)
+      const checklist = progress.checklist.slice()
+      if (checklist[lastStillIndex]) {
+        checklist[lastStillIndex] = { ...checklist[lastStillIndex]!, status: 'pending' }
+        delete checklist[lastStillIndex]!.stillAssetId
+      }
+      const next = { ...progress, stage: 'still' as const, shotIndex: lastStillIndex, checklist }
+      memory.setProgress(next)
+      return next
+    }
+  }
+  memory.setProgress({ ...progress, stage: 'still' })
+  return memory.getProgress()
+}
+
+async function generateCharacterSheet(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+  sheet: AgentCharacterSheet,
+): Promise<{ status: 'ready'; stillAssetId: string } | { status: 'failed' | 'cancelled'; error: string }> {
+  const identityId = sheet.referenceAssetId
+    ?? proposal.referenceAssetId
+    ?? preferredReferenceAssetId(host.getPreferredAssemblyMedia?.() ?? {})
+    ?? firstIdentityStillId(collectIdentityStillIds({
+      referenceAssetId: proposal.referenceAssetId,
+      preferred: host.getPreferredAssemblyMedia?.(),
+      refs: host.refs?.list(),
+      assets: host.getState().editorModel.assets,
+    }))
+  const still = await executeGenerateTool(host, 'generate_image', {
+    prompt: sheet.prompt,
+    destination: 'assets',
+    confirmed: true,
+    skipReview: true,
+    ...(identityId ? { referenceAssetId: identityId, identityReference: true } : {}),
+  })
+  if (still.ok === false) {
+    return {
+      status: String(still.error) === 'Generation cancelled' ? 'cancelled' : 'failed',
+      error: String(still.error ?? 'Character sheet generation failed'),
+    }
+  }
+  if (typeof still.assetId !== 'string') {
+    return { status: 'failed', error: 'Character sheet generation did not return an asset' }
+  }
+  return { status: 'ready', stillAssetId: still.assetId }
+}
+
 async function generateShotStill(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
@@ -769,8 +1052,11 @@ async function generateShotStill(
   const promptShot = identityId && shot.showProtagonist !== false
     ? { ...shot, showProtagonist: shot.showProtagonist ?? true }
     : shot
+  const sheetHint = (proposal.characterSheets?.length ?? 0) > 0 && promptShot.showProtagonist !== false
+    ? ' Same person as the approved design bible: face, body, hair, and costume. This frame is the character inside the scene, not a studio catalog.'
+    : ''
   const still = await executeGenerateTool(host, 'generate_image', {
-    prompt: stillPromptForShot(promptShot, which),
+    prompt: `${stillPromptForShot(promptShot, which)}${sheetHint}`,
     destination: 'assets',
     confirmed: true,
     skipReview: true,
@@ -791,7 +1077,7 @@ async function generateShotStill(
 async function reviewAssemblyStep(
   host: AgentAssemblyActionHost,
   input: {
-    checkpoint: 'still' | 'next_shot'
+    checkpoint: 'character_sheet' | 'still' | 'last_frame' | 'video' | 'next_shot'
     shot: AgentAssemblyShot
     assetId?: string
     nextStep: string
@@ -829,19 +1115,27 @@ async function generateAndPlaceShot(
   isFirst: boolean,
   _previousStillId?: string,
   approvedStillId?: string,
+  characterSheetIds: readonly string[] = [],
 ): Promise<AgentAssemblyShotResult> {
   if (shot.assetId) {
     return placeExistingShot(host, proposal, shot, startTime)
   }
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
-  const attachedStillId = resolveShotStillId(host, shot, proposal)
   const identityIds = collectIdentityStillIds({
     referenceAssetId: proposal.referenceAssetId,
     preferred: host.getPreferredAssemblyMedia?.(),
     refs: host.refs?.list(),
+    assets: host.getState().editorModel.assets,
+    extraIds: characterSheetIds,
   })
-  const approvedStart = isIdentityStillId(approvedStillId, identityIds) ? undefined : approvedStillId
+  const approvedAsset = approvedStillId
+    ? host.getState().editorModel.assets.find(item => item.id === approvedStillId)
+    : undefined
+  const approvedStart = isUsableVideoStart(approvedStillId, approvedAsset, identityIds)
+    ? approvedStillId
+    : undefined
+  const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
   let imageAssetId = approvedStart ?? attachedStillId
   const wantStill = !proposal.skipStills && !shot.skipStill && !imageAssetId
 
@@ -858,9 +1152,12 @@ async function generateAndPlaceShot(
     imageAssetId = still.stillAssetId
   }
 
-  let lastImageAssetId = isIdentityStillId(shot.lastImageAssetId, identityIds)
-    ? undefined
-    : shot.lastImageAssetId
+  const lastAsset = shot.lastImageAssetId
+    ? host.getState().editorModel.assets.find(item => item.id === shot.lastImageAssetId)
+    : undefined
+  let lastImageAssetId = isUsableVideoStart(shot.lastImageAssetId, lastAsset, identityIds)
+    ? shot.lastImageAssetId
+    : undefined
   if (!lastImageAssetId && shot.lastFramePrompt && !proposal.skipStills) {
     const lastStill = await generateShotStill(host, proposal, shot, 'last')
     if (lastStill.status === 'ready') lastImageAssetId = lastStill.stillAssetId
