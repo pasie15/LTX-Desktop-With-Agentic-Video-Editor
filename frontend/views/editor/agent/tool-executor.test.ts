@@ -307,6 +307,7 @@ function fakeActions(): AgentEditorActions {
             padding: 0,
             borderRadius: 0,
             opacity: 100,
+            ...params.style,
           },
         },
       ],
@@ -862,6 +863,22 @@ describe('edit tool executor', () => {
     assert.ok(textClip)
     assert.equal(textClip.textStyle?.text, 'HELLO')
     assert.equal(textClip.duration, 3)
+    assert.equal(textClip.textStyle?.fontSize, 72)
+    assert.equal(textClip.textStyle?.positionY, 50)
+
+    const lyrics = await executor.execute('add_text', {
+      text: 'Midnight by the river',
+      role: 'lyrics',
+      startTime: 3,
+      duration: 4,
+    })
+    assert.equal(lyrics.ok, true)
+    assert.equal(lyrics.role, 'lyrics')
+    const lyricClip = activeClips(host.getState()).find(item => item.textStyle?.text === 'Midnight by the river')
+    assert.ok(lyricClip)
+    assert.equal(lyricClip.trackIndex, 2)
+    assert.equal(lyricClip.textStyle?.positionY, 82)
+    assert.equal(lyricClip.textStyle?.fontSize, 40)
 
     const subtitle = await executor.execute('add_subtitle', { text: 'Hi', startTime: 0, endTime: 2 })
     assert.equal(subtitle.ok, true)
@@ -1230,21 +1247,25 @@ describe('import tool executor', () => {
 })
 
 describe('refs speech and mix', () => {
-  it('uses the project still and song instead of generating 8 stills', async () => {
+  it('uses a project still as character identity, not every shot start frame', async () => {
     let imageCalls = 0
+    const imageRefs: Array<string | null | undefined> = []
     const videoPaths: Array<string | null | undefined> = []
+    const lastVideoPaths: Array<string | null | undefined> = []
     const host = createHost(makeState({
       clips: [],
       playhead: 0,
       assets: [imageAsset('ken-tune'), audioAsset('midnight-river', 180)],
     }), {
       generation: fakeJobs({
-        runImage: async () => {
+        runImage: async input => {
           imageCalls += 1
-          return { status: 'complete', path: '/tmp/still.png' }
+          imageRefs.push(input.imagePath)
+          return { status: 'complete', path: `/tmp/scene-${imageCalls}.png` }
         },
         runVideo: async input => {
           videoPaths.push(input.imagePath)
+          lastVideoPaths.push(input.lastImagePath)
           return { status: 'complete', path: `/tmp/cut-${videoPaths.length}.mp4` }
         },
       }),
@@ -1253,23 +1274,52 @@ describe('refs speech and mix', () => {
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('assemble_shots', {
       kind: 'music_video',
-      shots: Array.from({ length: 8 }, (_, index) => ({
-        id: `s${index + 1}`,
-        prompt: `cinematic shot ${index + 1} of the subject`,
-        duration: 5,
-      })),
+      shots: [
+        {
+          id: 's1',
+          prompt: 'Ken walks a wet midnight street',
+          duration: 5,
+          firstFramePrompt: 'Ken on wet asphalt, leather jacket',
+          lastFramePrompt: 'Ken looks back toward the river',
+          showProtagonist: true,
+          wardrobe: 'black leather jacket',
+        },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          id: `s${index + 2}`,
+          prompt: `cinematic shot ${index + 2} of Ken`,
+          duration: 5,
+          showProtagonist: true,
+          wardrobe: 'black leather jacket',
+        })),
+        {
+          id: 's8',
+          prompt: 'empty bridge over the river, no people',
+          duration: 5,
+          showProtagonist: false,
+        },
+      ],
+      lyrics: '[0s] Midnight by the river\n[5s] I keep walking',
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 0)
+    assert.equal(imageCalls, 9)
+    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 8)
+    assert.equal(imageRefs.filter(path => path == null).length, 1)
     assert.equal(videoPaths.length, 8)
-    assert.ok(videoPaths.every(path => path === '/tmp/ken-tune.png'))
-    assert.equal(result.jobCount, 8)
+    assert.ok(videoPaths.every(path => path !== '/tmp/ken-tune.png'))
+    assert.ok(videoPaths.every(path => typeof path === 'string' && path.startsWith('/project/image-')))
+    assert.equal(lastVideoPaths[0], '/project/image-scene-2.png')
+    assert.ok(lastVideoPaths.slice(1).every(path => path == null || path === undefined))
+    assert.equal(result.jobCount, 17)
     const clips = activeClips(host.getState())
     assert.equal(clips.filter(item => item.type === 'video').length, 8)
     const music = clips.find(item => item.assetId === 'midnight-river')
     assert.ok(music)
     assert.equal(music.trackIndex, 4)
+    const lyricLines = clips.filter(item => item.textStyle?.positionY === 82)
+    assert.equal(lyricLines.length, 2)
+    assert.ok(lyricLines.every(item => item.trackIndex === 2))
+    assert.ok(lyricLines.some(item => item.textStyle?.text === 'Midnight by the river'))
   })
 
   it('registers a still and resolves it on assemble', async () => {
@@ -1314,10 +1364,15 @@ describe('refs speech and mix', () => {
       musicAssetId: 'theme',
     })
     assert.equal(result.ok, true)
-    assert.equal(imageCalls, 0)
-    assert.deepEqual(videoPaths, ['/tmp/hero-still.png'])
+    assert.equal(imageCalls, 1)
+    assert.deepEqual(videoPaths, ['/project/image-still-from-ref.png'])
     const clips = activeClips(host.getState())
-    assert.ok(clips.some(item => item.type === 'text'))
+    const opening = clips.find(item => item.textStyle?.text === 'Before Sunrise')
+    assert.ok(opening)
+    assert.equal(opening.trackIndex, 1)
+    assert.equal(opening.textStyle?.positionY, 50)
+    assert.equal(opening.textStyle?.fontSize, 72)
+    assert.equal(opening.duration, 3)
     const music = clips.find(item => item.assetId === 'theme')
     assert.ok(music)
     assert.equal(music.trackIndex, 4)

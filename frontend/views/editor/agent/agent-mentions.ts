@@ -152,7 +152,7 @@ export function preferredAssemblyMediaFromMentions(
   const image = mentioned.find(asset => asset.type === 'image')
   const audio = mentioned.find(asset => asset.type === 'audio')
   return {
-    ...(image ? { imageAssetId: image.id } : {}),
+    ...(image ? { referenceAssetId: image.id } : {}),
     ...(audio ? { musicAssetId: audio.id } : {}),
   }
 }

@@ -1,5 +1,6 @@
 export const AGENT_PICTURE_TRACK_INDEX = 0
 export const AGENT_TITLE_TRACK_INDEX = 1
+export const AGENT_LYRIC_TRACK_INDEX = 2
 export const AGENT_VOICEOVER_TRACK_INDEX = 3
 export const AGENT_MUSIC_TRACK_INDEX = 4
 export const AGENT_VOICEOVER_MIX_LEVEL = 1

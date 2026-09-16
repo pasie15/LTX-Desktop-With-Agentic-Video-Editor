@@ -1,4 +1,4 @@
-import type { Asset, AssetTake, SubtitleClip, Timeline, TimelineClip } from '../../../types/project-model.ts'
+import type { Asset, AssetTake, SubtitleClip, TextOverlayStyle, Timeline, TimelineClip } from '../../../types/project-model.ts'
 import { createAssetBinId } from '../../../types/project-model.ts'
 import type { EditorState, EditorUndoSnapshot, TimelineGapSelection } from '../editor-state.ts'
 import type { AgentGenerateActionHost, AgentGenerationJobs } from './agent-generate-runtime.ts'
@@ -22,6 +22,13 @@ import {
   type AgentAssemblyProgress,
 } from './agent-assembly-runtime.ts'
 import type { AgentAssemblyPreferredMedia, AgentAssemblyProposal } from './agent-assembly.ts'
+import {
+  defaultDurationForTextRole,
+  parseTextRole,
+  preferredTrackForTextRole,
+  styleForTextRole,
+  textStyleOverridesFromArgs,
+} from './agent-text.ts'
 import { executeGenerateTool } from './agent-generate-runtime.ts'
 import { analyzeCut, applyNarrationSync, cutReportAsToolResult } from './agent-cut.ts'
 import { normalizeEditPlan, type AgentEditPlan } from './agent-plan.ts'
@@ -47,7 +54,11 @@ export interface AgentEditorActions {
   moveClips: (state: EditorState, params: { clipIds: string[]; deltaTime?: number; targetTrackIndex?: number }) => EditorState
   resizeClip: (state: EditorState, params: { clipId: string; edge: 'start' | 'end'; deltaTime: number }) => EditorState
   deleteClips: (state: EditorState, clipIds: string[]) => EditorState
-  addTextClip: (state: EditorState, params: { style?: { text?: string }; startTime?: number; trackIndex?: number }) => EditorState
+  addTextClip: (state: EditorState, params: {
+    style?: Partial<TextOverlayStyle>
+    startTime?: number
+    trackIndex?: number
+  }) => EditorState
   addSubtitle: (state: EditorState, params: { trackIndex: number; text?: string; startTime?: number; endTime?: number }) => EditorState
   addSubtitleTrack: (state: EditorState) => EditorState
   setSelectedClipIds: (state: EditorState, value: Set<string>) => EditorState
@@ -154,6 +165,14 @@ function clipSlice(clip: TimelineClip) {
     speed: clip.speed,
     volume: clip.volume,
     opacity: clip.opacity,
+    ...(clip.type === 'text' && clip.textStyle ? {
+      text: clip.textStyle.text,
+      fontFamily: clip.textStyle.fontFamily,
+      fontSize: clip.textStyle.fontSize,
+      positionX: clip.textStyle.positionX,
+      positionY: clip.textStyle.positionY,
+      textAlign: clip.textStyle.textAlign,
+    } : {}),
   }
 }
 
@@ -628,19 +647,21 @@ export class AgentToolExecutor {
     if (!timeline) return errorResult('No active timeline')
     const text = asString(args.text)
     if (!text) return errorResult('Missing text')
-    const trackIndex = asNumber(args.trackIndex)
+    const role = parseTextRole(args.role) ?? parseTextRole(args.preset) ?? 'title'
+    const style = styleForTextRole(role, text, textStyleOverridesFromArgs(args))
+    const trackIndex = asNumber(args.trackIndex) ?? preferredTrackForTextRole(role)
     const startTime = asNumber(args.startTime)
-    const duration = asNumber(args.duration)
-    if (trackIndex != null && trackLocked(state, trackIndex)) return errorResult('Track is locked')
+    const duration = asNumber(args.duration) ?? defaultDurationForTextRole(role)
+    if (trackLocked(state, trackIndex)) return errorResult('Track is locked')
     const beforeIds = new Set(timeline.clips.map(item => item.id))
     const next = this.mutate(prev => {
       let current = this.host.actions.addTextClip(prev, {
-        style: { text },
+        style,
         ...(startTime != null ? { startTime } : {}),
-        ...(trackIndex != null ? { trackIndex } : {}),
+        trackIndex,
       })
       const created = activeTimeline(current)?.clips.find(item => !beforeIds.has(item.id))
-      if (created && duration != null && duration !== created.duration) {
+      if (created && duration !== created.duration) {
         current = this.host.actions.resizeClip(current, {
           clipId: created.id,
           edge: 'end',
@@ -651,7 +672,7 @@ export class AgentToolExecutor {
     })
     const created = (activeTimeline(next)?.clips ?? []).find(item => !beforeIds.has(item.id))
     if (!created) return errorResult('Failed to add text clip')
-    return timelineSlice(next, { clip: clipSlice(created) })
+    return timelineSlice(next, { clip: clipSlice(created), role })
   }
 
   private addSubtitle(args: Record<string, unknown>): Record<string, unknown> {
