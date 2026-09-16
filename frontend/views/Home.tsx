@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button'
 import { pathToFileUrl } from '../lib/file-url'
 import type { Project } from '../types/project-model'
 import { useProjectReferencesMigration } from '../hooks/useProjectReferencesMigration'
+import { nextUntitledProjectName, resolveNewProjectName } from './home-project-name.ts'
 
 function formatDate(timestamp: number): string {
   const date = new Date(timestamp)
@@ -128,22 +129,34 @@ export function Home() {
   const { migrationStatus, migrateProjects } = useProjectReferencesMigration()
   const [isCreating, setIsCreating] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const migrationStartedRef = useRef(false)
   const createNameRef = useRef<HTMLInputElement>(null)
   const renameNameRef = useRef<HTMLInputElement>(null)
 
+  const focusNameField = (input: HTMLInputElement | null) => {
+    if (!input) return
+    window.focus()
+    input.focus()
+    input.select()
+  }
+
   useEffect(() => {
     if (!isCreating) return
-    const id = window.setTimeout(() => createNameRef.current?.focus(), 0)
-    return () => window.clearTimeout(id)
+    const timers = [0, 50, 200].map(delay => (
+      window.setTimeout(() => focusNameField(createNameRef.current), delay)
+    ))
+    return () => timers.forEach(id => window.clearTimeout(id))
   }, [isCreating])
 
   useEffect(() => {
     if (!renamingId) return
-    const id = window.setTimeout(() => renameNameRef.current?.focus(), 0)
-    return () => window.clearTimeout(id)
+    const timers = [0, 50, 200].map(delay => (
+      window.setTimeout(() => focusNameField(renameNameRef.current), delay)
+    ))
+    return () => timers.forEach(id => window.clearTimeout(id))
   }, [renamingId])
 
   useEffect(() => {
@@ -158,12 +171,22 @@ export function Home() {
       .filter((project): project is Project => project !== null)
   ), [getProject, projectIds])
 
+  const openCreateDialog = () => {
+    setCreateError(null)
+    setNewProjectName(nextUntitledProjectName(projects.map(project => project.name)))
+    setIsCreating(true)
+  }
+
   const handleCreateProject = () => {
-    if (newProjectName.trim()) {
-      const project = createProject(newProjectName.trim())
+    const name = resolveNewProjectName(newProjectName, projects.map(project => project.name))
+    try {
+      const project = createProject(name)
       setNewProjectName('')
+      setCreateError(null)
       setIsCreating(false)
       openProject(project.id)
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Could not create the project')
     }
   }
   
@@ -237,7 +260,7 @@ export function Home() {
         
         <div className="p-4 border-t border-zinc-800">
           <button
-            onClick={() => setIsCreating(true)}
+            onClick={openCreateDialog}
             className="w-full px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
           >
             <Plus className="h-4 w-4" />
@@ -278,7 +301,7 @@ export function Home() {
               <h3 className="text-lg font-medium text-zinc-400 mb-2">No projects yet</h3>
               <p className="text-zinc-500 mb-6">Create your first project to get started</p>
               <Button 
-                onClick={() => setIsCreating(true)}
+                onClick={openCreateDialog}
                 className="bg-blue-600 hover:bg-blue-500"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -307,42 +330,61 @@ export function Home() {
       
       {/* Create Project Modal */}
       {isCreating && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 rounded-xl p-6 w-full max-w-md border border-zinc-800">
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-[80]"
+          onMouseDown={() => focusNameField(createNameRef.current)}
+        >
+          <form
+            className="bg-zinc-900 rounded-xl p-6 w-full max-w-md border border-zinc-800"
+            onMouseDown={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleCreateProject()
+            }}
+          >
             <h2 className="text-xl font-semibold text-white mb-4">Create New Project</h2>
+            <label htmlFor="new-project-name" className="sr-only">Project name</label>
             <input
+              id="new-project-name"
               ref={createNameRef}
               type="text"
+              name="projectName"
               value={newProjectName}
-              onChange={(e) => setNewProjectName(e.target.value)}
+              onChange={(e) => {
+                setCreateError(null)
+                setNewProjectName(e.target.value)
+              }}
               placeholder="Project name"
               className="w-full px-4 py-3 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder:text-zinc-500 focus:outline-none focus:border-blue-500"
               autoFocus
               autoComplete="off"
               spellCheck={false}
-              onMouseDown={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
+              onMouseDown={(e) => {
                 e.stopPropagation()
-                if (e.key === 'Enter') handleCreateProject()
+                focusNameField(e.currentTarget)
               }}
+              onKeyDown={(e) => e.stopPropagation()}
             />
+            {createError && (
+              <p className="mt-2 text-sm text-red-400">{createError}</p>
+            )}
             <div className="flex gap-3 mt-6">
               <Button
+                type="button"
                 variant="outline"
-                onClick={() => { setIsCreating(false); setNewProjectName('') }}
+                onClick={() => { setIsCreating(false); setNewProjectName(''); setCreateError(null) }}
                 className="flex-1 border-zinc-700"
               >
                 Cancel
               </Button>
               <Button
-                onClick={handleCreateProject}
-                disabled={!newProjectName.trim()}
+                type="submit"
                 className="flex-1 bg-blue-600 hover:bg-blue-500"
               >
                 Create
               </Button>
             </div>
-          </div>
+          </form>
         </div>
       )}
       
