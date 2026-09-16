@@ -915,7 +915,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         trackIndex: { type: 'number' },
         startTime: { type: 'number' },
         confirmed: { type: 'boolean' },
-        referenceAssetId: { type: 'string', description: 'Existing still for img2img / IC-LoRA-style continuity' },
+        referenceAssetId: { type: 'string', description: 'Scene still to edit (img2img). Do not pass a character portrait — identity stills are text-to-image.' },
         refId: { type: 'string', description: 'Named ref from list_refs; resolved to an image asset' },
       },
     },

@@ -973,7 +973,7 @@ describe('generate tool executor', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: '/tmp/ken.png', strength: 0.72 }])
+    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
   })
 
@@ -1347,8 +1347,8 @@ describe('refs speech and mix', () => {
     })
     assert.equal(result.ok, true)
     assert.equal(imageCalls, 10)
-    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 9)
-    assert.equal(imageRefs.filter(path => path == null).length, 1)
+    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 0)
+    assert.ok(imageRefs.every(path => path == null))
     assert.equal(videoPaths.length, 8)
     assert.ok(videoPaths.every(path => path !== '/tmp/ken-tune.png'))
     assert.ok(videoPaths.every(path => typeof path === 'string' && path.startsWith('/project/image-')))
@@ -1392,7 +1392,7 @@ describe('refs speech and mix', () => {
     host.generation = fakeJobs({
       runImage: async input => {
         imageCalls += 1
-        assert.equal(input.imagePath, '/tmp/hero-still.png')
+        assert.equal(input.imagePath, undefined)
         return { status: 'complete', path: '/tmp/still-from-ref.png' }
       },
       runVideo: async input => {
@@ -1423,7 +1423,7 @@ describe('refs speech and mix', () => {
     assert.equal(music.volume, 0.25)
   })
 
-  it('img2imgs a bound character still even when showProtagonist is omitted', async () => {
+  it('generates a new scene still from a character ref without editing the portrait', async () => {
     const imageRefs: Array<{ path?: string | null; strength?: number }> = []
     const videoPaths: Array<string | null | undefined> = []
     const host = createHost(makeState({
@@ -1452,8 +1452,8 @@ describe('refs speech and mix', () => {
     })
     assert.equal(result.ok, true)
     assert.deepEqual(imageRefs, [
-      { path: '/tmp/hero-still.png', strength: 0.72 },
-      { path: '/tmp/hero-still.png', strength: 0.72 },
+      { path: undefined, strength: undefined },
+      { path: undefined, strength: undefined },
     ])
     assert.deepEqual(videoPaths, ['/project/image-scene-from-hero.png'])
   })

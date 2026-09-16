@@ -5,7 +5,7 @@ import {
   nextStepForCheckpoint,
   type AgentReviewPreview,
 } from './agent-approvals.ts'
-import { AGENT_DEFAULT_REF_STRENGTH, AGENT_IDENTITY_REF_STRENGTH } from './agent-mix.ts'
+import { AGENT_DEFAULT_REF_STRENGTH } from './agent-mix.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import {
@@ -498,15 +498,17 @@ async function generateStill(
     if (still.type !== 'image') return errorResult('referenceAssetId must be an image asset')
     referencePath = still.path
   }
-  const refStrength = asBoolean(args.identityReference)
+  const identityRef = asBoolean(args.identityReference)
     || isIdentityStillId(referenceAssetId ?? undefined, identityIds)
-    ? AGENT_IDENTITY_REF_STRENGTH
-    : AGENT_DEFAULT_REF_STRENGTH
+  // Z-Image imagePath is img2img *edit* of those pixels. A portrait in → a portrait out.
+  // Character identity must be text-to-image (new scene). Only pass imagePath to restyle
+  // an already-generated scene still, never a character headshot.
+  const editSourcePath = identityRef ? null : referencePath
   host.onProgress?.({ toolName: 'generate_image', percent: 0, status: 'Generating image...' })
   const job = await jobs.runImage({
     prompt,
     settings,
-    ...(referencePath ? { imagePath: referencePath, strength: refStrength } : {}),
+    ...(editSourcePath ? { imagePath: editSourcePath, strength: AGENT_DEFAULT_REF_STRENGTH } : {}),
     signal: host.getAbortSignal?.() ?? undefined,
     onProgress: progress => host.onProgress?.({ toolName: 'generate_image', ...progress }),
   })

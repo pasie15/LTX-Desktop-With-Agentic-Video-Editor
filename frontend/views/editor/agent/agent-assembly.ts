@@ -169,8 +169,8 @@ export function characterSheetPrompt(input: {
   return (
     `Character sheet / lookbook of ${who}.${identityLine} Same face, body, and identity as the reference portrait. `
     + `Front and three-quarter views. Wardrobe looks: ${lookLine}. Clean studio backdrop, even light. `
-    + 'Define the character and the different looks. This is a character bible, not a scene and not a music-video frame. '
-    + 'Do not copy the reference photo as a single hero still.'
+    + 'Define the character and the different looks. Full-body / three-quarter lookbook on a clean studio backdrop. '
+    + 'This is a character bible, not a cropped headshot and not a copy of the reference photo.'
   )
 }
 
@@ -617,7 +617,7 @@ function withScenePromptExtras(
   if (shot.objects) extras.push(`Stage objects: ${shot.objects}`)
   if (shot.wardrobe) extras.push(`Wardrobe: ${shot.wardrobe}`)
   if (shot.showProtagonist === false) extras.push('Do not show the protagonist. Environment, extras, or objects only.')
-  else if (shotShowsProtagonist(shot)) extras.push('Match the registered character identity; stage this beat, do not copy the reference portrait as the frame.')
+  else if (shotShowsProtagonist(shot)) extras.push('Same person as the referenced artist. Full cinematic scene, new pose and setting. Not a studio headshot. Not a copy of the reference portrait.')
   if (shot.performers) extras.push(`On camera: ${shot.performers}`)
   if (shot.others) extras.push(`Others in the scene: ${shot.others}`)
   const performance = scenePerformanceLine(shot, which)
