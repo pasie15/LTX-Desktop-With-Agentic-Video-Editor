@@ -76,6 +76,8 @@ class TestSettingsCamelCaseKeys:
         assert "seed_locked" not in data
         assert "hasFalApiKey" in data
         assert "hasElevenLabsApiKey" in data
+        assert "hasSyncApiKey" in data
+        assert "hasRunwayApiKey" in data
         assert "fastModel" not in data
         assert "fast_model" not in data
         assert "proModel" not in data

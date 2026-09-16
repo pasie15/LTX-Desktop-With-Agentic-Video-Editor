@@ -10,6 +10,8 @@ export interface AppSettings {
   userPrefersLtxApiVideoGenerations: boolean
   hasFalApiKey: boolean
   hasElevenLabsApiKey: boolean
+  hasSyncApiKey: boolean
+  hasRunwayApiKey: boolean
   userPrefersFalApiImageGenerations: boolean
   hasGeminiApiKey: boolean
   geminiModel: string
@@ -40,6 +42,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   userPrefersLtxApiVideoGenerations: false,
   hasFalApiKey: false,
   hasElevenLabsApiKey: false,
+  hasSyncApiKey: false,
+  hasRunwayApiKey: false,
   userPrefersFalApiImageGenerations: false,
   hasGeminiApiKey: false,
   geminiModel: '',
@@ -68,6 +72,8 @@ interface AppSettingsContextValue {
   saveLtxApiKey: (value: string) => Promise<void>
   saveFalApiKey: (value: string) => Promise<void>
   saveElevenLabsApiKey: (value: string) => Promise<void>
+  saveSyncApiKey: (value: string) => Promise<void>
+  saveRunwayApiKey: (value: string) => Promise<void>
   saveGeminiApiKey: (value: string) => Promise<void>
   forceApiGenerations: boolean
   shouldVideoGenerateWithLtxApi: boolean
@@ -102,6 +108,8 @@ function normalizeAppSettings(data: Partial<AppSettings>): AppSettings {
     userPrefersLtxApiVideoGenerations: data.userPrefersLtxApiVideoGenerations ?? DEFAULT_APP_SETTINGS.userPrefersLtxApiVideoGenerations,
     hasFalApiKey: data.hasFalApiKey ?? DEFAULT_APP_SETTINGS.hasFalApiKey,
     hasElevenLabsApiKey: data.hasElevenLabsApiKey ?? DEFAULT_APP_SETTINGS.hasElevenLabsApiKey,
+    hasSyncApiKey: data.hasSyncApiKey ?? DEFAULT_APP_SETTINGS.hasSyncApiKey,
+    hasRunwayApiKey: data.hasRunwayApiKey ?? DEFAULT_APP_SETTINGS.hasRunwayApiKey,
     userPrefersFalApiImageGenerations: data.userPrefersFalApiImageGenerations ?? DEFAULT_APP_SETTINGS.userPrefersFalApiImageGenerations,
     hasGeminiApiKey: data.hasGeminiApiKey ?? DEFAULT_APP_SETTINGS.hasGeminiApiKey,
     geminiModel: data.geminiModel ?? DEFAULT_APP_SETTINGS.geminiModel,
@@ -235,10 +243,16 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!result.ok) {
       throw new Error(result.error.message)
     }
-    const extra = result.data as typeof result.data & { hasElevenLabsApiKey?: boolean }
+    const extra = result.data as typeof result.data & {
+      hasElevenLabsApiKey?: boolean
+      hasSyncApiKey?: boolean
+      hasRunwayApiKey?: boolean
+    }
     setSettings(normalizeAppSettings({
       ...result.data,
       hasElevenLabsApiKey: extra.hasElevenLabsApiKey,
+      hasSyncApiKey: extra.hasSyncApiKey,
+      hasRunwayApiKey: extra.hasRunwayApiKey,
     }))
     setIsLoaded(true)
   }, [])
@@ -275,6 +289,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
         hasLtxApiKey: _a,
         hasFalApiKey: _b,
         hasElevenLabsApiKey: _eleven,
+        hasSyncApiKey: _sync,
+        hasRunwayApiKey: _runway,
         hasGeminiApiKey: _c,
         hasAgentLlmKey: _e,
         modelsDir: _d,
@@ -333,6 +349,30 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     await refreshSettings()
   }, [refreshSettings])
 
+  const saveSyncApiKey = useCallback(async (value: string) => {
+    const response = await backendFetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ syncApiKey: value }),
+    })
+    if (!response.ok) {
+      throw new Error('Failed to save Sync.so API key')
+    }
+    await refreshSettings()
+  }, [refreshSettings])
+
+  const saveRunwayApiKey = useCallback(async (value: string) => {
+    const response = await backendFetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runwayApiKey: value }),
+    })
+    if (!response.ok) {
+      throw new Error('Failed to save Runway API key')
+    }
+    await refreshSettings()
+  }, [refreshSettings])
+
   const shouldVideoGenerateWithLtxApi =
     forceApiGenerations || (settings.userPrefersLtxApiVideoGenerations && settings.hasLtxApiKey)
   const shouldImageGenerateWithFalApi =
@@ -348,6 +388,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       saveLtxApiKey,
       saveFalApiKey,
       saveElevenLabsApiKey,
+      saveSyncApiKey,
+      saveRunwayApiKey,
       saveGeminiApiKey,
       forceApiGenerations,
       shouldVideoGenerateWithLtxApi,
@@ -356,7 +398,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       modelsVersion,
       notifyModelsChanged,
     }),
-    [cudaAvailable, forceApiGenerations, isLoaded, modelsVersion, notifyModelsChanged, refreshSettings, runtimePolicyLoaded, saveElevenLabsApiKey, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, settings, shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi, updateSettings],
+    [cudaAvailable, forceApiGenerations, isLoaded, modelsVersion, notifyModelsChanged, refreshSettings, runtimePolicyLoaded, saveElevenLabsApiKey, saveFalApiKey, saveGeminiApiKey, saveLtxApiKey, saveRunwayApiKey, saveSyncApiKey, settings, shouldVideoGenerateWithLtxApi, shouldImageGenerateWithFalApi, updateSettings],
   )
 
   return <AppSettingsContext.Provider value={contextValue}>{children}</AppSettingsContext.Provider>

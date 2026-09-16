@@ -215,7 +215,7 @@ function aboutUpdateAction(
 }
 
 export function SettingsModal({ isOpen, onClose, initialTab, initialReason, update, onOpenUpdate, onCheckForUpdates }: SettingsModalProps) {
-  const { settings, updateSettings, saveLtxApiKey, saveFalApiKey, saveElevenLabsApiKey, saveGeminiApiKey, refreshSettings, forceApiGenerations, cudaAvailable, notifyModelsChanged } = useAppSettings()
+  const { settings, updateSettings, saveLtxApiKey, saveFalApiKey, saveElevenLabsApiKey, saveSyncApiKey, saveRunwayApiKey, saveGeminiApiKey, refreshSettings, forceApiGenerations, cudaAvailable, notifyModelsChanged } = useAppSettings()
   const onSettingsChange = (next: AppSettings) => updateSettings(next)
   const [activeTab, setActiveTab] = useState<TabId>('general')
   const tabBodyRef = useRef<HTMLDivElement>(null)
@@ -228,6 +228,8 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
   const [ltxApiKeyInput, setLtxApiKeyInput] = useState('')
   const [falApiKeyInput, setFalApiKeyInput] = useState('')
   const [elevenLabsApiKeyInput, setElevenLabsApiKeyInput] = useState('')
+  const [syncApiKeyInput, setSyncApiKeyInput] = useState('')
+  const [runwayApiKeyInput, setRunwayApiKeyInput] = useState('')
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('')
   const showGeminiKeyBanner = initialReason === 'geminiKeyRequired'
   const showAgentLlmKeyBanner = initialReason === 'agentLlmKeyRequired'
@@ -1194,7 +1196,7 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                 </div>
 
                 <p className="text-xs text-zinc-500 leading-relaxed">
-                  Your FAL AI key is used for generating or editing images with Z Image Turbo when API generations are enabled.
+                  Used for Z Image Turbo images and dedicated lip-sync (Fal Sync lipsync v3) on singing and talking shots.
                 </p>
 
                 <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
@@ -1288,6 +1290,128 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialReason, upda
                         : 'bg-zinc-800 text-zinc-500'
                     }`}>
                       {settings.hasElevenLabsApiKey ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          Key configured
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3 w-3" />
+                          Optional
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sync.so API Key Section */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-cyan-400" />
+                  <h3 className="text-sm font-semibold text-white">Sync.so</h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Optional</span>
+                </div>
+
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Native Sync.so lip-sync for singing and talking shots. Used when Fal is not configured, or when the Agent asks for provider sync.
+                </p>
+
+                <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
+                  <div className="flex gap-2">
+                    <LtxApiKeyInput
+                      value={syncApiKeyInput}
+                      onChange={(e) => setSyncApiKeyInput(e.target.value)}
+                      placeholder={settings.hasSyncApiKey ? 'Enter new key to replace...' : 'Enter your Sync.so API key...'}
+                      stopPropagation
+                      className="flex-1"
+                    />
+                    <button
+                      onClick={() => {
+                        const trimmed = syncApiKeyInput.trim()
+                        if (!trimmed) return
+                        void saveSyncApiKey(trimmed)
+                        setSyncApiKeyInput('')
+                      }}
+                      disabled={!syncApiKeyInput.trim()}
+                      className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                    >
+                      Save Key
+                    </button>
+                  </div>
+                  <ApiKeyHelperRow
+                    stopPropagation
+                    label="Get Sync.so API key"
+                    onOpenKey={() => void window.electronAPI.openExternalUrl({ url: 'https://sync.so/' })}
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 ${
+                      settings.hasSyncApiKey
+                        ? 'bg-green-500/10 text-green-400'
+                        : 'bg-zinc-800 text-zinc-500'
+                    }`}>
+                      {settings.hasSyncApiKey ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          Key configured
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3 w-3" />
+                          Optional
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Runway API Key Section */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-cyan-400" />
+                  <h3 className="text-sm font-semibold text-white">Runway</h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Optional</span>
+                </div>
+
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Stored for future Runway features. Runway&apos;s official API has no dedicated lip-sync endpoint, so the Agent falls back to Fal or Sync.so and says so.
+                </p>
+
+                <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
+                  <div className="flex gap-2">
+                    <LtxApiKeyInput
+                      value={runwayApiKeyInput}
+                      onChange={(e) => setRunwayApiKeyInput(e.target.value)}
+                      placeholder={settings.hasRunwayApiKey ? 'Enter new key to replace...' : 'Enter your Runway API key...'}
+                      stopPropagation
+                      className="flex-1"
+                    />
+                    <button
+                      onClick={() => {
+                        const trimmed = runwayApiKeyInput.trim()
+                        if (!trimmed) return
+                        void saveRunwayApiKey(trimmed)
+                        setRunwayApiKeyInput('')
+                      }}
+                      disabled={!runwayApiKeyInput.trim()}
+                      className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                    >
+                      Save Key
+                    </button>
+                  </div>
+                  <ApiKeyHelperRow
+                    stopPropagation
+                    label="Get Runway API key"
+                    onOpenKey={() => void window.electronAPI.openExternalUrl({ url: 'https://dev.runwayml.com/' })}
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 ${
+                      settings.hasRunwayApiKey
+                        ? 'bg-green-500/10 text-green-400'
+                        : 'bg-zinc-800 text-zinc-500'
+                    }`}>
+                      {settings.hasRunwayApiKey ? (
                         <>
                           <Check className="h-3 w-3" />
                           Key configured

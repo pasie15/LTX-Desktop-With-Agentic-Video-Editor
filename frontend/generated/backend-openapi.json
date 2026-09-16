@@ -830,6 +830,17 @@
             ],
             "title": "Diffusionstagecacheenabled"
           },
+          "elevenlabsApiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevenlabsapikey"
+          },
           "falApiKey": {
             "anyOf": [
               {
@@ -944,6 +955,17 @@
             ],
             "title": "Promptenhancerproviderpreference"
           },
+          "runwayApiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runwayapikey"
+          },
           "seedLocked": {
             "anyOf": [
               {
@@ -954,6 +976,17 @@
               }
             ],
             "title": "Seedlocked"
+          },
+          "syncApiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Syncapikey"
           },
           "useConvVae": {
             "anyOf": [
@@ -1480,6 +1513,52 @@
           "size_bytes"
         ],
         "title": "DownloadVariant",
+        "type": "object"
+      },
+      "ElevenLabsSpeechRequest": {
+        "properties": {
+          "modelId": {
+            "default": "",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "voiceId": {
+            "default": "",
+            "title": "Voiceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ElevenLabsSpeechRequest",
+        "type": "object"
+      },
+      "ElevenLabsSpeechResponse": {
+        "properties": {
+          "modelId": {
+            "title": "Modelid",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "voiceId": {
+            "title": "Voiceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "voiceId",
+          "modelId"
+        ],
+        "title": "ElevenLabsSpeechResponse",
         "type": "object"
       },
       "EnhancePromptRequest": {
@@ -3519,6 +3598,76 @@
         "title": "LicenseSpec",
         "type": "object"
       },
+      "LipSyncRequest": {
+        "properties": {
+          "audioPath": {
+            "default": "",
+            "title": "Audiopath",
+            "type": "string"
+          },
+          "fallback": {
+            "default": true,
+            "title": "Fallback",
+            "type": "boolean"
+          },
+          "imagePath": {
+            "default": "",
+            "title": "Imagepath",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "fal",
+              "sync",
+              "runway"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "videoPath": {
+            "default": "",
+            "title": "Videopath",
+            "type": "string"
+          }
+        },
+        "title": "LipSyncRequest",
+        "type": "object"
+      },
+      "LipSyncResponse": {
+        "properties": {
+          "fallbackReason": {
+            "default": "",
+            "title": "Fallbackreason",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "provider",
+          "model"
+        ],
+        "title": "LipSyncResponse",
+        "type": "object"
+      },
       "LoraCatalogItem": {
         "description": "Base catalog entry — used as-is for a plain LoRA.",
         "properties": {
@@ -4680,6 +4829,11 @@
             "title": "Hasagentllmkey",
             "type": "boolean"
           },
+          "hasElevenLabsApiKey": {
+            "default": false,
+            "title": "Haselevenlabsapikey",
+            "type": "boolean"
+          },
           "hasFalApiKey": {
             "default": false,
             "title": "Hasfalapikey",
@@ -4693,6 +4847,16 @@
           "hasLtxApiKey": {
             "default": false,
             "title": "Hasltxapikey",
+            "type": "boolean"
+          },
+          "hasRunwayApiKey": {
+            "default": false,
+            "title": "Hasrunwayapikey",
+            "type": "boolean"
+          },
+          "hasSyncApiKey": {
+            "default": false,
+            "title": "Hassyncapikey",
             "type": "boolean"
           },
           "lockedSeed": {
@@ -5588,6 +5752,57 @@
         ]
       }
     },
+    "/api/elevenlabs/speech": {
+      "post": {
+        "operationId": "route_elevenlabs_speech_api_elevenlabs_speech_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ElevenLabsSpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElevenLabsSpeechResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Elevenlabs Speech",
+        "tags": [
+          "elevenlabs"
+        ]
+      }
+    },
     "/api/enhance-prompt": {
       "post": {
         "description": "POST /api/enhance-prompt.",
@@ -6299,6 +6514,57 @@
         "summary": "Route Ic Lora Download Progress",
         "tags": [
           "ic-loras"
+        ]
+      }
+    },
+    "/api/lipsync": {
+      "post": {
+        "operationId": "route_lipsync_api_lipsync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LipSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LipSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Client Error"
+          },
+          "5XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPErrorResponse"
+                }
+              }
+            },
+            "description": "Server Error"
+          }
+        },
+        "summary": "Route Lipsync",
+        "tags": [
+          "lipsync"
         ]
       }
     },

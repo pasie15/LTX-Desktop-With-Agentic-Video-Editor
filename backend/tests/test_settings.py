@@ -34,6 +34,8 @@ class TestGetSettings:
         assert data["userPrefersLtxApiVideoGenerations"] is False
         assert data["hasFalApiKey"] is False
         assert data["hasElevenLabsApiKey"] is False
+        assert data["hasSyncApiKey"] is False
+        assert data["hasRunwayApiKey"] is False
         assert data["useLocalTextEncoder"] is False
         assert data["promptCacheSize"] == 100
         assert data["promptEnhancerEnabledT2V"] is True
@@ -114,6 +116,8 @@ class TestPostSettings:
                 "geminiApiKey": "gemini-key-xyz",
                 "falApiKey": "fal-key-123",
                 "elevenlabsApiKey": "el-key-456",
+                "syncApiKey": "sync-key-789",
+                "runwayApiKey": "rw-key-000",
             },
         )
         assert r.status_code == 200
@@ -121,6 +125,8 @@ class TestPostSettings:
         assert test_state.state.app_settings.gemini_api_key == "gemini-key-xyz"
         assert test_state.state.app_settings.fal_api_key == "fal-key-123"
         assert test_state.state.app_settings.elevenlabs_api_key == "el-key-456"
+        assert test_state.state.app_settings.sync_api_key == "sync-key-789"
+        assert test_state.state.app_settings.runway_api_key == "rw-key-000"
 
     def test_update_user_prefers_api_video_generations(self, client, test_state):
         r = client.post("/api/settings", json={"userPrefersLtxApiVideoGenerations": True})

@@ -1363,3 +1363,22 @@ class ElevenLabsSpeechResponse(BaseModel):
     path: str
     voiceId: str
     modelId: str
+
+
+LipSyncProvider = Literal["auto", "fal", "sync", "runway"]
+
+
+class LipSyncRequest(BaseModel):
+    videoPath: str = ""
+    audioPath: str = ""
+    imagePath: str = ""
+    provider: LipSyncProvider = "auto"
+    model: str = ""
+    fallback: bool = True
+
+
+class LipSyncResponse(BaseModel):
+    path: str
+    provider: str
+    model: str
+    fallbackReason: str = ""

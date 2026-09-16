@@ -191,6 +191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/elevenlabs/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Elevenlabs Speech */
+        post: operations["route_elevenlabs_speech_api_elevenlabs_speech_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/enhance-prompt": {
         parameters: {
             query?: never;
@@ -441,6 +458,23 @@ export interface paths {
         get: operations["route_ic_lora_download_progress_api_ic_loras_download_progress_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lipsync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Route Lipsync */
+        post: operations["route_lipsync_api_lipsync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1231,6 +1265,8 @@ export interface components {
             agentLlmProviders?: components["schemas"]["AgentLlmProviderSettings"][] | null;
             /** Diffusionstagecacheenabled */
             diffusionStageCacheEnabled?: boolean | null;
+            /** Elevenlabsapikey */
+            elevenlabsApiKey?: string | null;
             /** Falapikey */
             falApiKey?: string | null;
             /** Geminiapikey */
@@ -1251,8 +1287,12 @@ export interface components {
             promptEnhancerEnabledT2V?: boolean | null;
             /** Promptenhancerproviderpreference */
             promptEnhancerProviderPreference?: ("local" | "api") | null;
+            /** Runwayapikey */
+            runwayApiKey?: string | null;
             /** Seedlocked */
             seedLocked?: boolean | null;
+            /** Syncapikey */
+            syncApiKey?: string | null;
             /** Useconvvae */
             useConvVae?: boolean | null;
             /** Uselocaltextencoder */
@@ -1414,6 +1454,30 @@ export interface components {
             label: string;
             /** Size Bytes */
             size_bytes: number;
+        };
+        /** ElevenLabsSpeechRequest */
+        ElevenLabsSpeechRequest: {
+            /**
+             * Modelid
+             * @default
+             */
+            modelId: string;
+            /** Text */
+            text: string;
+            /**
+             * Voiceid
+             * @default
+             */
+            voiceId: string;
+        };
+        /** ElevenLabsSpeechResponse */
+        ElevenLabsSpeechResponse: {
+            /** Modelid */
+            modelId: string;
+            /** Path */
+            path: string;
+            /** Voiceid */
+            voiceId: string;
         };
         /**
          * EnhancePromptRequest
@@ -2174,6 +2238,54 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /** LipSyncRequest */
+        LipSyncRequest: {
+            /**
+             * Audiopath
+             * @default
+             */
+            audioPath: string;
+            /**
+             * Fallback
+             * @default true
+             */
+            fallback: boolean;
+            /**
+             * Imagepath
+             * @default
+             */
+            imagePath: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Provider
+             * @default auto
+             * @enum {string}
+             */
+            provider: "auto" | "fal" | "sync" | "runway";
+            /**
+             * Videopath
+             * @default
+             */
+            videoPath: string;
+        };
+        /** LipSyncResponse */
+        LipSyncResponse: {
+            /**
+             * Fallbackreason
+             * @default
+             */
+            fallbackReason: string;
+            /** Model */
+            model: string;
+            /** Path */
+            path: string;
+            /** Provider */
+            provider: string;
+        };
         /**
          * LoraCatalogItem
          * @description Base catalog entry — used as-is for a plain LoRA.
@@ -2585,6 +2697,11 @@ export interface components {
              */
             hasAgentLlmKey: boolean;
             /**
+             * Haselevenlabsapikey
+             * @default false
+             */
+            hasElevenLabsApiKey: boolean;
+            /**
              * Hasfalapikey
              * @default false
              */
@@ -2599,6 +2716,16 @@ export interface components {
              * @default false
              */
             hasLtxApiKey: boolean;
+            /**
+             * Hasrunwayapikey
+             * @default false
+             */
+            hasRunwayApiKey: boolean;
+            /**
+             * Hassyncapikey
+             * @default false
+             */
+            hasSyncApiKey: boolean;
             /**
              * Lockedseed
              * @default 42
@@ -3194,6 +3321,48 @@ export interface operations {
             };
         };
     };
+    route_elevenlabs_speech_api_elevenlabs_speech_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElevenLabsSpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElevenLabsSpeechResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
     route_enhance_prompt_api_enhance_prompt_post: {
         parameters: {
             query?: never;
@@ -3743,6 +3912,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IcLoraDownloadProgressResponse"];
+                };
+            };
+            /** @description Client Error */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+            /** @description Server Error */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPErrorResponse"];
+                };
+            };
+        };
+    };
+    route_lipsync_api_lipsync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LipSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LipSyncResponse"];
                 };
             };
             /** @description Client Error */
