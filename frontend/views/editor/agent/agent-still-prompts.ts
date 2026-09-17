@@ -25,7 +25,17 @@ export const LOOKBOOK_TAIL =
   + 'Not a cropped headshot. Not a reprint of a portrait photograph.'
 
 export function isLookbookPrompt(prompt: string): boolean {
-  return /character sheet|lookbook|turnaround|costume bible|t-pose|reference sheet/i.test(prompt)
+  return /character sheet|lookbook|turnaround|costume bible|t-pose|reference sheet|orthographic lookbook|seamless studio backdrop/i.test(prompt)
+}
+
+/** Drop catalog language so a T-pose first-frame note can still become a scene still. */
+export function stripLookbookLanguage(prompt: string): string {
+  return prompt
+    .replace(/character sheet|lookbook|turnaround|costume bible|reference sheet/gi, '')
+    .replace(/\bt-poses?\b/gi, 'standing pose')
+    .replace(/orthographic(?: lookbook)?|seamless studio backdrop|studio catalog/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function isEmptyScenePrompt(prompt: string): boolean {
@@ -55,14 +65,23 @@ export function frameIdentityImagePrompt(prompt: string): string {
   return `${SCENE_STILL_LEAD}${body} ${SCENE_STILL_TAIL}`
 }
 
-/** Video starts are scene stills. Never mint another lookbook as an i2v frame. */
+/** Video starts and scene stills. Never mint another lookbook as a frame. */
 export function sceneStillPromptForVideo(prompt: string): string {
   const trimmed = prompt.trim()
-  if (!trimmed || isLookbookPrompt(trimmed)) {
+  if (!trimmed) {
     return frameIdentityImagePrompt(
       'The referenced character in a real cinematic location matching the scene. '
       + 'Full or three-quarter body, wardrobe from the character bible. '
       + 'Not a studio catalog and not a cropped face.',
+    )
+  }
+  if (isLookbookPrompt(trimmed)) {
+    const scene = stripLookbookLanguage(trimmed)
+    return frameIdentityImagePrompt(
+      scene
+        || 'The referenced character in a real cinematic location matching the scene. '
+          + 'Full or three-quarter body, wardrobe from the character bible. '
+          + 'Not a studio catalog and not a cropped face.',
     )
   }
   return frameIdentityImagePrompt(trimmed)

@@ -1708,6 +1708,7 @@ describe('refs speech and mix', () => {
     const executor = new AgentToolExecutor(host)
     const result = await executor.execute('generate_image', {
       prompt: 'character sheet of the paper boy, turnaround',
+      characterSheet: true,
       confirmed: true,
     })
     assert.equal(result.ok, true)

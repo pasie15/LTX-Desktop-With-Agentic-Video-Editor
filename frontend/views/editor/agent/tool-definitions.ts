@@ -229,7 +229,7 @@ export const EDIT_TOOL_ALLOWED_KEYS: Record<AgentEditToolName, readonly string[]
 }
 
 export const GENERATE_TOOL_ALLOWED_KEYS: Record<AgentGenerateToolName, readonly string[]> = {
-  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'identityReference', 'animateSource', 'skipReview'],
+  generate_image: ['prompt', 'resolution', 'aspectRatio', 'destination', 'trackIndex', 'startTime', 'confirmed', 'referenceAssetId', 'refId', 'identityReference', 'characterSheet', 'animateSource', 'skipReview'],
   generate_video: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'lastImageAssetId', 'refId', 'destination', 'trackIndex', 'startTime', 'confirmed', 'animateSource', 'skipReview'],
   fill_gap: ['prompt', 'model', 'duration', 'resolution', 'audio', 'imageAssetId', 'trackIndex', 'start', 'end', 'confirmed'],
   regenerate_clip: ['clipId', 'assetId', 'confirmed'],
@@ -918,6 +918,7 @@ export const GENERATE_TOOL_DEFINITIONS: AgentToolDeclaration[] = [
         referenceAssetId: { type: 'string', description: 'Generated scene still to restyle (img2img). An imported portrait is identity only and is never edited. The runtime generates a new text-to-image scene instead.' },
         refId: { type: 'string', description: 'Named ref from list_refs; resolved to an image asset. Identity only, never img2img.' },
         identityReference: { type: 'boolean', description: 'Force text-to-image identity (no imagePath). Implied for imported photos.' },
+        characterSheet: { type: 'boolean', description: 'Only for the one-per-character design bible (face/body/T-pose/side or a single lookbook). Scene start frames must omit this so T-pose notes cannot reprint a catalog grid.' },
         animateSource: { type: 'boolean', description: 'Only if the user said animate this exact photo. Then the imported image may be img2img / i2v source.' },
       },
     },

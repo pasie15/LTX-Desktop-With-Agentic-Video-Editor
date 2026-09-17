@@ -22,9 +22,11 @@ describe('identity image prompt framing', () => {
   })
 
   it('never mints a lookbook when framing a video start', () => {
-    const fromSheet = sceneStillPromptForVideo('Character sheet / lookbook of Ken Tune, T-pose')
+    const fromSheet = sceneStillPromptForVideo('Character sheet / lookbook of Ken Tune, T-pose at the midnight river')
     assert.match(fromSheet, /^Cinematic 16:9 production still/)
     assert.equal(isLookbookPrompt(fromSheet), false)
+    assert.doesNotMatch(fromSheet, /T-pose/)
+    assert.match(fromSheet, /midnight river/)
     const fromScene = sceneStillPromptForVideo('Ken on a wet street at night')
     assert.match(fromScene, /Ken on a wet street/)
   })

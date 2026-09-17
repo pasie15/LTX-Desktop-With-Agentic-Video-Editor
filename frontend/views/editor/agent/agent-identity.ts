@@ -13,7 +13,7 @@ export interface IdentityStillAsset {
   generationParams?: unknown
 }
 
-function promptFromAsset(asset: IdentityStillAsset): string {
+export function promptFromAsset(asset: IdentityStillAsset): string {
   const params = asset.generationParams
   if (params && typeof params === 'object' && !Array.isArray(params)) {
     const prompt = (params as { prompt?: unknown }).prompt

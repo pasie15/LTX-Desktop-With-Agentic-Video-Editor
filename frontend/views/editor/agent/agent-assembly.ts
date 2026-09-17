@@ -6,8 +6,14 @@ import {
 } from './agent-generate-runtime.ts'
 import { normalizeTextOverlays, type AgentTextOverlay } from './agent-text.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
-import { collectIdentityStillIds, withoutIdentityStartFrames } from './agent-identity.ts'
-import { frameIdentityImagePrompt } from './agent-still-prompts.ts'
+import {
+  collectIdentityStillIds,
+  isCharacterSheetAsset,
+  promptFromAsset,
+  withoutIdentityStartFrames,
+  type IdentityStillAsset,
+} from './agent-identity.ts'
+import { frameIdentityImagePrompt, sceneStillPromptForVideo } from './agent-still-prompts.ts'
 
 export const MAX_ASSEMBLY_GENERATE_JOBS = 8
 
@@ -28,12 +34,17 @@ export interface AgentCharacterBible {
   looks?: AgentCharacterLook[]
 }
 
+export type AgentCharacterSheetKind = 'face' | 'body' | 'tpose' | 'side' | 'lookbook'
+
 export interface AgentCharacterSheet {
   id: string
   prompt: string
+  kind?: AgentCharacterSheetKind
   look?: string
   wardrobe?: string
   referenceAssetId?: string
+  /** Already in the bin — do not generate another copy. */
+  existingAssetId?: string
 }
 
 export interface AgentAssemblyShot {
@@ -219,16 +230,92 @@ export function parseCharacterSheets(raw: unknown): AgentCharacterSheet[] {
     const referenceAssetId = typeof record.referenceAssetId === 'string' && record.referenceAssetId.trim()
       ? record.referenceAssetId.trim()
       : undefined
-    if (!prompt && !look && !wardrobe && !referenceAssetId) continue
+    const existingAssetId = typeof record.existingAssetId === 'string' && record.existingAssetId.trim()
+      ? record.existingAssetId.trim()
+      : undefined
+    const kind = parseCharacterSheetKind(record.kind) ?? (prompt ? characterSheetKind(prompt) : undefined)
+    if (!prompt && !look && !wardrobe && !referenceAssetId && !existingAssetId) continue
     sheets.push({
       id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `sheet-${index + 1}`,
       prompt: prompt ?? '',
+      ...(kind ? { kind } : {}),
       ...(look ? { look } : {}),
       ...(wardrobe ? { wardrobe } : {}),
       ...(referenceAssetId ? { referenceAssetId } : {}),
+      ...(existingAssetId ? { existingAssetId } : {}),
     })
   }
   return sheets
+}
+
+export function characterSheetKind(prompt: string): AgentCharacterSheetKind {
+  const text = prompt.trim()
+  const hasGrid = /lookbook|character sheet|turnaround|reference sheet|costume bible|orthographic/i.test(text)
+  if (/\b(face|headshot|portrait)\b/i.test(text) && !hasGrid && !/full[- ]?body|t-pose/i.test(text)) return 'face'
+  if (/\bside (view|profile)\b/i.test(text) && !hasGrid && !/t-pose|front|back|three-quarter/i.test(text)) return 'side'
+  if (/\b(full[- ]?body|body sheet)\b/i.test(text) && !hasGrid && !/t-pose/i.test(text)) return 'body'
+  if (/\bt-pose\b/i.test(text) && !hasGrid) return 'tpose'
+  return 'lookbook'
+}
+
+export function characterSheetDedupeKey(sheet: Pick<AgentCharacterSheet, 'kind' | 'look' | 'referenceAssetId' | 'prompt'>): string {
+  const kind = sheet.kind ?? characterSheetKind(sheet.prompt)
+  const who = (sheet.referenceAssetId || sheet.look || 'default').trim().toLowerCase()
+  return `${who}:${kind}`
+}
+
+export function dedupeCharacterSheets(sheets: readonly AgentCharacterSheet[]): AgentCharacterSheet[] {
+  const seen = new Set<string>()
+  const unique: AgentCharacterSheet[] = []
+  for (const sheet of sheets) {
+    const kind = sheet.kind ?? characterSheetKind(sheet.prompt)
+    const keyed = { ...sheet, kind }
+    const key = characterSheetDedupeKey(keyed)
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(keyed)
+  }
+  return unique
+}
+
+export function findExistingCharacterSheet(
+  assets: readonly IdentityStillAsset[],
+  sheet: Pick<AgentCharacterSheet, 'kind' | 'look' | 'referenceAssetId' | 'prompt'>,
+  characterName?: string,
+): IdentityStillAsset | undefined {
+  const kind = sheet.kind ?? characterSheetKind(sheet.prompt)
+  const needles = [sheet.look, characterName]
+    .map(value => value?.trim().toLowerCase())
+    .filter((value): value is string => Boolean(value))
+  const matches = assets.filter(asset => {
+    if (!isCharacterSheetAsset(asset)) return false
+    return characterSheetKind(promptFromAsset(asset)) === kind
+  })
+  if (matches.length === 0) return undefined
+  if (needles.length === 0) return matches[0]
+  return matches.find(asset => {
+    const hay = promptFromAsset(asset).toLowerCase()
+    return needles.some(needle => hay.includes(needle))
+  }) ?? (matches.length === 1 ? matches[0] : undefined)
+}
+
+export function attachExistingCharacterSheets(
+  sheets: readonly AgentCharacterSheet[],
+  assets: readonly IdentityStillAsset[],
+  characterName?: string,
+): AgentCharacterSheet[] {
+  return sheets.map(sheet => {
+    if (sheet.existingAssetId) return sheet
+    const existing = findExistingCharacterSheet(assets, sheet, characterName)
+    return existing ? { ...sheet, existingAssetId: existing.id } : sheet
+  })
+}
+
+function parseCharacterSheetKind(value: unknown): AgentCharacterSheetKind | undefined {
+  if (value === 'face' || value === 'body' || value === 'tpose' || value === 'side' || value === 'lookbook') {
+    return value
+  }
+  return undefined
 }
 
 export function deriveCharacterSheets(input: {
@@ -254,16 +341,22 @@ export function deriveCharacterSheets(input: {
     sheet.prompt.trim() || sheet.look || sheet.wardrobe || sheet.referenceAssetId
   ))
   if (provided.length > 0) {
-    return provided.map((sheet, index) => ({
+    return dedupeCharacterSheets(provided.map((sheet, index) => ({
       id: sheet.id || `sheet-${index + 1}`,
       prompt: characterSheetPrompt({ character: input.character, shots: input.shots, sheet }),
+      kind: sheet.kind ?? characterSheetKind(sheet.prompt || characterSheetPrompt({
+        character: input.character,
+        shots: input.shots,
+        sheet,
+      })),
       ...(sheet.look ? { look: sheet.look } : {}),
       ...(sheet.wardrobe ? { wardrobe: sheet.wardrobe } : {}),
       ...(sheet.referenceAssetId ? { referenceAssetId: sheet.referenceAssetId } : {}),
-    }))
+      ...(sheet.existingAssetId ? { existingAssetId: sheet.existingAssetId } : {}),
+    })))
   }
   if (characterRefs.length > 1) {
-    return characterRefs.map((ref, index) => ({
+    return dedupeCharacterSheets(characterRefs.map((ref, index) => ({
       id: `sheet-${ref.id || index + 1}`,
       prompt: characterSheetPrompt({
         character: {
@@ -273,18 +366,20 @@ export function deriveCharacterSheets(input: {
         shots: input.shots,
         sheet: { look: ref.name?.trim() || `character ${index + 1}` },
       }),
+      kind: 'lookbook' as const,
       look: ref.name?.trim() || `character ${index + 1}`,
       referenceAssetId: ref.assetId,
-    }))
+    })))
   }
-  return [{
+  return dedupeCharacterSheets([{
     id: 'sheet-1',
     prompt: characterSheetPrompt({ character: input.character, shots: input.shots }),
+    kind: 'lookbook',
     ...(input.referenceAssetId ? { referenceAssetId: input.referenceAssetId } : {}),
     ...(characterRefs[0]?.assetId && !input.referenceAssetId
       ? { referenceAssetId: characterRefs[0].assetId }
       : {}),
-  }]
+  }])
 }
 
 export function bindAssemblyUserMedia(
@@ -332,6 +427,10 @@ export function countAssemblyGenerateJobs(
     return total + (first ? 1 : 0) + (last ? 1 : 0) + 1
   }, 0)
   return shotJobs + (skipStills ? 0 : characterSheetCount)
+}
+
+export function countPendingCharacterSheets(sheets: readonly AgentCharacterSheet[] | undefined): number {
+  return (sheets ?? []).filter(sheet => !sheet.existingAssetId).length
 }
 
 export function serializeAssemblyShots(shots: readonly AgentAssemblyShot[]): string {
@@ -480,7 +579,7 @@ export function buildAssemblyProposal(input: {
     ...(character ? { character } : {}),
     characterSheets: parseCharacterSheets(input.characterSheets),
   })
-  const jobCount = countAssemblyGenerateJobs(input.shots, skipStills, characterSheets.length)
+  const jobCount = countAssemblyGenerateJobs(input.shots, skipStills, countPendingCharacterSheets(characterSheets))
   const openingTitle = optionalString(input.openingTitle) ?? optionalString(input.title)
   const overlays = [
     ...normalizeTextOverlays(input.overlays),
@@ -622,7 +721,7 @@ export function stillPromptForShot(shot: AgentAssemblyShot, which: 'first' | 'la
   const base = which === 'last'
     ? (shot.lastFramePrompt ?? shot.prompt)
     : (shot.firstFramePrompt ?? shot.prompt)
-  return frameIdentityImagePrompt(withScenePromptExtras(base, shot, which))
+  return sceneStillPromptForVideo(withScenePromptExtras(base, shot, which))
 }
 
 export function videoPromptForShot(shot: AgentAssemblyShot): string {
