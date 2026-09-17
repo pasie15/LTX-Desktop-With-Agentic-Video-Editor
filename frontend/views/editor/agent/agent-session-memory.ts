@@ -14,6 +14,7 @@ import type {
   AgentAskUserQuestion,
   AgentChatMessage,
   AgentChatSession,
+  AgentConversationCheckpoint,
   AgentSessionMemory,
 } from './agent-types.ts'
 
@@ -27,15 +28,23 @@ export interface HydratedAgentMemory {
 
 const ASSEMBLY_STAGES = new Set(['character_sheet', 'still', 'video'])
 
-export function lastUserText(messages: readonly AgentChatMessage[]): string {
+function lastTextForRole(messages: readonly AgentChatMessage[], role: AgentChatMessage['role']): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (message?.role !== 'user') continue
+    if (message?.role !== role) continue
     for (const part of message.parts) {
       if (part.type === 'text' && part.text.trim()) return part.text.trim()
     }
   }
   return ''
+}
+
+export function lastUserText(messages: readonly AgentChatMessage[]): string {
+  return lastTextForRole(messages, 'user')
+}
+
+export function lastAssistantText(messages: readonly AgentChatMessage[]): string {
+  return lastTextForRole(messages, 'assistant')
 }
 
 export function countUserTurns(messages: readonly AgentChatMessage[]): number {
@@ -90,6 +99,30 @@ export function pendingQuestionsFromMessages(messages: readonly AgentChatMessage
     }
   }
   return null
+}
+
+export function conversationCheckpoint(input: {
+  messages: readonly AgentChatMessage[]
+  assemblyStage?: string
+  assemblyShotIndex?: number
+  awaitingUser?: boolean
+}): AgentConversationCheckpoint {
+  const userTurns = countUserTurns(input.messages)
+  const lastUser = lastUserText(input.messages)
+  const lastAssistant = lastAssistantText(input.messages)
+  return {
+    continued: userTurns > 1,
+    userTurns,
+    ...(lastUser ? { lastUserText: lastUser.slice(0, 240) } : {}),
+    ...(lastAssistant ? { lastAssistantText: lastAssistant.slice(0, 240) } : {}),
+    ...(input.assemblyStage
+      ? {
+          assemblyStage: input.assemblyStage,
+          ...(typeof input.assemblyShotIndex === 'number' ? { assemblyShotIndex: input.assemblyShotIndex } : {}),
+        }
+      : {}),
+    ...(input.awaitingUser ? { awaitingUser: true } : {}),
+  }
 }
 
 export function restorePendingAskUser(session: Pick<AgentChatSession, 'messages' | 'memory'>): AgentAskUserQuestion[] | null {

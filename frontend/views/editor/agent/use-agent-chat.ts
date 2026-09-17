@@ -11,8 +11,7 @@ import { requestAgentTurn } from './agent-api'
 import { createAgentGenerationJobs } from './agent-generation-jobs'
 import { answersToUserMessage, runAgentLoop } from './agent-loop'
 import {
-  countUserTurns,
-  lastUserText,
+  conversationCheckpoint,
   parseHydratedMemory,
   restorePendingAskUser,
   serializeHydratedMemory,
@@ -276,6 +275,14 @@ export function useAgentChat(params: UseAgentChatParams) {
   }, [hydrateExecutor, projectId])
 
   useEffect(() => {
+    if (running) return
+    const session = sessionsRef.current.find(item => item.id === activeSessionId)
+    if (!session) return
+    hydrateExecutor(session)
+    setAskUser(restorePendingAskUser(session))
+  }, [activeSessionId, hydrateExecutor, running])
+
+  useEffect(() => {
     const handler = (event: Event) => {
       if (!isAgentAddMentionEvent(event)) return
       const mention = event.detail.mention
@@ -366,17 +373,12 @@ export function useAgentChat(params: UseAgentChatParams) {
             refs: executorRef.current?.host.refs?.list() ?? [],
             approveAll: seed.approveAll === true,
             plan: exported?.plan ?? executorRef.current?.getLastPlan() ?? null,
-            conversation: {
-              continued: countUserTurns(latest) > 1,
-              userTurns: countUserTurns(latest),
-              ...(lastUserText(latest) ? { lastUserText: lastUserText(latest).slice(0, 240) } : {}),
-              ...(exported?.assemblyProgress?.stage
-                ? {
-                    assemblyStage: exported.assemblyProgress.stage,
-                    assemblyShotIndex: exported.assemblyProgress.shotIndex,
-                  }
-                : {}),
-            },
+            conversation: conversationCheckpoint({
+              messages: latest,
+              assemblyStage: exported?.assemblyProgress?.stage,
+              assemblyShotIndex: exported?.assemblyProgress?.shotIndex,
+              awaitingUser: Boolean(parseHydratedMemory(seed.memory).pendingAskUser?.length),
+            }),
           }) as unknown as Record<string, unknown>
         },
         availableTools: AGENT_TOOL_DEFINITIONS,

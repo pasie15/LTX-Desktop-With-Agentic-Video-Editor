@@ -14,7 +14,7 @@ import { analyzeCut } from './agent-cut'
 import { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
 import type { AgentEditPlan } from './agent-plan'
 import type { AgentRef } from './agent-refs'
-import type { AgentProjectSnapshot } from './agent-types'
+import type { AgentConversationCheckpoint, AgentProjectSnapshot } from './agent-types'
 
 export { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
 
@@ -65,13 +65,7 @@ export interface BuildAgentSnapshotInput {
   refs?: AgentRef[]
   approveAll?: boolean
   plan?: AgentEditPlan | null
-  conversation?: {
-    continued: boolean
-    userTurns: number
-    lastUserText?: string
-    assemblyStage?: string
-    assemblyShotIndex?: number
-  }
+  conversation?: AgentConversationCheckpoint
 }
 
 export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProjectSnapshot {

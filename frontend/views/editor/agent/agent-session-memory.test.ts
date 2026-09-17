@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { AGENT_INSTRUCTIONS } from './agent-instructions.ts'
 import {
+  conversationCheckpoint,
   countUserTurns,
+  lastAssistantText,
   lastUserText,
   parseHydratedMemory,
   restorePendingAskUser,
@@ -53,7 +55,19 @@ describe('agent session memory', () => {
     ]
     assert.equal(countUserTurns(messages), 2)
     assert.equal(lastUserText(messages), 'Continue, but wet coat on the bridge')
-    assert.match(AGENT_INSTRUCTIONS, /Same chat/)
+    assert.equal(lastAssistantText(messages), 'Planning.')
+    const checkpoint = conversationCheckpoint({
+      messages,
+      assemblyStage: 'still',
+      assemblyShotIndex: 3,
+      awaitingUser: true,
+    })
+    assert.equal(checkpoint.continued, true)
+    assert.equal(checkpoint.lastAssistantText, 'Planning.')
+    assert.equal(checkpoint.assemblyStage, 'still')
+    assert.equal(checkpoint.awaitingUser, true)
+    assert.match(AGENT_INSTRUCTIONS, /full operating agent/)
+    assert.match(AGENT_INSTRUCTIONS, /Same chat with history/)
     assert.doesNotMatch(AGENT_INSTRUCTIONS, /Every user send/)
   })
 })

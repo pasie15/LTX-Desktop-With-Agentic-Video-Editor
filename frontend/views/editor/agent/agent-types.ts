@@ -90,6 +90,16 @@ export interface AgentMention {
   outPoint?: number
 }
 
+export interface AgentConversationCheckpoint {
+  continued: boolean
+  userTurns: number
+  lastUserText?: string
+  lastAssistantText?: string
+  assemblyStage?: string
+  assemblyShotIndex?: number
+  awaitingUser?: boolean
+}
+
 export interface AgentSessionMemory {
   plan?: unknown
   assemblyProposal?: unknown
@@ -174,13 +184,7 @@ export interface AgentProjectSnapshot {
     assetId: string
   }>
   approveAll: boolean
-  conversation?: {
-    continued: boolean
-    userTurns: number
-    lastUserText?: string
-    assemblyStage?: string
-    assemblyShotIndex?: number
-  }
+  conversation?: AgentConversationCheckpoint
   plan?: {
     goal: string
     shots: Array<{ id?: string; prompt?: string; duration?: number; title?: string }>
