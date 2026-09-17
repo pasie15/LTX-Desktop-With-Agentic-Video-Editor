@@ -34,7 +34,7 @@ import {
   isUsableVideoStart,
   type IdentityPreferredMedia,
 } from './agent-identity.ts'
-import { frameIdentityImagePrompt, sceneStillPromptForVideo } from './agent-still-prompts.ts'
+import { frameIdentityImagePrompt, isLookbookPrompt, sceneStillPromptForVideo } from './agent-still-prompts.ts'
 
 export const AGENT_DEFAULT_PREVIEW_DURATION_S = 4
 export const AGENT_DEFAULT_VIDEO_MODEL = 'fast'
@@ -489,9 +489,14 @@ async function generateStill(
     || isImportedStill(referenceStill)
     || isCharacterSheetAsset(referenceStill)
   )
-  // Z-Image follows the start of the prompt. Identity stills must lead with a wide scene
-  // or a full-body lookbook, or Turbo paints another headshot.
-  const prompt = identityRef ? frameIdentityImagePrompt(rawPrompt) : rawPrompt
+  const wantCharacterSheet = asBoolean(args.characterSheet)
+  // Sheets opt in with characterSheet. Every other identity still is a scene frame.
+  // Z-Image follows the start of the prompt — a T-pose lead reprints the lookbook.
+  const prompt = wantCharacterSheet
+    ? frameIdentityImagePrompt(rawPrompt)
+    : identityRef || isLookbookPrompt(rawPrompt)
+      ? sceneStillPromptForVideo(rawPrompt)
+      : rawPrompt
   const proposal: AgentGenerateProposal = {
     tool: 'generate_image',
     prompt,

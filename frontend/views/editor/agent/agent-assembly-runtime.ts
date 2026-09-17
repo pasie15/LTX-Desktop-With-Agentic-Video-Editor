@@ -9,10 +9,13 @@ import {
 } from './agent-approvals.ts'
 import {
   assemblyConfirmQuestions,
+  attachExistingCharacterSheets,
   bindAssemblyUserMedia,
   buildAssemblyProposal,
   countAssemblyGenerateJobs,
+  countPendingCharacterSheets,
   deriveCharacterSheets,
+  findExistingCharacterSheet,
   inferAssemblyMediaFromAssets,
   isAssemblyProceedChoice,
   MAX_ASSEMBLY_GENERATE_JOBS,
@@ -254,6 +257,7 @@ export async function executeAssemblyTool(
     ? bindUserMediaIntoProposal(host, resolved.proposal)
     : resolved.proposal
   proposal = expandSheetsFromCharacterRefs(host, proposal)
+  proposal = reuseExistingCharacterSheets(host, proposal)
   memory.setProposal(proposal)
   if (proposal.shots.length === 0) return errorResult('Shot list is empty')
   if (!memory.getPlan?.()) {
@@ -420,6 +424,9 @@ export async function executeAssemblyTool(
       }
       characterSheetIds.push(sheetResult.stillAssetId)
       const moreSheets = index < characterSheets.length - 1
+      if (sheetResult.reused) {
+        continue
+      }
       if (stepByStep) {
         memory.setProgress(snapshotProgress({
           stage: moreSheets ? 'character_sheet' : 'still',
@@ -676,6 +683,29 @@ export async function executeAssemblyTool(
   }
 }
 
+function reuseExistingCharacterSheets(
+  host: AgentAssemblyActionHost,
+  proposal: AgentAssemblyProposal,
+): AgentAssemblyProposal {
+  const sheets = attachExistingCharacterSheets(
+    proposal.characterSheets ?? [],
+    host.getState().editorModel.assets,
+    proposal.character?.name,
+  )
+  if (sheets.length === 0) return proposal
+  const jobCount = countAssemblyGenerateJobs(
+    proposal.shots,
+    proposal.skipStills,
+    countPendingCharacterSheets(sheets),
+  )
+  return {
+    ...proposal,
+    characterSheets: sheets,
+    jobCount,
+    exceedsJobCap: jobCount > MAX_ASSEMBLY_GENERATE_JOBS,
+  }
+}
+
 function expandSheetsFromCharacterRefs(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
@@ -690,11 +720,26 @@ function expandSheetsFromCharacterRefs(
     characterSheets: proposal.characterSheets,
     characterRefs,
   })
-  if (sheets.length === 0 || sheets === proposal.characterSheets) return proposal
-  const jobCount = countAssemblyGenerateJobs(proposal.shots, proposal.skipStills, sheets.length)
+  const withExisting = attachExistingCharacterSheets(
+    sheets,
+    host.getState().editorModel.assets,
+    proposal.character?.name,
+  )
+  const unchanged = withExisting.length === (proposal.characterSheets?.length ?? 0)
+    && withExisting.every((sheet, index) => (
+      sheet.existingAssetId === proposal.characterSheets?.[index]?.existingAssetId
+      && sheet.id === proposal.characterSheets?.[index]?.id
+      && sheet.prompt === proposal.characterSheets?.[index]?.prompt
+    ))
+  if (unchanged && sheets === proposal.characterSheets) return proposal
+  const jobCount = countAssemblyGenerateJobs(
+    proposal.shots,
+    proposal.skipStills,
+    countPendingCharacterSheets(withExisting),
+  )
   return {
     ...proposal,
-    characterSheets: sheets,
+    characterSheets: withExisting,
     jobCount,
     exceedsJobCap: jobCount > MAX_ASSEMBLY_GENERATE_JOBS,
   }
@@ -1013,7 +1058,14 @@ async function generateCharacterSheet(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
   sheet: AgentCharacterSheet,
-): Promise<{ status: 'ready'; stillAssetId: string } | { status: 'failed' | 'cancelled'; error: string }> {
+): Promise<{ status: 'ready'; stillAssetId: string; reused?: boolean } | { status: 'failed' | 'cancelled'; error: string }> {
+  const reused = sheet.existingAssetId
+    ?? findExistingCharacterSheet(
+      host.getState().editorModel.assets,
+      sheet,
+      proposal.character?.name,
+    )?.id
+  if (reused) return { status: 'ready', stillAssetId: reused, reused: true }
   const identityId = sheet.referenceAssetId
     ?? proposal.referenceAssetId
     ?? preferredReferenceAssetId(host.getPreferredAssemblyMedia?.() ?? {})
@@ -1028,6 +1080,7 @@ async function generateCharacterSheet(
     destination: 'assets',
     confirmed: true,
     skipReview: true,
+    characterSheet: true,
     ...(identityId ? { referenceAssetId: identityId, identityReference: true } : {}),
   })
   if (still.ok === false) {
@@ -1060,6 +1113,7 @@ async function generateShotStill(
     destination: 'assets',
     confirmed: true,
     skipReview: true,
+    characterSheet: false,
     ...(identityId ? { referenceAssetId: identityId, identityReference: true } : {}),
   })
   if (still.ok === false) {

@@ -17,6 +17,9 @@ import {
   videoPromptForShot,
   characterSheetPrompt,
   deriveCharacterSheets,
+  attachExistingCharacterSheets,
+  dedupeCharacterSheets,
+  findExistingCharacterSheet,
 } from './agent-assembly.ts'
 
 describe('script to shot list', () => {
@@ -209,6 +212,54 @@ describe('assembly job cap', () => {
       referenceAssetId: 'ken',
       shots: [{ id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true }],
     }), [])
+  })
+
+  it('never uses a T-pose first-frame note as a lookbook start frame', () => {
+    const framed = stillPromptForShot({
+      id: 's1',
+      prompt: 'Ken at the midnight river',
+      duration: 5,
+      firstFramePrompt: 'T-pose character sheet of Ken on the riverbank, lookbook',
+      showProtagonist: true,
+    })
+    assert.match(framed, /^Cinematic 16:9 production still/)
+    assert.doesNotMatch(framed, /T-pose/)
+    assert.doesNotMatch(framed, /lookbook/)
+    assert.match(framed, /river/)
+  })
+
+  it('keeps one sheet per character and type, and reuses one already in the bin', () => {
+    const duped = deriveCharacterSheets({
+      referenceAssetId: 'ken',
+      shots: [{ id: 's1', prompt: 'bridge', duration: 5, showProtagonist: true }],
+      characterSheets: [
+        { id: 'sheet-1', prompt: 'Character sheet / lookbook of Ken', look: 'Ken' },
+        { id: 'sheet-2', prompt: 'Another lookbook of Ken, T-pose', look: 'Ken' },
+        { id: 'sheet-face', prompt: 'Face sheet of Ken, headshot only', kind: 'face', look: 'Ken' },
+      ],
+    })
+    assert.equal(duped.filter(sheet => sheet.kind === 'lookbook').length, 1)
+    assert.equal(duped.filter(sheet => sheet.kind === 'face').length, 1)
+    assert.deepEqual(dedupeCharacterSheets([
+      { id: 'a', prompt: 'lookbook', kind: 'lookbook', referenceAssetId: 'ken' },
+      { id: 'b', prompt: 'lookbook again', kind: 'lookbook', referenceAssetId: 'ken' },
+    ]).map(sheet => sheet.id), ['a'])
+
+    const existing = {
+      id: 'sheet-existing',
+      type: 'image',
+      generationParams: { prompt: 'Full-body character reference sheet, T-pose front of Ken Tune' },
+    }
+    assert.equal(findExistingCharacterSheet([existing], {
+      prompt: 'Character sheet of Ken',
+      look: 'Ken Tune',
+    })?.id, 'sheet-existing')
+    const attached = attachExistingCharacterSheets(
+      [{ id: 'sheet-1', prompt: 'Character sheet of Ken Tune', kind: 'lookbook', look: 'Ken Tune' }],
+      [existing],
+      'Ken Tune',
+    )
+    assert.equal(attached[0]?.existingAssetId, 'sheet-existing')
   })
 
   it('derives one full-body sheet per character ref', () => {
