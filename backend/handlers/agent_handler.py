@@ -84,7 +84,10 @@ def _system_instruction(skills: str | None, project_context: dict[str, object]) 
     return (
         f"{instructions}\n\n"
         "## Current project snapshot\n"
-        "Trust this snapshot for this user send. Re-read with tools if something looks stale.\n"
+        "This chat is one ongoing agent session. Prior messages are working memory. "
+        "Answer from the snapshot for current project state; re-read with tools if something looks stale. "
+        "Continue the job unless the user starts a new one. "
+        "You can start, continue, and change work — operate with the full tool set.\n"
         f"```json\n{snapshot}\n```"
     )
 

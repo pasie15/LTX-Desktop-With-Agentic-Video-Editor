@@ -10,6 +10,12 @@ import { AGENT_INSTRUCTIONS } from './agent-instructions'
 import { requestAgentTurn } from './agent-api'
 import { createAgentGenerationJobs } from './agent-generation-jobs'
 import { answersToUserMessage, runAgentLoop } from './agent-loop'
+import {
+  conversationCheckpoint,
+  parseHydratedMemory,
+  restorePendingAskUser,
+  serializeHydratedMemory,
+} from './agent-session-memory'
 import { mentionPartsForMessage, mentionsFromMessages, preferredAssemblyMediaFromMentions } from './agent-mentions'
 import { getAgentChatStorage, loadAgentSessions } from './agent-persistence'
 import { buildAgentSnapshot } from './agent-snapshot'
@@ -169,6 +175,31 @@ export function useAgentChat(params: UseAgentChatParams) {
   const activeSession = sessions.find(session => session.id === activeSessionId) ?? null
   approveAllRef.current = activeSession?.approveAll === true
 
+  const attachExecutorMemory = useCallback((session: AgentChatSession, pendingAskUser?: AgentAskUserQuestion[] | null): AgentChatSession => {
+    const exported = executorRef.current?.exportMemory()
+    const hydrated = exported
+      ? {
+          plan: exported.plan,
+          assemblyProposal: exported.assemblyProposal,
+          assemblyProgress: exported.assemblyProgress,
+          assemblyConfirmedMore: exported.assemblyConfirmedMore,
+          pendingAskUser: pendingAskUser === undefined
+            ? parseHydratedMemory(session.memory).pendingAskUser
+            : pendingAskUser,
+        }
+      : parseHydratedMemory(session.memory)
+    if (pendingAskUser !== undefined) hydrated.pendingAskUser = pendingAskUser
+    return {
+      ...session,
+      memory: serializeHydratedMemory(hydrated),
+    }
+  }, [])
+
+  const hydrateExecutor = useCallback((session: AgentChatSession) => {
+    const memory = parseHydratedMemory(session.memory)
+    executorRef.current?.hydrateMemory(memory)
+  }, [])
+
   const persistSession = useCallback((session: AgentChatSession) => {
     if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current)
     persistTimerRef.current = window.setTimeout(() => {
@@ -215,11 +246,15 @@ export function useAgentChat(params: UseAgentChatParams) {
         setSessions([fresh])
         setActiveSessionId(fresh.id)
         setOpenSessionIds([fresh.id])
+        hydrateExecutor(fresh)
+        setAskUser(null)
         return
       }
       setSessions(loaded)
       setActiveSessionId(loaded[0].id)
       setOpenSessionIds([loaded[0].id])
+      hydrateExecutor(loaded[0])
+      setAskUser(restorePendingAskUser(loaded[0]))
     }).catch(() => {
       if (cancelled) return
       const fresh: AgentChatSession = {
@@ -231,11 +266,21 @@ export function useAgentChat(params: UseAgentChatParams) {
       setSessions([fresh])
       setActiveSessionId(fresh.id)
       setOpenSessionIds([fresh.id])
+      hydrateExecutor(fresh)
+      setAskUser(null)
     })
     return () => {
       cancelled = true
     }
-  }, [projectId])
+  }, [hydrateExecutor, projectId])
+
+  useEffect(() => {
+    if (running) return
+    const session = sessionsRef.current.find(item => item.id === activeSessionId)
+    if (!session) return
+    hydrateExecutor(session)
+    setAskUser(restorePendingAskUser(session))
+  }, [activeSessionId, hydrateExecutor, running])
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -260,14 +305,26 @@ export function useAgentChat(params: UseAgentChatParams) {
     setDraft('')
     setMentions([])
     setAskUser(null)
+    executorRef.current?.hydrateMemory({
+      plan: null,
+      assemblyProposal: null,
+      assemblyProgress: null,
+      assemblyConfirmedMore: false,
+    })
     persistSession(fresh)
   }, [persistSession])
 
   const openSession = useCallback((sessionId: string) => {
+    const session = sessionsRef.current.find(item => item.id === sessionId)
     setActiveSessionId(sessionId)
     setOpenSessionIds(prev => prev.includes(sessionId) ? prev : [...prev, sessionId])
+    if (session) {
+      hydrateExecutor(session)
+      setAskUser(restorePendingAskUser(session))
+      return
+    }
     setAskUser(null)
-  }, [])
+  }, [hydrateExecutor])
 
   const closeTab = useCallback((sessionId: string) => {
     setOpenSessionIds(prev => {
@@ -300,32 +357,48 @@ export function useAgentChat(params: UseAgentChatParams) {
     abortRef.current = controller
     let latest = seed.messages
     try {
+      hydrateExecutor(seed)
       const result = await runAgentLoop({
         getMessages: () => latest,
-        getProjectContext: () => buildAgentSnapshot({
-          state: getEditorState(),
-          projectId,
-          projectName,
-          generationBusy,
-          generationCanCancel,
-          currentModelLabel,
-          selectedGapOverride: getSelectedGap?.() ?? null,
-          refs: executorRef.current?.host.refs?.list() ?? [],
-          approveAll: seed.approveAll === true,
-          plan: executorRef.current?.getLastPlan() ?? null,
-        }) as unknown as Record<string, unknown>,
+        getProjectContext: () => {
+          const exported = executorRef.current?.exportMemory()
+          return buildAgentSnapshot({
+            state: getEditorState(),
+            projectId,
+            projectName,
+            generationBusy,
+            generationCanCancel,
+            currentModelLabel,
+            selectedGapOverride: getSelectedGap?.() ?? null,
+            refs: executorRef.current?.host.refs?.list() ?? [],
+            approveAll: seed.approveAll === true,
+            plan: exported?.plan ?? executorRef.current?.getLastPlan() ?? null,
+            conversation: conversationCheckpoint({
+              messages: latest,
+              assemblyStage: exported?.assemblyProgress?.stage,
+              assemblyShotIndex: exported?.assemblyProgress?.shotIndex,
+              awaitingUser: Boolean(parseHydratedMemory(seed.memory).pendingAskUser?.length),
+            }),
+          }) as unknown as Record<string, unknown>
+        },
         availableTools: AGENT_TOOL_DEFINITIONS,
         skills: AGENT_INSTRUCTIONS,
         requestTurn: requestAgentTurn,
         executeTool: (name, args) => executeAgentTool(executorRef.current!, name, args),
         onMessages: (messages) => {
           latest = messages
-          replaceSession({ ...seed, messages })
+          replaceSession(attachExecutorMemory({ ...seed, messages }))
         },
-        onAskUser: setAskUser,
+        onAskUser: questions => {
+          setAskUser(questions)
+          replaceSession(attachExecutorMemory({ ...seed, messages: latest }, questions))
+        },
         signal: controller.signal,
       })
-      replaceSession({ ...seed, messages: result.messages })
+      replaceSession(attachExecutorMemory(
+        { ...seed, messages: result.messages },
+        result.stopReason === 'ask_user' ? undefined : null,
+      ))
     } finally {
       setRunning(false)
       setGenerationProgress(null)
@@ -340,6 +413,8 @@ export function useAgentChat(params: UseAgentChatParams) {
     projectId,
     projectName,
     replaceSession,
+    attachExecutorMemory,
+    hydrateExecutor,
   ])
 
   const sendText = useCallback(async (text: string, extraMentions: AgentMention[] = []) => {

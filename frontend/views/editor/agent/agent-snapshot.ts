@@ -14,7 +14,7 @@ import { analyzeCut } from './agent-cut'
 import { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
 import type { AgentEditPlan } from './agent-plan'
 import type { AgentRef } from './agent-refs'
-import type { AgentProjectSnapshot } from './agent-types'
+import type { AgentConversationCheckpoint, AgentProjectSnapshot } from './agent-types'
 
 export { collectTimelineGaps, filterClipsToWindow, timelineDuration } from './agent-timeline-slice'
 
@@ -65,6 +65,7 @@ export interface BuildAgentSnapshotInput {
   refs?: AgentRef[]
   approveAll?: boolean
   plan?: AgentEditPlan | null
+  conversation?: AgentConversationCheckpoint
 }
 
 export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProjectSnapshot {
@@ -130,6 +131,7 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
       assetId: ref.assetId,
     })),
     approveAll: input.approveAll === true,
+    ...(input.conversation ? { conversation: input.conversation } : {}),
     plan: input.plan
       ? {
           goal: input.plan.goal,
@@ -137,6 +139,7 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
           voStrategy: input.plan.voStrategy,
           timing: input.plan.timing,
           checks: input.plan.checks,
+          ...(input.plan.character?.name ? { character: input.plan.character.name } : {}),
         }
       : null,
     cut: (() => {

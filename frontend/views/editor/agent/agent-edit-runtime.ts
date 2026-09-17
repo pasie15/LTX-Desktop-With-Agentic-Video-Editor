@@ -299,6 +299,33 @@ export class AgentToolExecutor {
     this.lastPlan = plan
   }
 
+  hydrateMemory(memory: {
+    plan?: AgentEditPlan | null
+    assemblyProposal?: AgentAssemblyProposal | null
+    assemblyProgress?: AgentAssemblyProgress | null
+    assemblyConfirmedMore?: boolean
+  }): void {
+    this.lastPlan = memory.plan ?? null
+    this.lastAssemblyProposal = memory.assemblyProposal ?? null
+    this.lastAssemblyProgress = memory.assemblyProgress ?? null
+    this.lastAssemblyConfirmedMore = memory.assemblyConfirmedMore === true
+    this.lastAssemblyReviewDecision = null
+  }
+
+  exportMemory(): {
+    plan: AgentEditPlan | null
+    assemblyProposal: AgentAssemblyProposal | null
+    assemblyProgress: AgentAssemblyProgress | null
+    assemblyConfirmedMore: boolean
+  } {
+    return {
+      plan: this.lastPlan,
+      assemblyProposal: this.lastAssemblyProposal,
+      assemblyProgress: this.lastAssemblyProgress,
+      assemblyConfirmedMore: this.lastAssemblyConfirmedMore,
+    }
+  }
+
   assistantUndoNames(): readonly string[] {
     return this.assistantUndo.map(entry => entry.name)
   }
