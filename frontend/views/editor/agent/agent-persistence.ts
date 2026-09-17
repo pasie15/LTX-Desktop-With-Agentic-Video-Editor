@@ -25,6 +25,9 @@ export function parseChatSession(raw: unknown): AgentChatSession | null {
     updatedAt: value.updatedAt,
     messages: value.messages as AgentChatMessage[],
     ...(value.approveAll === true ? { approveAll: true } : {}),
+    ...(value.memory && typeof value.memory === 'object' && !Array.isArray(value.memory)
+      ? { memory: value.memory }
+      : {}),
   }
 }
 
@@ -35,6 +38,7 @@ export function serializeChatSession(session: AgentChatSession): string {
     updatedAt: session.updatedAt,
     messages: session.messages,
     ...(session.approveAll === true ? { approveAll: true } : {}),
+    ...(session.memory ? { memory: session.memory } : {}),
   })
 }
 

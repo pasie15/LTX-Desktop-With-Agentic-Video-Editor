@@ -65,6 +65,13 @@ export interface BuildAgentSnapshotInput {
   refs?: AgentRef[]
   approveAll?: boolean
   plan?: AgentEditPlan | null
+  conversation?: {
+    continued: boolean
+    userTurns: number
+    lastUserText?: string
+    assemblyStage?: string
+    assemblyShotIndex?: number
+  }
 }
 
 export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProjectSnapshot {
@@ -130,6 +137,7 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
       assetId: ref.assetId,
     })),
     approveAll: input.approveAll === true,
+    ...(input.conversation ? { conversation: input.conversation } : {}),
     plan: input.plan
       ? {
           goal: input.plan.goal,
@@ -137,6 +145,7 @@ export function buildAgentSnapshot(input: BuildAgentSnapshotInput): AgentProject
           voStrategy: input.plan.voStrategy,
           timing: input.plan.timing,
           checks: input.plan.checks,
+          ...(input.plan.character?.name ? { character: input.plan.character.name } : {}),
         }
       : null,
     cut: (() => {

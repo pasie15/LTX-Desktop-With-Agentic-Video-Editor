@@ -90,12 +90,21 @@ export interface AgentMention {
   outPoint?: number
 }
 
+export interface AgentSessionMemory {
+  plan?: unknown
+  assemblyProposal?: unknown
+  assemblyProgress?: unknown
+  assemblyConfirmedMore?: boolean
+  pendingAskUser?: AgentAskUserQuestion[] | null
+}
+
 export interface AgentChatSession {
   id: string
   title: string
   updatedAt: number
   messages: AgentChatMessage[]
   approveAll?: boolean
+  memory?: AgentSessionMemory
 }
 
 export interface AgentChatSessionSummary {
@@ -165,12 +174,20 @@ export interface AgentProjectSnapshot {
     assetId: string
   }>
   approveAll: boolean
+  conversation?: {
+    continued: boolean
+    userTurns: number
+    lastUserText?: string
+    assemblyStage?: string
+    assemblyShotIndex?: number
+  }
   plan?: {
     goal: string
     shots: Array<{ id?: string; prompt?: string; duration?: number; title?: string }>
     voStrategy: string
     timing: string
     checks: string[]
+    character?: string
   } | null
   cut?: {
     ok: boolean

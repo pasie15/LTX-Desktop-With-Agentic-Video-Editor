@@ -18,6 +18,7 @@ describe('agent chat persistence', () => {
       updatedAt: 10,
       messages: [],
       approveAll: true,
+      memory: { plan: { goal: 'Keep going', shots: [], voStrategy: '', refs: [], titles: '', mix: '', timing: '', checks: [] } },
     }
     const parsed = parseChatSession(JSON.parse(serializeChatSession(session)))
     assert.deepEqual(parsed, session)
