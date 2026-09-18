@@ -71,6 +71,35 @@ def compute_edit_dimensions(width: int, height: int) -> tuple[int, int]:
     return (max(16, (width // 16) * 16), max(16, (height // 16) * 16))
 
 
+def fit_edit_source_to_request(
+    source: PILImageType,
+    width: int,
+    height: int,
+    *,
+    min_aspect_delta: float = 0.28,
+) -> PILImageType | None:
+    """Letterbox a reference photo onto the requested frame when aspect ratios differ.
+
+    A headshot passed as a character reference should land on a 16:9 canvas so Z-Image
+    can paint a scene around the person instead of reprinting a portrait crop.
+    Returns None when the source already matches the request closely enough.
+    """
+    req_w, req_h = compute_edit_dimensions(width, height)
+    src_aspect = source.width / max(source.height, 1)
+    req_aspect = req_w / max(req_h, 1)
+    if abs(src_aspect - req_aspect) <= min_aspect_delta:
+        return None
+    from PIL import Image as _PILImage
+
+    scale = min(req_w / max(source.width, 1), req_h / max(source.height, 1))
+    new_w = max(1, int(source.width * scale))
+    new_h = max(1, int(source.height * scale))
+    resized = source.resize((new_w, new_h), _PILImage.Resampling.LANCZOS)
+    canvas = _PILImage.new("RGB", (req_w, req_h), (16, 16, 16))
+    canvas.paste(resized, ((req_w - new_w) // 2, (req_h - new_h) // 2))
+    return canvas
+
+
 def clamp_strength(strength: float) -> float:
     """Clamp img2img strength into the range the diffusers pipeline accepts (0, 1]."""
     return min(1.0, max(1e-3, strength))

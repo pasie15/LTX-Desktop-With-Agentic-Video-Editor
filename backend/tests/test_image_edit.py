@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 
 from services.generation_interrupt import GenerationCancelledError
-from services.services_utils import compute_edit_dimensions
+from services.services_utils import compute_edit_dimensions, fit_edit_source_to_request
 from tests.http_error_assertions import assert_http_error
 
 
@@ -359,6 +359,20 @@ class TestComputeEditDimensions:
 
     def test_never_below_16(self):
         assert compute_edit_dimensions(10, 10) == (16, 16)
+
+    def test_letterboxes_a_portrait_onto_a_16x9_request(self):
+        from PIL import Image
+
+        portrait = Image.new("RGB", (512, 768), (200, 40, 40))
+        fitted = fit_edit_source_to_request(portrait, 1920, 1080)
+        assert fitted is not None
+        assert fitted.size == compute_edit_dimensions(1920, 1080)
+
+    def test_keeps_matching_aspect_on_source_dims(self):
+        from PIL import Image
+
+        landscape = Image.new("RGB", (1000, 800), (20, 20, 20))
+        assert fit_edit_source_to_request(landscape, 1024, 1024) is None
 
 
 # ============================================================

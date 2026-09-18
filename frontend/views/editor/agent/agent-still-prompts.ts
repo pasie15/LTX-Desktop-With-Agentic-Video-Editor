@@ -2,11 +2,13 @@
 
 export const SCENE_STILL_LEAD =
   'Cinematic 16:9 production still, medium-wide shot, camera pulled back. '
-  + 'A person stands or walks inside a real location. Head-to-knee or full body visible. '
+  + 'Same person as the reference photo, new action, new wardrobe, new scenery. '
+  + 'Head-to-knee or full body visible inside a real location. '
   + 'Environment, wardrobe, and set dressing fill most of the frame. '
 
 export const SCENE_STILL_TAIL =
-  'Not a close-up. Not a studio headshot. Not a passport photo. Not a cropped face. Not a copy of a reference portrait.'
+  'Keep the face from the reference. Change pose, clothes, and location. '
+  + 'Not a close-up. Not a studio headshot. Not a passport photo. Not a cropped face. Not a copy of the reference portrait.'
 
 export const EMPTY_STILL_LEAD =
   'Cinematic 16:9 production still, wide establishing shot, camera pulled back. '

@@ -6,6 +6,8 @@ export const AGENT_MUSIC_TRACK_INDEX = 4
 export const AGENT_VOICEOVER_MIX_LEVEL = 1
 export const AGENT_MUSIC_MIX_LEVEL = 0.25
 export const AGENT_DEFAULT_REF_STRENGTH = 0.35
+/** High denoise so a portrait becomes a new scene, not a reprint of the headshot. */
+export const AGENT_IDENTITY_SCENE_STRENGTH = 0.78
 export const AGENT_OPENING_TITLE_DURATION_S = 3
 
 export function firstUnlockedTrackIndex(

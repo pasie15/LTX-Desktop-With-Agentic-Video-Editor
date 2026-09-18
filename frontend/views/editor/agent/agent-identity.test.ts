@@ -48,5 +48,10 @@ describe('imported stills are identity, not start frames', () => {
     assert.deepEqual(withoutIdentityStartFrames({
       imageAssetId: 'sheet',
     }, ids), {})
+    assert.deepEqual(withoutIdentityStartFrames({
+      assetId: 'ken',
+      imageAssetId: 'ken',
+      skipStill: true,
+    }, ids), {})
   })
 })

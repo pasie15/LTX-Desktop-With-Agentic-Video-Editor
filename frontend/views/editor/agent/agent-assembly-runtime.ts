@@ -62,6 +62,9 @@ import { applyShotLipSync, type AgentLipSyncActionHost } from './agent-lipsync-r
 import {
   collectIdentityStillIds,
   firstIdentityStillId,
+  isCharacterSheetAsset,
+  isIdentityStillId,
+  isImportedStill,
   isUsableVideoStart,
 } from './agent-identity.ts'
 import { asBoolean, toolErrorResult, validateUnknownKeys } from './agent-tool-utils.ts'
@@ -464,8 +467,15 @@ export async function executeAssemblyTool(
         }
       }
       const attachedStillId = resolveShotStillId(host, shot, proposal, characterSheetIds)
-      const wantFirst = !shot.assetId && !proposal.skipStills && !shot.skipStill && !attachedStillId
-      const wantLast = !shot.assetId
+      const placingExisting = Boolean(shot.assetId) && !isIdentityStillId(shot.assetId, collectIdentityStillIds({
+        referenceAssetId: proposal.referenceAssetId,
+        preferred: host.getPreferredAssemblyMedia?.(),
+        refs: host.refs?.list(),
+        assets: host.getState().editorModel.assets,
+        extraIds: characterSheetIds,
+      }))
+      const wantFirst = !placingExisting && !proposal.skipStills && !shot.skipStill && !attachedStillId
+      const wantLast = !placingExisting
         && !proposal.skipStills
         && Boolean(shot.lastFramePrompt)
         && !shot.lastImageAssetId
@@ -749,8 +759,16 @@ function bindUserMediaIntoProposal(
   host: AgentAssemblyActionHost,
   proposal: AgentAssemblyProposal,
 ): AgentAssemblyProposal {
+  const identityIds = collectIdentityStillIds({
+    referenceAssetId: proposal.referenceAssetId,
+    preferred: host.getPreferredAssemblyMedia?.(),
+    refs: host.refs?.list(),
+    assets: host.getState().editorModel.assets,
+  })
   const usedShotAssetIds = new Set(
-    proposal.shots.flatMap(shot => [shot.assetId].filter((id): id is string => Boolean(id))),
+    proposal.shots.flatMap(shot => (
+      shot.assetId && !identityIds.has(shot.assetId) ? [shot.assetId] : []
+    )),
   )
   const inferred = inferAssemblyMediaFromAssets(
     host.getState().editorModel.assets.filter(asset => (
@@ -1172,7 +1190,22 @@ async function generateAndPlaceShot(
   characterSheetIds: readonly string[] = [],
 ): Promise<AgentAssemblyShotResult> {
   if (shot.assetId) {
-    return placeExistingShot(host, proposal, shot, startTime)
+    const existingAsset = host.getState().editorModel.assets.find(item => item.id === shot.assetId)
+    const identityIds = collectIdentityStillIds({
+      referenceAssetId: proposal.referenceAssetId,
+      preferred: host.getPreferredAssemblyMedia?.(),
+      refs: host.refs?.list(),
+      assets: host.getState().editorModel.assets,
+      extraIds: characterSheetIds,
+    })
+    const identityImage = existingAsset?.type === 'image' && (
+      isImportedStill(existingAsset)
+      || isCharacterSheetAsset(existingAsset)
+      || isIdentityStillId(shot.assetId, identityIds)
+    )
+    if (existingAsset && !identityImage) {
+      return placeExistingShot(host, proposal, shot, startTime)
+    }
   }
 
   const destination = isFirst && proposal.destination === 'gap' ? 'gap' : 'playhead'
