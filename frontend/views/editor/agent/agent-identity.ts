@@ -31,6 +31,7 @@ export interface IdentityShotFields {
   imageAssetId?: string
   lastImageAssetId?: string
   skipStill?: boolean
+  assetId?: string
 }
 
 /** User-imported photos have no generationParams. Those are identity, never start frames. */
@@ -94,6 +95,9 @@ export function withoutIdentityStartFrames<T extends IdentityShotFields>(
   }
   if (isIdentityStillId(next.lastImageAssetId, identityIds)) {
     delete next.lastImageAssetId
+  }
+  if (isIdentityStillId(next.assetId, identityIds)) {
+    delete next.assetId
   }
   return next
 }

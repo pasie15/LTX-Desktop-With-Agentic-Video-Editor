@@ -27,7 +27,12 @@ from services.generation_interrupt import is_cancel_exception
 from services.interfaces import ZitAPIClient
 from server_utils.heartbeat import log_heartbeat
 from server_utils.media_validation import validate_image_file
-from services.services_utils import clamp_strength, compute_edit_dimensions, effective_edit_steps
+from services.services_utils import (
+    clamp_strength,
+    compute_edit_dimensions,
+    effective_edit_steps,
+    fit_edit_source_to_request,
+)
 from state.app_settings import should_image_generate_with_fal_api
 from state.app_state_types import AppState
 
@@ -71,6 +76,8 @@ class ImageGenerationHandler(StateHandlerBase):
                     seed=seed,
                     num_images=num_images,
                     use_fal_api=use_fal_api,
+                    target_width=width,
+                    target_height=height,
                 )
 
             if use_fal_api:
@@ -112,6 +119,8 @@ class ImageGenerationHandler(StateHandlerBase):
         seed: int,
         num_images: int,
         use_fal_api: bool,
+        target_width: int | None = None,
+        target_height: int | None = None,
     ) -> GenerateImageResponse:
         assert req.imagePath is not None
         validate_image_file(req.imagePath)
@@ -131,6 +140,8 @@ class ImageGenerationHandler(StateHandlerBase):
                 num_inference_steps=req.numSteps,
                 seed=seed,
                 num_images=num_images,
+                target_width=target_width,
+                target_height=target_height,
             )
 
         generation_id = uuid.uuid4().hex[:8]
@@ -145,6 +156,8 @@ class ImageGenerationHandler(StateHandlerBase):
                 num_inference_steps=req.numSteps,
                 seed=seed,
                 num_images=num_images,
+                target_width=target_width,
+                target_height=target_height,
             )
             self._generation.complete_generation(output_paths)
             return GenerateImageCompleteResponse(status="complete", image_paths=output_paths)
@@ -163,6 +176,8 @@ class ImageGenerationHandler(StateHandlerBase):
         num_inference_steps: int,
         seed: int,
         num_images: int,
+        target_width: int | None = None,
+        target_height: int | None = None,
     ) -> list[str]:
         self._generation.raise_if_cancelled()
 
@@ -170,7 +185,7 @@ class ImageGenerationHandler(StateHandlerBase):
         image_generation_pipeline = self._pipelines.load_image_generation_pipeline_to_gpu()
         self._generation.update_progress("inference", 15, 0, num_inference_steps)
 
-        source = self._load_edit_source(image_path)
+        source = self._load_edit_source(image_path, target_width, target_height)
 
         def generate_one(seed_i: int) -> PILImage.Image:
             result = image_generation_pipeline.edit(
@@ -245,11 +260,22 @@ class ImageGenerationHandler(StateHandlerBase):
         self._generation.update_progress("complete", 100, num_images, num_images)
         return [str(path) for path in outputs]
 
-    def _load_edit_source(self, image_path: str) -> PILImage.Image:
+    def _load_edit_source(
+        self,
+        image_path: str,
+        target_width: int | None = None,
+        target_height: int | None = None,
+    ) -> PILImage.Image:
         # Downscale to the same /16 target the local edit path uses before the pipeline
         # runs — keeps the base64 upload on the FAL path from inflating with source size.
+        # A portrait used as a character reference is letterboxed onto the requested
+        # 16:9 frame so Z-Image can paint a scene instead of reprinting the headshot.
         with PILImage.open(image_path) as raw:
             source = raw.convert("RGB")
+        if target_width and target_height:
+            fitted = fit_edit_source_to_request(source, target_width, target_height)
+            if fitted is not None:
+                return fitted
         target_w, target_h = compute_edit_dimensions(source.width, source.height)
         return source.resize((target_w, target_h), PILImage.Resampling.LANCZOS)
 
@@ -262,8 +288,10 @@ class ImageGenerationHandler(StateHandlerBase):
         num_inference_steps: int,
         seed: int,
         num_images: int,
+        target_width: int | None = None,
+        target_height: int | None = None,
     ) -> GenerateImageResponse:
-        source = self._load_edit_source(image_path)
+        source = self._load_edit_source(image_path, target_width, target_height)
         buffer = io.BytesIO()
         source.save(buffer, format="PNG")
         image_bytes = buffer.getvalue()

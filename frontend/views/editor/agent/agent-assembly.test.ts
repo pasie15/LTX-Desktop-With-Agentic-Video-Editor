@@ -113,8 +113,26 @@ describe('assembly job cap', () => {
       { referenceAssetId: 'ken' },
     )
     assert.equal(proposal.referenceAssetId, 'ken')
-    assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill))
+    assert.ok(proposal.shots.every(shot => !shot.imageAssetId && !shot.skipStill && !shot.assetId))
     assert.equal(proposal.characterSheets?.length, 1)
+    assert.equal(proposal.jobCount, 5)
+  })
+
+  it('strips a portrait the model stuffed onto every shot as assetId', () => {
+    const proposal = bindAssemblyUserMedia(
+      buildAssemblyProposal({
+        kind: 'music_video',
+        shots: [
+          { id: 's1', prompt: 'bridge at night', duration: 5, assetId: 'ken' },
+          { id: 's2', prompt: 'wet street', duration: 5, assetId: 'ken' },
+        ],
+        referenceAssetId: 'ken',
+      }),
+      { referenceAssetId: 'ken' },
+      [{ id: 'ken', type: 'image' }],
+    )
+    assert.equal(proposal.referenceAssetId, 'ken')
+    assert.ok(proposal.shots.every(shot => !shot.assetId && !shot.imageAssetId))
     assert.equal(proposal.jobCount, 5)
   })
 
@@ -142,7 +160,7 @@ describe('assembly job cap', () => {
     assert.match(hero, /Ken on a wet street/)
     assert.match(hero, /black leather jacket/)
     assert.match(hero, /referenced person is inside this location/)
-    assert.match(hero, /Not a copy of a reference portrait/)
+    assert.match(hero, /Not a copy of the reference portrait/)
     assert.match(hero, /Mouth beginning/)
     const broll = stillPromptForShot({
       id: 's2',

@@ -973,11 +973,12 @@ describe('generate tool executor', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
+    assert.deepEqual(imageRefs, [{ path: '/tmp/ken.png', strength: 0.78 }])
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+    assert.ok(videoPaths.every(path => path !== '/tmp/ken.png'))
   })
 
-  it('does not img2img an imported photo even without identity flags', async () => {
+  it('uses the portrait as a Z-Image character reference, not the video start', async () => {
     const imageRefs: Array<{ path?: string | null; strength?: number; prompt?: string }> = []
     const host = createHost(makeState({
       clips: [],
@@ -998,9 +999,10 @@ describe('generate tool executor', () => {
     })
     assert.equal(result.ok, true)
     assert.deepEqual(imageRefs.map(item => ({ path: item.path, strength: item.strength })), [
-      { path: undefined, strength: undefined },
+      { path: '/tmp/ken.png', strength: 0.78 },
     ])
     assert.match(imageRefs[0]?.prompt ?? '', /^Cinematic 16:9 production still/)
+    assert.match(imageRefs[0]?.prompt ?? '', /new action, new wardrobe, new scenery/)
     assert.notEqual(result.assetId, 'ken')
   })
 
@@ -1029,8 +1031,9 @@ describe('generate tool executor', () => {
       confirmed: true,
     })
     assert.equal(result.ok, true)
-    assert.deepEqual(imageRefs, [{ path: undefined, strength: undefined }])
+    assert.deepEqual(imageRefs, [{ path: '/tmp/ken.png', strength: 0.78 }])
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
+    assert.ok(videoPaths.every(path => path !== '/tmp/ken.png'))
   })
 
   it('does not animate a generated character sheet', async () => {
@@ -1071,11 +1074,11 @@ describe('generate tool executor', () => {
     })
     assert.equal(result.ok, true)
     assert.equal(imageRefs.length, 1)
-    assert.equal(imageRefs[0]?.path, undefined)
+    assert.ok(imageRefs[0]?.path === '/tmp/sheet-1.png' || imageRefs[0]?.path === '/tmp/ken.png')
     assert.match(imageRefs[0]?.prompt ?? '', /^Cinematic 16:9 production still/)
     assert.doesNotMatch(imageRefs[0]?.prompt ?? '', /T-pose front/)
     assert.deepEqual(videoPaths, ['/project/image-scene-still.png'])
-    assert.ok(videoPaths.every(path => path !== '/tmp/sheet-1.png'))
+    assert.ok(videoPaths.every(path => path !== '/tmp/sheet-1.png' && path !== '/tmp/ken.png'))
   })
 
   it('can restyle a generated scene still with img2img', async () => {
@@ -1483,8 +1486,7 @@ describe('refs speech and mix', () => {
     })
     assert.equal(result.ok, true)
     assert.equal(imageCalls, 10)
-    assert.equal(imageRefs.filter(path => path === '/tmp/ken-tune.png').length, 0)
-    assert.ok(imageRefs.every(path => path == null))
+    assert.ok(imageRefs.some(path => path === '/tmp/ken-tune.png'))
     assert.equal(videoPaths.length, 8)
     assert.ok(videoPaths.every(path => path !== '/tmp/ken-tune.png'))
     assert.ok(videoPaths.every(path => path !== '/project/image-scene-1.png'))
@@ -1501,6 +1503,44 @@ describe('refs speech and mix', () => {
     assert.equal(lyricLines.length, 2)
     assert.ok(lyricLines.every(item => item.trackIndex === 2))
     assert.ok(lyricLines.some(item => item.textStyle?.text === 'Midnight by the river'))
+  })
+
+  it('does not place a portrait assetId on the timeline', async () => {
+    const videoPaths: Array<string | null | undefined> = []
+    const host = createHost(makeState({
+      clips: [],
+      playhead: 0,
+      assets: [imageAsset('ken')],
+    }), {
+      generation: fakeJobs({
+        runImage: async input => {
+          assert.equal(input.imagePath, '/tmp/ken.png')
+          return { status: 'complete', path: '/tmp/scene-from-ken.png' }
+        },
+        runVideo: async input => {
+          videoPaths.push(input.imagePath)
+          return { status: 'complete', path: '/tmp/cut.mp4' }
+        },
+      }),
+      approveAll: true,
+    })
+    const executor = new AgentToolExecutor(host)
+    const result = await executor.execute('assemble_shots', {
+      shots: [
+        { id: 's1', prompt: 'Ken on the bridge', duration: 5, assetId: 'ken', showProtagonist: true },
+        { id: 's2', prompt: 'Ken on the wet street', duration: 5, assetId: 'ken', showProtagonist: true },
+      ],
+      referenceAssetId: 'ken',
+      confirmed: true,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(videoPaths, [
+      '/project/image-scene-from-ken.png',
+      '/project/image-scene-from-ken.png',
+    ])
+    const clips = activeClips(host.getState())
+    assert.equal(clips.filter(item => item.assetId === 'ken').length, 0)
+    assert.equal(clips.filter(item => item.type === 'video').length, 2)
   })
 
   it('registers a still and resolves it on assemble', async () => {
@@ -1529,7 +1569,8 @@ describe('refs speech and mix', () => {
     host.generation = fakeJobs({
       runImage: async input => {
         imageCalls += 1
-        assert.equal(input.imagePath, undefined)
+        assert.equal(input.imagePath, '/tmp/hero-still.png')
+        assert.equal(input.strength, 0.78)
         return { status: 'complete', path: '/tmp/still-from-ref.png' }
       },
       runVideo: async input => {
@@ -1560,7 +1601,7 @@ describe('refs speech and mix', () => {
     assert.equal(music.volume, 0.25)
   })
 
-  it('generates a new scene still from a character ref without editing the portrait', async () => {
+  it('generates a new scene still from a character ref and uses that still for video', async () => {
     const imageRefs: Array<{ path?: string | null; strength?: number }> = []
     const videoPaths: Array<string | null | undefined> = []
     const host = createHost(makeState({
@@ -1589,10 +1630,11 @@ describe('refs speech and mix', () => {
     })
     assert.equal(result.ok, true)
     assert.deepEqual(imageRefs, [
-      { path: undefined, strength: undefined },
-      { path: undefined, strength: undefined },
+      { path: '/tmp/hero-still.png', strength: 0.78 },
+      { path: '/tmp/hero-still.png', strength: 0.78 },
     ])
     assert.deepEqual(videoPaths, ['/project/image-scene-from-hero.png'])
+    assert.ok(videoPaths.every(path => path !== '/tmp/hero-still.png'))
   })
 
   it('generates speech onto A1', async () => {

@@ -5,7 +5,7 @@ import {
   nextStepForCheckpoint,
   type AgentReviewPreview,
 } from './agent-approvals.ts'
-import { AGENT_DEFAULT_REF_STRENGTH } from './agent-mix.ts'
+import { AGENT_DEFAULT_REF_STRENGTH, AGENT_IDENTITY_SCENE_STRENGTH } from './agent-mix.ts'
 import type { AgentRefStore } from './agent-refs.ts'
 import type { AgentAskUserQuestion } from './agent-types.ts'
 import {
@@ -519,15 +519,20 @@ async function generateStill(
       return errorResult('Track is locked')
     }
   }
-  // Z-Image imagePath is img2img *edit* of those pixels. An imported portrait in → the
-  // same headshot out. Identity stills are new text-to-image scenes. Only pass imagePath
-  // to restyle an already-generated scene still, or when the user asked to animate this photo.
-  const editSourcePath = identityRef ? null : referencePath
+  // Z-Image imagePath is the character reference photo plus a scene prompt (action, look,
+  // scenery). High strength restages the person; low strength restyles an existing scene still.
+  // The portrait is never the video start — only this new still is.
+  const editSourcePath = referencePath
+  const strength = identityRef
+    ? AGENT_IDENTITY_SCENE_STRENGTH
+    : editSourcePath
+      ? AGENT_DEFAULT_REF_STRENGTH
+      : undefined
   host.onProgress?.({ toolName: 'generate_image', percent: 0, status: 'Generating image...' })
   const job = await jobs.runImage({
     prompt,
     settings,
-    ...(editSourcePath ? { imagePath: editSourcePath, strength: AGENT_DEFAULT_REF_STRENGTH } : {}),
+    ...(editSourcePath ? { imagePath: editSourcePath, ...(strength != null ? { strength } : {}) } : {}),
     signal: host.getAbortSignal?.() ?? undefined,
     onProgress: progress => host.onProgress?.({ toolName: 'generate_image', ...progress }),
   })
